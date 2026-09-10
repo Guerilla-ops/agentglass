@@ -22,7 +22,7 @@
 import * as AgentOps from "./agentops.ts";
 import { inScope, seatWakeHours } from "./config.ts";
 import type { Finding } from "./lanternwatch.ts";
-import { everySeat, seated } from "./seat.ts";
+import { everySeat, seatSays, seated } from "./seat.ts";
 import { releaseVanished } from "./seatqueue.ts";
 import { unreadWorthWaking } from "./seatreport.ts";
 import { noteWoken, wokenFor, __resetWoken } from "./seatwoken.ts";
@@ -111,9 +111,27 @@ export async function wakeSeats(f: Finding[], deps: WakeDeps = {}): Promise<stri
        field in its opening prompt, and waking it to say so would be a turn
        spent repeating what it is already reading. */
     if (!last) continue;
-    const line = changed
-      ? (waiting ? `${waiting} report${waiting === 1 ? "" : "s"} waiting: run \`agentglass-agent inbox\`. ` : "") + wakeLine(mine, last.fingerprint.split("#")[0] ?? "")
-      : "Nothing has changed since your last round. Say so in one line, or say what you notice.";
+    /*
+     * A WAKE THAT SAYS "NOTHING CHANGED" IS NOT A WAKE.
+     *
+     * The floor exists so a quiet day still gets a line, rather than a silence
+     * that cannot be told from a dead agent. It used to buy that line by
+     * spending a turn of the most expensive context on the machine to have it
+     * write the one sentence this app already knew. The seat paying for it put
+     * the cost plainly: one turn of its own, each time, to say "no change".
+     *
+     * The app knows both halves: that nothing changed, and that the chair is
+     * alive, because its pane is there. So it writes the line itself, marked
+     * as its own observation and not as something the seat said, and the floor
+     * still does its job for nothing.
+     */
+    if (!changed) {
+      const at = new Date(now).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hour12: false });
+      seatSays(s.root, `(looked at ${at} — nothing had changed, so nobody was woken)`, now);
+      continue;
+    }
+    const line = (waiting ? `${waiting} report${waiting === 1 ? "" : "s"} waiting: run \`agentglass-agent inbox\`. ` : "")
+      + wakeLine(mine, last.fingerprint.split("#")[0] ?? "");
     await send(s.root, line);
     woken.push(s.root);
   }

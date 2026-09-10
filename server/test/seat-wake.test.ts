@@ -19,6 +19,7 @@ process.env.AGENTGLASS_DOCTRINE = join(dir, "data");
 
 const { fingerprint, wakeLine, wakeSeats, wakeForReport, __resetSeatWake } = await import("../src/seatwake.ts");
 const R = await import("../src/seatreport.ts");
+const Seat = await import("../src/seat.ts");
 
 const ROOT = "/home/a/code/orbit";
 /* Every finding carries the checkout it came from: a seat is per project and
@@ -82,14 +83,30 @@ describe("who gets woken", () => {
     expect(sent[0]).toContain("The field is clear");
   });
 
-  test("a quiet day still gets a line once the floor passes", async () => {
+  test("a quiet day still gets a line once the floor passes — WITHOUT waking anybody", async () => {
+    /*
+     * The floor exists so a quiet day gets a line rather than a silence that
+     * cannot be told from a dead agent. It used to buy that line by spending a
+     * turn of the most expensive context on the machine to have it write the
+     * one sentence this app already knew — one turn of the seat's own, each
+     * time, to say "no change".
+     *
+     * The line still appears. Nobody is woken to write it, and it is marked as
+     * the app's own observation rather than put in the seat's mouth.
+     */
+    /* A line is only kept for a project that HAS a seat row; this is the
+       cheapest public way to make one. */
+    Seat.setSeatSettings(ROOT, "", "speak");
     const sent: string[] = [];
     const prompt = async (_n: string, t: string) => { sent.push(t); };
     const f = [waiting("db-fix")];
     await wakeSeats(f, { seats, prompt, now: 0 });
     expect(await wakeSeats(f, { seats, prompt, now: 3 * 3_600_000 })).toEqual([]);
-    expect(await wakeSeats(f, { seats, prompt, now: 5 * 3_600_000 })).toEqual([ROOT]);
-    expect(sent[0]).toContain("Nothing has changed");
+    expect(await wakeSeats(f, { seats, prompt, now: 5 * 3_600_000 }), "the floor woke somebody to say nothing had changed").toEqual([]);
+    expect(sent, "a turn was spent on a round with nothing in it").toEqual([]);
+    const said = Seat.seatLines(ROOT).map((l) => l.line).join("\n");
+    expect(said, "the quiet day left no line at all").toContain("nothing had changed");
+    expect(said).toContain("nobody was woken");
   });
 
   test("an empty chair is not woken", async () => {
