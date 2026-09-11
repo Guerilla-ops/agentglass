@@ -142,3 +142,34 @@ describe("who is worth asking about", () => {
     expect(f.map((x) => x.kind)).toEqual(["waiting"]);
   });
 });
+
+describe("the two readers of this board are not work on it", () => {
+  const NOW = Date.now();
+
+  test("the seat is not its own forgotten work", () => {
+    /* The line it was woken by: "orchestrator said it was on … and has been
+       quiet for 1d — done, or stuck?" — a description of a chair waiting for
+       its owner, delivered by waking the chair. */
+    const f = findings({
+      rows: [{ ...row({ name: "orchestrator", doing: "on watch until Monday", saidAt: NOW - 24 * 60 * 60_000, paneId: "%11" }), role: "orchestrator" }],
+      namedNow: [], namedBefore: null, now: NOW,
+    });
+    expect(f).toEqual([]);
+  });
+
+  test("nor is the Lantern's own chat", () => {
+    const f = findings({
+      rows: [{ ...row({ name: "Lantern", doing: "reading the board", saidAt: NOW - 24 * 60 * 60_000, paneId: "%2" }), role: "lantern" }],
+      namedNow: [], namedBefore: null, now: NOW,
+    });
+    expect(f).toEqual([]);
+  });
+
+  test("but an ordinary agent in the same state still is", () => {
+    const f = findings({
+      rows: [row({ name: "worker", doing: "the retry fix", saidAt: NOW - 24 * 60 * 60_000, paneId: "%7" })],
+      namedNow: [], namedBefore: null, now: NOW,
+    });
+    expect(f.map((x) => x.kind)).toEqual(["forgotten"]);
+  });
+});
