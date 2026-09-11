@@ -75,12 +75,43 @@ describe("who gets woken", () => {
     expect(sent[0]).toContain("db-fix needs your permission");
   });
 
-  test("and when a finding clears, which is also news", async () => {
+  test("when the last finding clears, the app says so and nobody is woken", async () => {
+    /*
+     * A field going from one stopped agent to none HAS changed, so it used to
+     * come through as a wake — "the field is clear, report your line". True,
+     * and still a turn of the most expensive context on the machine spent on
+     * the one kind of news that asks nothing of anybody.
+     *
+     * The LINE is worth writing: without it the seat's last word on the screen
+     * stays "somebody is stopped on you" long after they stopped being
+     * stopped, which is the screen lying in the other direction.
+     */
+    /* `bun test` shares one process and one database, and this project's root
+       string is used by the tray's own suite: an unread report left by another
+       file would make this a wake rather than a line, and rightly so. */
+    __resetSeatWake();
+    Seat.setSeatSettings(ROOT, "", "speak");
+    R.drainReports(ROOT);
     const sent: string[] = [];
     const prompt = async (_n: string, t: string) => { sent.push(t); };
     await wakeSeats([waiting("db-fix")], { seats, prompt, now: 0 });
-    await wakeSeats([], { seats, prompt, now: 60_000 });
-    expect(sent[0]).toContain("The field is clear");
+    expect(await wakeSeats([], { seats, prompt, now: 60_000 })).toEqual([]);
+    expect(sent, "a turn was spent to be told the problem went away").toEqual([]);
+    expect(Seat.seatLines(ROOT).map((l) => l.line).join("\n")).toContain("the field cleared");
+  });
+
+  test("but a tray with something in it is not a clear field", async () => {
+    /* However empty the board, a report asking for a decision is somebody
+       waiting — and that is worth the turn. */
+    __resetSeatWake();
+    Seat.setSeatSettings(ROOT, "", "speak");
+    R.drainReports(ROOT);
+    const sent: string[] = [];
+    const prompt = async (_n: string, t: string) => { sent.push(t); };
+    await wakeSeats([waiting("db-fix")], { seats, prompt, now: 0 });
+    R.addReport({ root: ROOT, agent: "asker", text: "STATE ready\nNEED a go on the push" });
+    expect(await wakeSeats([], { seats, prompt, now: 60_000 })).toEqual([ROOT]);
+    expect(sent[0]).toContain("report");
   });
 
   test("a quiet day still gets a line once the floor passes — WITHOUT waking anybody", async () => {

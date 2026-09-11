@@ -125,9 +125,30 @@ export async function wakeSeats(f: Finding[], deps: WakeDeps = {}): Promise<stri
      * as its own observation and not as something the seat said, and the floor
      * still does its job for nothing.
      */
+    const at = () => new Date(now).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hour12: false });
     if (!changed) {
-      const at = new Date(now).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hour12: false });
-      seatSays(s.root, `(looked at ${at} — nothing had changed, so nobody was woken)`, now);
+      seatSays(s.root, `(looked at ${at()} — nothing had changed, so nobody was woken)`, now);
+      continue;
+    }
+    /*
+     * AND NEITHER IS "THE LAST PROBLEM WENT AWAY".
+     *
+     * A field that goes from two stopped agents to none HAS changed, so the
+     * first guard lets it through — and the line it woke the seat with was
+     * "the field is clear, report your line". True, and still a turn of the
+     * most expensive context on the machine spent on the one kind of news that
+     * asks nothing of anybody.
+     *
+     * The line is worth writing: without it the seat's last word on the screen
+     * stays "two agents stopped on you" long after they stopped being stopped,
+     * which is the screen lying in the other direction. So the app writes that
+     * one too, and the turn is saved.
+     *
+     * Reports are the exception, and they have to be: a tray with something
+     * asking for a decision is not a clear field, however empty the board is.
+     */
+    if (mine.length === 0 && !waiting) {
+      seatSays(s.root, `(looked at ${at()} — the field cleared, so nobody was woken)`, now);
       continue;
     }
     const line = (waiting ? `${waiting} report${waiting === 1 ? "" : "s"} waiting: run \`agentglass-agent inbox\`. ` : "")
