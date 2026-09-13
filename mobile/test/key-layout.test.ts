@@ -77,6 +77,19 @@ describe("hiding", () => {
     expect(canHide(DEFAULT_LAYOUT, CAT, "esc")).toBe(true);
   });
 
+  test("nor down to nothing but modifiers, which send nothing on their own", () => {
+    /*
+     * The rule used to count keys. Ctrl, Alt and Shift are keys and send
+     * nothing, so counting them left a reachable bar with no Escape and no
+     * Ctrl+C on it — every press changing what the next press would do, and
+     * no next press available.
+     */
+    const withMods = [...CAT, { id: "ctrl", label: "Ctrl", modifier: "ctrl" as const, spoken: "Control" }];
+    const bare = { order: [], hidden: ["ctrlC", "up", "down", "tab"] };
+    expect(canHide(bare, withMods, "esc")).toBe(false);
+    expect(toggle(bare, withMods, "esc").hidden).not.toContain("esc");
+  });
+
   test("toggling twice is where it started", () => {
     const once = toggle(DEFAULT_LAYOUT, CAT, "tab");
     expect(ids(apply(once, CAT))).not.toContain("tab");

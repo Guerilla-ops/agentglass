@@ -44,7 +44,11 @@ import { useAgentglass } from "../../src/state/host-context.tsx";
 import { useDeskPalette, usePaletteTick } from "../../src/state/use-palette.ts";
 import { useKeyboardShown } from "../../src/state/use-keyboard.ts";
 import { TerminalView, type TerminalHandle, type TerminalState } from "../../src/terminal/TerminalView.tsx";
-import { ACCESSORY_KEYS, prefixKey, type AccessoryKey } from "../../src/terminal/keys.ts";
+import { ACCESSORY_KEYS, prefixKey, sendFor, type AccessoryKey } from "../../src/terminal/keys.ts";
+import {
+  NOTHING_HELD, afterSending, anyHeld, armed, press as pressModifier, spokenState,
+  type Latches,
+} from "../../src/terminal/modifiers.ts";
 import { apply as applyKeyLayout } from "../../src/terminal/keyLayout.ts";
 import {
   customKeys, keyLayout, onTermPrefs, setTermColumns, termAssist, termColumns,
@@ -578,6 +582,14 @@ function TerminalPane(): React.ReactNode {
      screen see one value; the local mirror is only what makes this repaint
      when the other one writes. See src/terminal/keyStore.ts. */
   const [bar, setBar] = useState(keyLayout);
+  /*
+   * Which modifiers are waiting for the next key.
+   *
+   * Screen state rather than a preference, unlike the bar above: a latch is
+   * spent by the next press, and one that survived a restart would turn the
+   * first key of the day into a control code.
+   */
+  const [latched, setLatched] = useState<Latches>(NOTHING_HELD);
   const [assist, setAssist] = useState(termAssist);
   /** The overflow menu, and the past sessions it can offer. Null until asked —
    *  it is a read per checkout and the menu is not opened on the way in. */
@@ -599,6 +611,10 @@ function TerminalPane(): React.ReactNode {
       id: k.id, label: k.label, bytes: bytesFor(k), spoken: k.label,
     })),
   ]), [bar, mine]);
+  /** What is latched, in the shape the encoder wants. Three booleans, read
+   *  once per key on the bar, so it is memoised on the latch rather than
+   *  recomputed inside the map. */
+  const modifiers = useMemo(() => armed(latched), [latched]);
   /** The deadline on that spinner. A ref because it is cleared from a callback
    *  that must not re-run when it changes. */
   const openTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1859,15 +1875,43 @@ function TerminalPane(): React.ReactNode {
                 it is tmux's own key, it is what every window switch goes
                 through, and a bar somebody had hidden it from would be a bar
                 that cannot leave the window it is in. */}
-            {[...(prefix ? [prefix] : []), ...keys].map((key) => (
+            {[...(prefix ? [prefix] : []), ...keys].map((key) => {
+              /* Once per key rather than three times: this decides whether the
+                 key can be pressed, how it is drawn, and what it sends. */
+              const sends = key.modifier ? null : sendFor(key, modifiers);
+              const latch = key.modifier ? latched[key.modifier] : "off";
+              const mute = !key.modifier && sends === null;
+              return (
               <Pressable
                 key={key.id}
                 accessibilityRole="button"
-                accessibilityLabel={key.spoken}
-                onPress={() => onKey(key.bytes)}
+                accessibilityLabel={key.modifier ? spokenState(key.modifier, latched[key.modifier]) : key.spoken}
+                /*
+                 * Unavailable rather than ignored.
+                 *
+                 * With a modifier latched, a key the combination has no
+                 * encoding for — a control code, which is already a Ctrl
+                 * press, or a macro, which is text — sends nothing at all. The
+                 * alternative is sending it plain, which puts a Tab on the
+                 * line of somebody who pressed Ctrl and then Tab and never
+                 * tells them the Ctrl went nowhere. See `sendFor`.
+                 */
+                disabled={mute}
+                onPress={() => {
+                  if (key.modifier) { setLatched(pressModifier(latched, key.modifier)); return; }
+                  if (sends === null) return;
+                  onKey(sends);
+                  // Only a latch tapped once is spent. A locked one survives,
+                  // which is the whole of what locking it meant.
+                  setLatched(afterSending(latched));
+                }}
                 // Held down for the arrows and the deletes only — the table says
-                // which, and nothing that runs a command is in that set.
-                onLongPress={key.repeatable ? () => onKey(key.bytes + key.bytes + key.bytes) : undefined}
+                // which, and nothing that runs a command is in that set. Not
+                // while a modifier is up: three of a combination from one
+                // finger is not what anybody reaching for Ctrl+↑ meant.
+                onLongPress={key.repeatable && !anyHeld(latched) && sends
+                  ? () => onKey(sends + sends + sends)
+                  : undefined}
                 style={({ pressed }) => ({
                   // 36 for the arrows. Under the 44 tap target and said out
                   // loud rather than tuned quietly: they are one glyph, they
@@ -1875,21 +1919,46 @@ function TerminalPane(): React.ReactNode {
                   // seventh key at the fold — which measured is the difference
                   // between Ctrl+C being on the bar and being behind a swipe.
                   minWidth: key.narrow ? 36 : 44,
-                  borderWidth: key.id === "tmuxPrefix" ? 1 : 0,
+                  /*
+                   * A latch has to look like one, and its two states have to
+                   * look unlike each other.
+                   *
+                   * Both wear the outline the tmux prefix wears, because it
+                   * means the same thing there: this key is not like the ones
+                   * beside it. Locked additionally sits in the pressed
+                   * background, so the state somebody can put down and come
+                   * back to reads as a key still held — an outline alone is
+                   * too quiet to be the only warning that the next key will
+                   * be a control code.
+                   *
+                   * No new fill and no new colour: `primary` is a foreground
+                   * everywhere else on this screen and `bg4` is what a press
+                   * already looks like. A latch is a state of a key here, not
+                   * a fourth kind of control.
+                   */
+                  borderWidth: key.id === "tmuxPrefix" || latch !== "off" ? 1 : 0,
                   borderColor: C.primary,
+                  // A key the latch has made unavailable says so by going pale,
+                  // rather than by doing nothing when a thumb lands on it.
+                  opacity: mute ? 0.35 : 1,
                   minHeight: 40,
                   // Only ⇧Tab is wider than the minimum, and its padding is the
                   // only thing between it and the fold.
                   paddingHorizontal: SPACE.xs,
                   borderRadius: RADIUS.sm,
-                  backgroundColor: pressed ? C.bg4 : C.bg3,
+                  backgroundColor: pressed || latch === "locked" ? C.bg4 : C.bg3,
                   alignItems: "center",
                   justifyContent: "center",
                 })}
               >
-                <Text style={{ color: C.text2, fontSize: T.small, fontFamily: MONO }}>{key.label}</Text>
+                <Text style={{
+                  color: latch === "off" ? C.text2 : C.primary,
+                  fontSize: T.small,
+                  fontFamily: MONO,
+                }}>{key.label}</Text>
               </Pressable>
-            ))}
+              );
+            })}
           </ScrollView>
 
           {/*

@@ -35,8 +35,23 @@
 export interface AccessoryKey {
   id: string;
   label: string;
-  /** Exactly what goes down the socket. */
-  bytes: string;
+  /** Exactly what goes down the socket.
+   *
+   *  Absent on a modifier, which is the one kind of key here that sends
+   *  nothing: it changes what the NEXT key sends. Exactly one of `bytes` and
+   *  `modifier` is present on every entry, and a test asserts that over the
+   *  whole catalogue rather than trusting the two of them to stay in step. */
+  bytes?: string;
+  /** Present only on a modifier — see `bytes`. */
+  modifier?: Modifier;
+  /** The name `keyBytes` knows this key by, when a modifier can recompose it.
+   *
+   *  Absent where the combination has no meaning rather than where nobody has
+   *  written it down: a control code IS a Ctrl press already, so Ctrl+^C is
+   *  not a thing to encode, and a macro somebody typed into the settings
+   *  screen is text rather than a key. Those refuse the modifier instead of
+   *  dropping it — see `sendFor`. */
+  key?: string;
   /** For a screen reader, and for anybody who does not read `⌫` as backspace. */
   spoken: string;
   /** Safe to fire repeatedly while held — the arrows and the deletes. Nothing
@@ -50,15 +65,30 @@ export interface AccessoryKey {
 }
 
 export const ACCESSORY_KEYS: AccessoryKey[] = [
-  { id: "escape", label: "Esc", bytes: "\x1b", spoken: "Escape" },
+  { id: "escape", label: "Esc", key: "escape", bytes: "\x1b", spoken: "Escape" },
   { id: "ctrlC", label: "^C", bytes: "\x03", spoken: "Interrupt" },
-  { id: "up", label: "↑", bytes: "\x1b[A", spoken: "Arrow up", repeatable: true, narrow: true },
-  { id: "down", label: "↓", bytes: "\x1b[B", spoken: "Arrow down", repeatable: true, narrow: true },
-  { id: "tab", label: "Tab", bytes: "\t", spoken: "Tab" },
+  { id: "up", label: "↑", key: "up", bytes: "\x1b[A", spoken: "Arrow up", repeatable: true, narrow: true },
+  { id: "down", label: "↓", key: "down", bytes: "\x1b[B", spoken: "Arrow down", repeatable: true, narrow: true },
+  { id: "tab", label: "Tab", key: "tab", bytes: "\t", spoken: "Tab" },
   // Terminal applications read ESC [ Z as reverse tab.
   { id: "shiftTab", label: "⇧Tab", bytes: "\x1b[Z", spoken: "Shift Tab" },
-  { id: "left", label: "←", bytes: "\x1b[D", spoken: "Arrow left", repeatable: true, narrow: true },
-  { id: "right", label: "→", bytes: "\x1b[C", spoken: "Arrow right", repeatable: true, narrow: true },
+  /*
+   * The three latches, immediately after the six the fold was measured for.
+   *
+   * Not in front of them, and that is a choice rather than an oversight. The
+   * order above was measured for a bar nobody had customised, and Esc and
+   * Ctrl+C earn those places whether or not anybody ever taps a modifier;
+   * putting three keys that do nothing on their own ahead of the key that
+   * stops a runaway command would be paying for a feature with the one that
+   * was already there. They sit one swipe behind it, and anybody who lives on
+   * them moves them forward on the settings screen — where the same trip lets
+   * them delete the nine preset Ctrl+letter keys these replace.
+   */
+  { id: "ctrl", label: "Ctrl", modifier: "ctrl", spoken: "Control, applies to the next key" },
+  { id: "alt", label: "Alt", modifier: "alt", spoken: "Alt, applies to the next key" },
+  { id: "shift", label: "Shift", modifier: "shift", spoken: "Shift, applies to the next key" },
+  { id: "left", label: "←", key: "left", bytes: "\x1b[D", spoken: "Arrow left", repeatable: true, narrow: true },
+  { id: "right", label: "→", key: "right", bytes: "\x1b[C", spoken: "Arrow right", repeatable: true, narrow: true },
   { id: "ctrlD", label: "^D", bytes: "\x04", spoken: "End of file" },
   { id: "ctrlZ", label: "^Z", bytes: "\x1a", spoken: "Suspend" },
   { id: "ctrlL", label: "^L", bytes: "\x0c", spoken: "Clear screen" },
@@ -68,13 +98,13 @@ export const ACCESSORY_KEYS: AccessoryKey[] = [
   { id: "ctrlW", label: "^W", bytes: "\x17", spoken: "Delete word" },
   { id: "ctrlU", label: "^U", bytes: "\x15", spoken: "Clear line" },
   { id: "ctrlK", label: "^K", bytes: "\x0b", spoken: "Clear to end of line" },
-  { id: "backspace", label: "⌫", bytes: "\x7f", spoken: "Backspace", repeatable: true },
-  { id: "delete", label: "Del", bytes: "\x1b[3~", spoken: "Forward delete", repeatable: true },
-  { id: "home", label: "Home", bytes: "\x1b[H", spoken: "Home" },
-  { id: "end", label: "End", bytes: "\x1b[F", spoken: "End" },
-  { id: "pageUp", label: "PgUp", bytes: "\x1b[5~", spoken: "Page up", repeatable: true },
-  { id: "pageDown", label: "PgDn", bytes: "\x1b[6~", spoken: "Page down", repeatable: true },
-  { id: "enter", label: "⏎", bytes: "\r", spoken: "Enter" },
+  { id: "backspace", label: "⌫", key: "backspace", bytes: "\x7f", spoken: "Backspace", repeatable: true },
+  { id: "delete", label: "Del", key: "delete", bytes: "\x1b[3~", spoken: "Forward delete", repeatable: true },
+  { id: "home", label: "Home", key: "home", bytes: "\x1b[H", spoken: "Home" },
+  { id: "end", label: "End", key: "end", bytes: "\x1b[F", spoken: "End" },
+  { id: "pageUp", label: "PgUp", key: "pageUp", bytes: "\x1b[5~", spoken: "Page up", repeatable: true },
+  { id: "pageDown", label: "PgDn", key: "pageDown", bytes: "\x1b[6~", spoken: "Page down", repeatable: true },
+  { id: "enter", label: "⏎", key: "enter", bytes: "\r", spoken: "Enter" },
 ];
 
 export type Modifier = "ctrl" | "alt" | "shift";
@@ -148,6 +178,31 @@ export function keyBytes(key: string, modifiers: Modifier[] = []): string | null
 
   if (key.length === 1 && key >= " " && key <= "~") return printable(key, modifiers);
   return null;
+}
+
+/**
+ * What a bar key sends with modifiers latched, or null when it cannot.
+ *
+ * Null is a refusal and the caller must treat it as one — the bar draws such a
+ * key as unavailable while the modifier is held rather than letting it be
+ * pressed. The reason is the one `printable` gives a few lines down: sending
+ * the plain bytes instead would put a Tab on the line of somebody who pressed
+ * Ctrl and then Tab, and a modifier that is sometimes ignored is worse than one
+ * that is sometimes unavailable, because only the second one is visible.
+ *
+ * Three kinds of key end up here:
+ *
+ *   * one with a `key` name — recomposed through the same encoder the tmux
+ *     prefix uses, so Ctrl+↑ is `\x1b[1;5A` and not a guess;
+ *   * a control code or a macro, which has no `key` and refuses;
+ *   * a modifier, which sends nothing ever and is not a thing to press for
+ *     bytes at all.
+ */
+export function sendFor(key: AccessoryKey, held: readonly Modifier[]): string | null {
+  if (key.modifier) return null;
+  if (held.length === 0) return key.bytes ?? null;
+  if (!key.key) return null;
+  return keyBytes(key.key, [...held]);
 }
 
 function printable(key: string, modifiers: Modifier[]): string | null {
