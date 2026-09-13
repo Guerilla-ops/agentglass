@@ -17,6 +17,9 @@ import { ACCESSORY_KEYS, keyBytes, prefixKey } from "../src/terminal/keys.ts";
 const byId = (id: string): string => {
   const key = ACCESSORY_KEYS.find((k) => k.id === id);
   if (!key) throw new Error(`no key ${id}`);
+  // Throws rather than coerces: a key with no bytes is a modifier, and asking
+  // this helper for one is a test that has been pointed at the wrong thing.
+  if (key.bytes === undefined) throw new Error(`${id} sends nothing — it is a modifier`);
   return key.bytes;
 };
 
@@ -64,9 +67,31 @@ describe("the bar", () => {
     // `⌫` and `^C` are not readable by a screen reader, and `^` is not a word.
     for (const key of ACCESSORY_KEYS) {
       expect(key.spoken.length, key.id).toBeGreaterThan(2);
-      expect(key.bytes.length, key.id).toBeGreaterThan(0);
     }
     expect(new Set(ACCESSORY_KEYS.map((k) => k.id)).size).toBe(ACCESSORY_KEYS.length);
+  });
+
+  test("every key either sends something or latches, and never both", () => {
+    /*
+     * Two optional fields describing one thing that is not optional: a key
+     * sends bytes or it is a modifier. Both present is a modifier that also
+     * types something; neither is a button that does nothing at all, which is
+     * what the removed `bytes.length` check used to catch on its own.
+     */
+    for (const key of ACCESSORY_KEYS) {
+      expect(Boolean(key.bytes) !== Boolean(key.modifier), key.id).toBe(true);
+      if (key.bytes) expect(key.bytes.length, key.id).toBeGreaterThan(0);
+    }
+  });
+
+  test("a modifier can recompose the keys that have an encoding for it", () => {
+    // The `key` name is what lets a latch rebuild the bytes. Without it the
+    // key refuses the modifier, so a missing name is a silently inert Ctrl.
+    const named = ACCESSORY_KEYS.filter((k) => k.key).map((k) => k.id).sort();
+    expect(named).toEqual([
+      "backspace", "delete", "down", "end", "enter", "escape", "home",
+      "left", "pageDown", "pageUp", "right", "tab", "up",
+    ]);
   });
 
   test("opens with what a thumb reaches for first", () => {
