@@ -88,7 +88,29 @@ export async function wakeSeats(f: Finding[], deps: WakeDeps = {}): Promise<stri
     /* Whose field this is. A seat for one repository woken because an agent in
        another one stopped would spend a turn reporting on work that is none of
        its business — and, with powers, offer to unstick it. */
-    const mine = f.filter((x) => x.worktree && inScope(x.worktree, s.root));
+    /*
+     * WHOSE FIELD THIS IS, AND WHICH OF IT IS WORTH A TURN.
+     *
+     * The project filter is the obvious half: a seat for one repository woken
+     * because an agent in another one stopped would spend a turn reporting on
+     * work that is none of its business.
+     *
+     * The other half is reachability, and it was measured the hard way. An
+     * agent finished its task, its owner closed the tmux window, and an hour
+     * later the seat was woken with "said it was on … and has been quiet for
+     * 1h — done, or stuck?" about a pane that no longer exists. The seat's
+     * only move on a forgotten agent is to nudge it, and there is nothing to
+     * nudge: an agent that has no pane on this machine cannot be reached,
+     * whether it died or is alive on another tmux server.
+     *
+     * The finding itself is NOT dropped — the Lantern still shows David that a
+     * claim went quiet, which is his to read and is a different question from
+     * whether it is worth waking the most expensive context on the machine.
+     * Somebody stopped ON A PERSON is never filtered: that one is the person's
+     * to clear, and the seat's job is to say so.
+     */
+    const mine = f.filter((x) => x.worktree && inScope(x.worktree, s.root))
+      .filter((x) => x.kind !== "forgotten" || !!x.pane);
     /*
      * A report waiting is part of what the field says, and the count is in the
      * fingerprint so a fifth report wakes the seat exactly as a fifth stopped

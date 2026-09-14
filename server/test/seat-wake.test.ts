@@ -258,3 +258,51 @@ describe("a report wakes the seat now", () => {
     expect(sent, "the sweep repeated a report the seat had already been told about").toHaveLength(1);
   });
 });
+
+/*
+ * FORGOTTEN WORK THE SEAT CANNOT REACH IS NOT WORTH ITS TURN.
+ *
+ * Measured: an agent finished, its owner closed the tmux window, and an hour
+ * later the seat was woken to ask after a pane that no longer exists. The
+ * seat's only move on a forgotten agent is to nudge it, and there is nothing
+ * there to nudge — whether it died or is alive on a second tmux server, this
+ * machine has no way to reach it.
+ *
+ * The finding is not dropped: the Lantern still shows the person that a claim
+ * went quiet. Whether it is worth waking the expensive model is a different
+ * question, and this is where that one is answered.
+ */
+describe("which findings are worth a turn", () => {
+  const forgotten = (name: string, pane?: string): Finding =>
+    ({ kind: "forgotten", name, since: 1_000, worktree: ROOT, pane, line: `${name} said it was on "x" and has been quiet for 1h — done, or stuck?` });
+
+  test("a forgotten agent with no pane does not wake the seat", async () => {
+    __resetSeatWake();
+    Seat.setSeatSettings(ROOT, "", "speak");
+    R.drainReports(ROOT);
+    const sent: string[] = [];
+    const prompt = async (_n: string, t: string) => { sent.push(t); };
+    await wakeSeats([], { seats, prompt, now: 0 });
+    expect(await wakeSeats([forgotten("push-round-6")], { seats, prompt, now: 60_000 })).toEqual([]);
+    expect(sent).toEqual([]);
+  });
+
+  test("the same one in a pane does, because there is something to nudge", async () => {
+    __resetSeatWake();
+    R.drainReports(ROOT);
+    const sent: string[] = [];
+    const prompt = async (_n: string, t: string) => { sent.push(t); };
+    await wakeSeats([], { seats, prompt, now: 0 });
+    expect(await wakeSeats([forgotten("push-round-6", "%7")], { seats, prompt, now: 60_000 })).toEqual([ROOT]);
+  });
+
+  test("and somebody stopped on a person is never filtered, pane or no pane", async () => {
+    /* That one is the person's to clear, and saying so is the whole job. */
+    __resetSeatWake();
+    R.drainReports(ROOT);
+    const sent: string[] = [];
+    const prompt = async (_n: string, t: string) => { sent.push(t); };
+    await wakeSeats([], { seats, prompt, now: 0 });
+    expect(await wakeSeats([waiting("db-fix")], { seats, prompt, now: 60_000 })).toEqual([ROOT]);
+  });
+});
