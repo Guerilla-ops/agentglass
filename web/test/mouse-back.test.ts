@@ -38,10 +38,30 @@ test("an index of zero is the left button, not a missing one", () => {
 /*
  * And it is wired to the one view that has somewhere to go back TO. A helper
  * nothing calls is a helper that passes its own tests.
+ *
+ * BOTH DOORS, and the shell's is the one that matters: Chromium routes the
+ * thumb buttons to the embedder as an app command and dispatches no DOM event
+ * for them, so a page listening only for `auxclick` waits for something that is
+ * never sent — which is what the first version of this did, and it did nothing
+ * at all on the desktop.
  */
+test("the shell forwards the press the page never receives", async () => {
+  const main = await Bun.file(new URL("../../electron/main.js", import.meta.url)).text();
+  expect(main).toMatch(/win\.on\("app-command",/);
+  expect(main).toContain("browser-backward");
+  /* Prevented, or the window follows it with a history navigation of its own. */
+  expect(main).toMatch(/e\.preventDefault\(\);[\s\S]{0,300}?ag:app-back/);
+  const preload = await Bun.file(new URL("../../electron/preload.js", import.meta.url)).text();
+  expect(preload).toContain('ipcRenderer.on("ag:app-back", h)');
+  expect(preload).toContain('removeListener("ag:app-back", h)');
+});
+
 test("the pull request page listens for it while one is open", async () => {
   const src = await Bun.file(new URL("../src/components/PrPanel.tsx", import.meta.url)).text();
   expect(src).toContain('import { isBackButton } from "../lib/mouseBack.ts";');
+  /* The shell's door, and it is unsubscribed with the others. */
+  expect(src).toMatch(/const off = onAppBack\(/);
+  expect(src).toMatch(/off\(\);/);
   /* Bound on the detail and nowhere else: `selected == null` is the list, and
      there the gesture has nothing to mean. */
   expect(src).toMatch(/if \(selected == null\) return;[\s\S]{0,900}?addEventListener\("auxclick", go\)/);

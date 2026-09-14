@@ -22,6 +22,7 @@
 import { createContext, Fragment, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from "react";
 import { handoffTo } from "../lib/handoffTo.ts";
 import { isBackButton } from "../lib/mouseBack.ts";
+import { onAppBack } from "../lib/desktop.ts";
 import { requestTermIssue } from "../lib/termIssue.ts";
 import { diffSplit, diffWrap, diffNoWhitespace, setDiffNoWhitespace } from "../lib/diffPrefs.ts";
 import { Portal } from "./Portal.tsx";
@@ -1951,30 +1952,36 @@ export function PrView({ active, onOpenChatWith, onReviewInTerminal, jumpTo }: {
    * out of a pull request was a trip to a breadcrumb at the far corner of the
    * window.
    *
-   * Bound only while a pull request is open, so nothing else on the screen has
-   * to wonder whether the gesture was meant for it. `auxclick` is the event the
-   * non-primary buttons raise; `mousedown` is prevented as well, because that
-   * is what stops the platform turning the same press into a navigation.
+   * TWO DOORS, because the press comes in by one of them depending on who is
+   * hosting the page. In the desktop shell Chromium routes the thumb buttons to
+   * the EMBEDDER as an app command and never dispatches a DOM event at all —
+   * the first version of this listened for `auxclick` and waited for something
+   * that is never sent. In a plain browser tab the opposite is true, and there
+   * `auxclick` is what arrives.
    *
-   * Not while the caret is in a field: a text box on this page has its own
-   * undo, and losing a half-written comment to a thumb is worse than a gesture
+   * Bound only while a pull request is open, so nothing else on the screen has
+   * to wonder whether the gesture was meant for it, and not while the caret is
+   * in a field: a half-written comment lost to a thumb is worse than a gesture
    * that did nothing.
    */
   useEffect(() => {
     if (selected == null) return;
     const typing = () => /input|textarea/i.test(document.activeElement?.tagName ?? "")
       || (document.activeElement as HTMLElement | null)?.isContentEditable === true;
+    const back = () => { if (!typing()) backToList(); };
     const stop = (e: MouseEvent) => { if (isBackButton(e)) e.preventDefault(); };
     const go = (e: MouseEvent) => {
-      if (!isBackButton(e) || typing()) return;
+      if (!isBackButton(e)) return;
       e.preventDefault();
-      backToList();
+      back();
     };
     window.addEventListener("mousedown", stop);
     window.addEventListener("auxclick", go);
+    const off = onAppBack(({ back: isBack }) => { if (isBack) back(); });
     return () => {
       window.removeEventListener("mousedown", stop);
       window.removeEventListener("auxclick", go);
+      off();
     };
   }, [selected, backToList]);
 
