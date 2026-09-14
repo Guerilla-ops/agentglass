@@ -3627,76 +3627,40 @@ export function TermView({ active, onClose = () => {} }: { active: boolean; onCl
                   )}
                 </div>
 
-                {/* status line */}
-                <div className="shrink-0 flex items-center gap-3 px-4 py-1.5 border-t text-[9.5px] t-dim2" style={{ borderColor: "color-mix(in srgb, var(--border) 40%, transparent)" }}>
-                  {/* Under tmux the panel's own advice is wrong — its tabs and
-                      split are gone, and the keys that matter are tmux's. Say
-                      those instead, since the prefix is the one thing you can't
-                      guess and everything else follows from it. */}
-                  {tmuxActive ? (
-                    <span className="flex items-center gap-2 flex-wrap">
-                      <span className="px-1.5 py-0.5 rounded" style={{ color: "var(--primary-hover)", background: "color-mix(in srgb, var(--primary) 14%, transparent)" }}>tmux</span>
-                      <span>Panel chrome hidden — tmux owns the panes</span>
-                      <span className="t-dim2">·</span>
-                      {hiddenRows > 0 ? (
-                        <>
-                          <span style={{ color: "var(--warning)" }}>
-                            {hiddenRows} row{hiddenRows === 1 ? "" : "s"} of this pane are below the panel —
-                            a bigger client is attached, so the last line (an editor's status bar) is off-screen
-                          </span>
-                          <button onClick={() => tmuxCmd({
-                              cmd: "fit",
-                              window: tmuxWindows.find((w) => w.active)?.id ?? "",
-                              cols: sess?.term.cols, rows: sess?.term.rows,
-                            })}
-                            title="Size this tmux window to this panel. The other client keeps working; it just stops deciding the size."
-                            className="agx-btn px-2 py-0.5 rounded"
-                            style={{ color: "var(--warning)", border: "1px solid color-mix(in srgb, var(--warning) 45%, transparent)" }}>
-                            Fit to this window
-                          </button>
-                        </>
-                      ) : [["c", "Window"], ['"', "Split ↓"], ["%", "Split →"], ["o", "Next pane"], ["z", "Zoom"], ["d", "Detach"], ["?", "All keys"]].map(([key, what]) => (
-                        <Fragment key={key}>
-                          <b style={{ color: "var(--text2)" }}>{px} {key}</b><span>{what}</span>
-                        </Fragment>
-                      ))}
+                {/*
+                  * THE STATUS LINE IS GONE, except when it has something to say.
+                  *
+                  * It held three things and only one of them was worth a row of
+                  * the window: a sentence about the app ("tmux owns the panes"),
+                  * a seven-key cheat sheet for a prefix anybody using this knows
+                  * by heart, and the pane's size, which matters for the second it
+                  * changes and never again. Under all of it, the one thing that
+                  * actually saves you: rows of this pane hidden below the panel
+                  * because a bigger client is attached, with the button that
+                  * fixes it.
+                  *
+                  * So the row exists only then. A bar that is always there and
+                  * usually says nothing teaches you not to read it, which is how
+                  * the warning inside it was going to be missed.
+                  */}
+                {tmuxActive && hiddenRows > 0 && (
+                  <div className="shrink-0 flex items-center gap-3 px-4 py-1.5 border-t text-[9.5px]" style={{ borderColor: "color-mix(in srgb, var(--border) 40%, transparent)" }}>
+                    <span style={{ color: "var(--warning)" }}>
+                      {hiddenRows} row{hiddenRows === 1 ? "" : "s"} of this pane are below the panel —
+                      a bigger client is attached, so the last line (an editor's status bar) is off-screen
                     </span>
-                  ) : IS_DEMO ? (
-                    // The renderer, the theme and the scrollback are real; the
-                    // bytes are written into the build. Said here rather than
-                    // over the pane, because a visitor should be able to read
-                    // the session and be told what it is at the same time.
-                    <span className="flex items-center gap-2">
-                      <span className="px-1.5 py-0.5 rounded" style={{ color: "var(--primary-hover)", background: "color-mix(in srgb, var(--primary) 14%, transparent)" }}>demo</span>
-                      <span>A canned session — the terminal is real, nothing is running behind it. Run agentglass locally for a shell you can type in.</span>
-                    </span>
-                  ) : disabled ? (
-                    // The shell isn't running here (Windows, or disabled by env),
-                    // so promising a real shell with working TUIs would be the
-                    // lie the overlay above just corrected. Say nothing.
-                    <span className="t-dim2">{cmds?.reason === "windows" ? "Terminal not available on Windows yet" : "Terminal unavailable"}</span>
-                  ) : (
-                    <span>Real shell — Ctrl+C, Ctrl+R, Tab-complete, vim/htop all work · sessions survive closing this panel · Shift+Esc closes it</span>
-                  )}
-                  {/*
-                    * The pane's worktree is NOT repeated here.
-                    *
-                    * It used to be: a "This pane" pill with the branch, the folder,
-                    * a dirty count and Git/Diff buttons, at the far end of this
-                    * bar. The header above now carries the same worktree with more
-                    * of it — the full branch name rather than a truncated one, the
-                    * pull request it belongs to, and its card — so this was the
-                    * second, worse copy of a fact already on screen. Two chips
-                    * about one thing is a bar you have to read twice to find out
-                    * they agree.
-                    *
-                    * `detectedWt` and `wtDetecting` are still what the header's
-                    * chip is drawn from (see chipWt); only the duplicate went.
-                    */}
-                  <span className="ml-auto flex items-center gap-2 shrink-0">
-                    <span>{sess ? `${sess.term.cols}×${sess.term.rows}` : ""}</span>
-                  </span>
-                </div>
+                    <button onClick={() => tmuxCmd({
+                        cmd: "fit",
+                        window: tmuxWindows.find((w) => w.active)?.id ?? "",
+                        cols: sess?.term.cols, rows: sess?.term.rows,
+                      })}
+                      title="Size this tmux window to this panel. The other client keeps working; it just stops deciding the size."
+                      className="agx-btn px-2 py-0.5 rounded"
+                      style={{ color: "var(--warning)", border: "1px solid color-mix(in srgb, var(--warning) 45%, transparent)" }}>
+                      Fit to this window
+                    </button>
+                  </div>
+                )}
     </div>
   );
 }
