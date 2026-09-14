@@ -205,6 +205,15 @@ contextBridge.exposeInMainWorld("agentglass", {
     ipcRenderer.on("ag:browser-devtools-open", h);
     return () => ipcRenderer.removeListener("ag:browser-devtools-open", h);
   },
+  /** The mouse's back or forward button, read off the window because Chromium
+   *  delivers it to the embedder as an app command and never to the page.
+   *  @param {(at: { back: boolean }) => void} fn */
+  onAppBack: (fn) => {
+    /** @type {IpcListener} */
+    const h = (_e, at) => fn(at);
+    ipcRenderer.on("ag:app-back", h);
+    return () => ipcRenderer.removeListener("ag:app-back", h);
+  },
   /** "Inspect" from the page's own context menu, with where it was clicked.
    * @param {(at: { x: number; y: number }) => void} fn */
   onBrowserInspect: (fn) => {
