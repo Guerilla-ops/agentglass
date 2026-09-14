@@ -21,6 +21,7 @@
 //    server has one thread; every read is a cached answer with its age shown.
 import { createContext, Fragment, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from "react";
 import { handoffTo } from "../lib/handoffTo.ts";
+import { isBackButton } from "../lib/mouseBack.ts";
 import { requestTermIssue } from "../lib/termIssue.ts";
 import { diffSplit, diffWrap, diffNoWhitespace, setDiffNoWhitespace } from "../lib/diffPrefs.ts";
 import { Portal } from "./Portal.tsx";
@@ -1940,6 +1941,42 @@ export function PrView({ active, onOpenChatWith, onReviewInTerminal, jumpTo }: {
   /** Open a pull request as a page. Back returns to the list, cursor intact. */
   const openPr = useCallback((n: number) => { setRowCursor(n); setSelected(n); setTab("overview"); setEditingBody(false); }, []);
   const backToList = useCallback(() => { setSelected(null); setDetailErr(""); setEditingBody(false); }, []);
+
+  /*
+   * AND THE MOUSE'S BACK BUTTON DOES IT TOO.
+   *
+   * The thumb button means "back to where I was" everywhere else on the
+   * machine, and here it meant nothing: the app is one page, so there is no
+   * history entry for Chromium to pop and the press fell on the floor. Getting
+   * out of a pull request was a trip to a breadcrumb at the far corner of the
+   * window.
+   *
+   * Bound only while a pull request is open, so nothing else on the screen has
+   * to wonder whether the gesture was meant for it. `auxclick` is the event the
+   * non-primary buttons raise; `mousedown` is prevented as well, because that
+   * is what stops the platform turning the same press into a navigation.
+   *
+   * Not while the caret is in a field: a text box on this page has its own
+   * undo, and losing a half-written comment to a thumb is worse than a gesture
+   * that did nothing.
+   */
+  useEffect(() => {
+    if (selected == null) return;
+    const typing = () => /input|textarea/i.test(document.activeElement?.tagName ?? "")
+      || (document.activeElement as HTMLElement | null)?.isContentEditable === true;
+    const stop = (e: MouseEvent) => { if (isBackButton(e)) e.preventDefault(); };
+    const go = (e: MouseEvent) => {
+      if (!isBackButton(e) || typing()) return;
+      e.preventDefault();
+      backToList();
+    };
+    window.addEventListener("mousedown", stop);
+    window.addEventListener("auxclick", go);
+    return () => {
+      window.removeEventListener("mousedown", stop);
+      window.removeEventListener("auxclick", go);
+    };
+  }, [selected, backToList]);
 
   /* Only this repository's: the panel shows one at a time, so a chip opening
      something the list cannot show would be a dead end. */
