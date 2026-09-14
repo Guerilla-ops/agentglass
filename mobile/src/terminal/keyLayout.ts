@@ -102,10 +102,18 @@ export function rows(
   ];
 }
 
-/** False when hiding this one would empty the bar. See `apply`. */
+/**
+ * False when hiding this one would leave a bar that cannot send anything.
+ *
+ * "Empty" used to mean no keys at all, and that stopped being the whole of it
+ * when modifiers arrived: Ctrl, Alt and Shift send nothing on their own, so a
+ * bar left holding only those is as unusable as a bar left holding nothing —
+ * no Escape, no Ctrl+C, and the settings screen is somewhere else. What has to
+ * survive is a key that SENDS. See `apply`.
+ */
 export function canHide(layout: KeyLayout, catalogue: readonly AccessoryKey[], id: string): boolean {
-  const visible = apply(layout, catalogue);
-  return !(visible.length <= 1 && visible[0]?.id === id);
+  const left = apply(layout, catalogue).filter((k) => k.id !== id);
+  return left.some((k) => !k.modifier);
 }
 
 /** Show or hide one key. Hiding the last visible one is refused rather than
