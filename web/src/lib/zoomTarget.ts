@@ -57,14 +57,28 @@ export function overTerminal(): boolean {
  * behind it, so the only thing this document can honestly say about it is
  * where it is.
  *
- * Only a webview that is actually laid out: one in a hidden panel has an empty
- * rect, and a point is never inside an empty rect.
+ * AND ONLY A WEBVIEW THAT IS ON SCREEN, which a rectangle does not tell you.
+ *
+ * The workspace keeps every view mounted and hides the inactive ones with
+ * `visibility: hidden` — deliberately, because `display: none` measures a
+ * terminal at zero and reflows it to one column. A hidden box keeps its layout,
+ * so the browser's guest still had a full-size rect behind whatever view was
+ * actually up, and this answered "yes, the pointer is over a web page" from the
+ * task board, the pull requests, anywhere. Ctrl+ then zoomed a page nobody was
+ * looking at, the app never grew, and the browser was left at 350% for the next
+ * time it was opened.
+ *
+ * `visibility` inherits, so asking the guest is asking every ancestor at once.
  */
 export function overBrowserPage(): boolean {
   if (x < 0) return false;
   for (const el of document.querySelectorAll("webview")) {
     const r = el.getBoundingClientRect();
-    if (r.width > 0 && r.height > 0 && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return true;
+    if (!(r.width > 0 && r.height > 0)) continue;
+    if (!(x >= r.left && x <= r.right && y >= r.top && y <= r.bottom)) continue;
+    const css = getComputedStyle(el);
+    if (css.visibility === "hidden" || css.display === "none") continue;
+    return true;
   }
   return false;
 }
