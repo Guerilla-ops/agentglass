@@ -105,6 +105,16 @@ describe("the board is rendered once", () => {
   });
 });
 
+describe("a board looks the same in both places", () => {
+  it("its place paints the ground the board was built on", async () => {
+    // Sticky row cells are opaque --bg; on the bench's --bg2 each task row
+    // showed a darker box behind its title.
+    const slot = await Bun.file(new URL("../src/components/workspace/BoardSlot.tsx", import.meta.url)).text();
+    expect(slot).toContain('style={{ background: "var(--bg)" }}');
+    expect(await Bun.file(new URL("../src/index.css", import.meta.url)).text()).toMatch(/\.agx-stick \{[^}]*background: var\(--bg\)/);
+  });
+});
+
 describe("what a board opens, while it is in the bench", () => {
   it("sits above the bench and below the palette", () => {
     expect(LAYER.benchOverlay).toBeGreaterThan(LAYER.bench);

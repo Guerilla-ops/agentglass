@@ -46,7 +46,12 @@ export function BoardSlot({ kind, place, visible }: { kind: BoardKind; place: Bo
   const where = useSyncExternalStore(subscribeBoards, () => boardPlace(kind), () => null);
 
   return (
-    <div ref={box} className="relative flex-1 min-h-0 h-full w-full flex flex-col">
+    <div ref={box} className="relative flex-1 min-h-0 h-full w-full flex flex-col"
+      /* The board's own ground, wherever it is shown. The bench is --bg2, and a
+         task row's sticky title cell is opaque --bg so a sideways scroll does
+         not show through it (index.css, .agx-stick) — on --bg2 every row wore a
+         darker box behind its title. */
+      style={{ background: "var(--bg)" }}>
       {!holds && where && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 text-center">
           <div className="text-[12px]" style={{ color: "var(--text2)" }}>{NAME[kind]} {ELSEWHERE[where]}.</div>
