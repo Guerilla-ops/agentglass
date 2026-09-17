@@ -3285,7 +3285,20 @@ export function TermView({ active, onClose = () => {} }: { active: boolean; onCl
                             />
                           ) : (
                             <>
-                              <span>{w.name || "shell"}</span>
+                              {/* THE NAME CARRIES THE STATE, rather than a dot
+                                  beside it. The mark for "the agent in this tab
+                                  finished and you have not looked" was a 6px
+                                  circle after the name — one more thing in a
+                                  strip whose whole point is that it is only
+                                  names. The name itself goes green: same fact,
+                                  same colour, nothing added to the row. */}
+                              <span
+                                title={!bell && w.agentDone ? "Agent finished — not seen yet" : undefined}
+                                style={!bell && w.agentDone
+                                  ? { color: "var(--success, #98c379)", fontWeight: 600 }
+                                  : undefined}>
+                                {w.name || "shell"}
+                              </span>
                             </>
                           )}
                           {zoomed && <span className="text-[10px] font-semibold leading-none" style={{ color: "var(--text4)" }} title="A pane in this window is zoomed">⤢</span>}
@@ -3321,12 +3334,7 @@ export function TermView({ active, onClose = () => {} }: { active: boolean; onCl
                             </span>
                           )}
                           {bell && <span className="w-1.5 h-1.5 rounded-full" style={{ background: "var(--error)" }} title="Bell" />}
-                          {/* The agent in this tab finished its turn and you have
-                              not looked yet. Green = ready-for-you, distinct from
-                              the bell's red. Set from the transcript's Stop event,
-                              not tmux activity, so nvim and a still-working agent
-                              stay dark; clears the moment you switch to this tab. */}
-                          {!bell && w.agentDone && <span className="w-1.5 h-1.5 rounded-full" style={{ background: "var(--success, #98c379)" }} title="Agent finished — not seen yet" />}
+
                           {/* Ultra-minimal: the close × lives ONLY on the active
                               window. Switching means clicking a NON-active tab,
                               which has no × to hit by accident — the whole point

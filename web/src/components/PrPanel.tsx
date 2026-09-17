@@ -2009,8 +2009,24 @@ export function PrView({ active, onOpenChatWith, onReviewInTerminal, jumpTo }: {
   const pinState = useMemo(() => {
     const by = new Map<number, PrSummary>();
     for (const p of prs) by.set(p.number, p);
+    /*
+     * And the one you have OPEN answers for itself.
+     *
+     * The list is polled; a detail is fetched when you open it and again when
+     * you refresh it, so it is by definition the newer reading of that one pull
+     * request. Without this the chip kept whatever the last poll had said: a red
+     * dot and "2 failing" over a page whose own header read 58 passed, 12
+     * skipped, nothing failing. Two numbers about one thing, on screen at once.
+     *
+     * Only the rollup is taken. The rest of the row — its title, its author, the
+     * scope it came from — is the list's and has not changed.
+     */
+    if (detail?.number != null) {
+      const had = by.get(detail.number);
+      if (had) by.set(detail.number, { ...had, checks: detail.checks, checksLoaded: true });
+    }
     return by;
-  }, [prs]);
+  }, [prs, detail]);
 
   /**
    * "Open this pull request", asked from somewhere that cannot reach this panel.
