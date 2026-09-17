@@ -122,17 +122,36 @@ export function checksLine(
  * branch" where a 320px column does not — without either of them re-deriving
  * WHETHER it is blocked.
  */
+/**
+ * Will GitHub take it — in GitHub's own terms, not ours.
+ *
+ * `UNSTABLE` is not "unmergeable". It is GitHub's word for "mergeable, and some
+ * checks that are NOT required are failing or still running": the merge button
+ * is live on github.com. This treated everything but `CLEAN` as blocked, so a
+ * pull request with one failing optional job — every required check green, two
+ * approvals, no conflicts — could be merged there and not here, with the
+ * disabled button captioned by the name of the job GitHub had already decided
+ * did not matter. `HAS_HOOKS` is the same: mergeable, with pre-receive hooks.
+ *
+ * The rest stay blocked: conflicts, a draft, an out-of-date branch where the
+ * base requires it, a review or check that IS required, or a state GitHub has
+ * not finished computing.
+ */
+export function githubWillMerge(state: string): boolean {
+  return state === "CLEAN" || state === "UNSTABLE" || state === "HAS_HOOKS";
+}
+
 export function mergeVerdict(
   state: string,
   c: PrCheckRollup | null | undefined,
   awaited = false,
 ): { line: string; blocked: boolean } {
-  if (state !== "CLEAN") return { line: mergeBlockedWhy(state, c), blocked: true };
+  if (!githubWillMerge(state)) return { line: mergeBlockedWhy(state, c), blocked: true };
   const standing = checksStanding(c, awaited);
   if (standing === "green") return { line: "Ready to merge", blocked: false };
-  /* Red and CLEAN together is not a contradiction: it is GitHub saying those
-     checks are not required, and that is the difference between a button you
-     should not press and one you can. */
+  /* Red and mergeable together is not a contradiction: it is GitHub saying
+     those checks are not required, and that is the difference between a button
+     you should not press and one you can. */
   if (c && c.failure > 0) {
     return { line: `${c.failure} failing, and GitHub is not requiring ${c.failure === 1 ? "it" : "them"}`, blocked: false };
   }

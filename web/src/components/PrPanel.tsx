@@ -79,7 +79,7 @@ import { EMPTY as EMPTY_RULES, applyWith, type FilterSet } from "./tasks/filters
 import { Avatar } from "./Avatar.tsx";
 import { StatusPill } from "./StatusPill.tsx";
 import { PeekFile, type Peek } from "./PeekFile.tsx";
-import { MERGE_WHY, mergeBlockedWhy, checksLine, checksStanding, standingLine, checksShort, mergeVerdict } from "../../../shared/mergeReason.ts";
+import { MERGE_WHY, mergeBlockedWhy, checksLine, checksStanding, standingLine, checksShort, mergeVerdict, githubWillMerge } from "../../../shared/mergeReason.ts";
 import { parseQuery, applyFilters, peopleMatched, buildFacets, activeCount, readPrField, builderFields, queryToRules, type RepoFacets } from "../lib/prFilter.ts";
 import { CodeBlock as MdCodeBlock } from "../lib/mdCode.tsx";
 import { externalUrl, openExternal } from "../lib/externalUrl.ts";
@@ -4847,7 +4847,7 @@ export function PrView({ active, onOpenChatWith, onReviewInTerminal, jumpTo }: {
                     } : undefined}
                     onMerge={() => doMerge(mergeMethod)}
                     awaitingChecks={awaitingChecks}
-                    canMerge={d.mergeState === "CLEAN" || d.mergeState === "BEHIND"} />
+                    canMerge={githubWillMerge(d.mergeState) || d.mergeState === "BEHIND"} />
                   </div>
                 )}
 
@@ -5028,7 +5028,9 @@ function Overview({ d, root, busy, busyWhat, mergeWork, openThreads, conversatio
 }) {
   const c = d.checks;
   const [allFiles, setAllFiles] = useState(false);
-  const canMerge = d.mergeState === "CLEAN";
+  /* GitHub's own "mergeable" — see githubWillMerge for why that is not only
+     CLEAN. */
+  const canMerge = githubWillMerge(d.mergeState);
   /*
    * Behind the base branch is a state GitHub lets you merge from, and we did
    * not.
