@@ -48,7 +48,6 @@ import { BenchWeb } from "./BenchWeb.tsx";
 import { BoardSlot } from "../workspace/BoardSlot.tsx";
 import { RAIL_W } from "../workspace/ViewRail.tsx";
 import { TOP_BAR_H } from "../TopBar.tsx";
-import { VIEW_HEADER_H } from "../workspace/ViewHeader.tsx";
 import type { GitRepoRef } from "../../../../shared/types.ts";
 
 const edge = (pct: number) => `1px solid color-mix(in srgb, var(--text) ${pct}%, transparent)`;
@@ -56,16 +55,18 @@ const edge = (pct: number) => `1px solid color-mix(in srgb, var(--text) ${pct}%,
 /**
  * How far a grown window stays from the app's chrome, in pixels.
  *
- * Grown means the view's content: right of the rail, below the top bar AND
- * below the view's own header row, less this gap on every side. It was a percentage inset from the whole app — 4% a
+ * Grown means everything right of the rail and below the top bar, less this
+ * gap on every side. It covers the view's own header row — the terminal's
+ * session strip, a board's tabs — and that is fine: the bench is what you are
+ * working in while it is grown, and one step lower left a band of the view
+ * behind it for nothing. It was a percentage inset from the whole app — 4% a
  * side, and 8% along the bottom before that — which on a wide screen left
  * eighty pixels of margin that a board needed, and still did not say what the
- * window was growing INTO. The rail, the top bar and the view's header stay
- * uncovered on purpose: the rail is how a board moves back to its view, and
- * the header is where that view's own tabs are.
+ * window was growing INTO. The rail and the top bar stay uncovered on purpose:
+ * the rail is how a board moves back to its view, and the top bar is the app's.
  */
 const GROWN_GAP = 8;
-const GROWN_TOP = TOP_BAR_H + VIEW_HEADER_H + GROWN_GAP;
+const GROWN_TOP = TOP_BAR_H + GROWN_GAP;
 
 /** The floor the store clamps to, repeated here because the resize has to keep
  *  the anchored edge still WHILE it clamps — see onEdgeMove. */
