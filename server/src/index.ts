@@ -97,6 +97,7 @@ import {
   listIssues, issueDetail, issuePullRequests, startIssue, finishIssue, claimIssue, commentIssue, setIssueState, currentWork,
 } from "./issues.ts";
 import { currentRuns, runById, runActivity, startRun, adoptPane, finishRun } from "./runs.ts";
+import { failed } from "./refused.ts";
 import { providerStatuses, connectProvider, disconnectProvider, providerWorkspaces, chooseWorkspace, addViewByUrl, addClickupFolder, refreshFoldersIfStale, replaceViewUrl, readView } from "./providers.ts";
 import { savedViews, savedFolders, currentView, setCurrent, removeView, removeFolder, knownCardPrefix, boardHolding, setWritesAllowed } from "./clickupviews.ts";
 import { assignSelf, setAssignee, setCard, listMembers, setStatus, setPriority, setField, clearField, sprintLists, searchTasks, searchTasksStream, warmBodySweep, taskDetail, tagsForTask, findCard, cardPullRequests, clickupWriteEnabled, commentOn, updateTask, setTag, moveToList, createTask, addChecklist, addChecklistItem, setChecklistItem, editComment as editClickupComment, replyToComment, resolveComment, deleteComment as deleteClickupComment } from "./clickup.ts";
@@ -6713,7 +6714,7 @@ const server = Bun.serve<WsData>({
       const ext = /\.(png|jpe?g|gif|webp|heic)$/.exec(asked)?.[0] ?? ".png";
       const file = joinPath(makeViewTempDir("image"), `image${ext}`);
       try { fsWrite(file, bytes); } catch (e) {
-        return json({ ok: false, error: `could not write it: ${String(e)}` }, 500);
+        return json({ ok: false, error: failed("view/image", e, "the image could not be saved") }, 500);
       }
       return json({ ok: true, file });
     }
@@ -7610,7 +7611,7 @@ const server = Bun.serve<WsData>({
       try {
         return json(await generateWalkthrough(Array.isArray(b.files) ? b.files : []));
       } catch (e: any) {
-        return json({ available: true, reviewFocus: "", files: [], error: String(e?.message || e) });
+        return json({ available: true, reviewFocus: "", files: [], error: failed("walkthrough", e, "the walkthrough could not be written") });
       }
     }
     // Which sessions have a turn running right now. Read by any surface before
