@@ -46,18 +46,26 @@ import { BenchTerm } from "./BenchTerm.tsx";
 import { BenchNote } from "./BenchNote.tsx";
 import { BenchWeb } from "./BenchWeb.tsx";
 import { BoardSlot } from "../workspace/BoardSlot.tsx";
+import { RAIL_W } from "../workspace/ViewRail.tsx";
+import { TOP_BAR_H } from "../TopBar.tsx";
+import { VIEW_HEADER_H } from "../workspace/ViewHeader.tsx";
 import type { GitRepoRef } from "../../../../shared/types.ts";
 
 const edge = (pct: number) => `1px solid color-mix(in srgb, var(--text) ${pct}%, transparent)`;
 
 /**
- * How far a grown window stays from each edge of the app, in percent.
+ * How far a grown window stays from the app's chrome, in pixels.
  *
- * The same on all four sides. It was 4% on three and 8% along the bottom, for
- * no reason written anywhere, which on a board is a row of pull requests given
- * to empty space. Enough margin that the app behind still reads as behind.
+ * Grown means the view's content: right of the rail, below the top bar AND
+ * below the view's own header row, less this gap on every side. It was a percentage inset from the whole app — 4% a
+ * side, and 8% along the bottom before that — which on a wide screen left
+ * eighty pixels of margin that a board needed, and still did not say what the
+ * window was growing INTO. The rail, the top bar and the view's header stay
+ * uncovered on purpose: the rail is how a board moves back to its view, and
+ * the header is where that view's own tabs are.
  */
-const GROWN_INSET = 4;
+const GROWN_GAP = 8;
+const GROWN_TOP = TOP_BAR_H + VIEW_HEADER_H + GROWN_GAP;
 
 /** The floor the store clamps to, repeated here because the resize has to keep
  *  the anchored edge still WHILE it clamps — see onEdgeMove. */
@@ -478,10 +486,10 @@ export function FloatingBench() {
                  to work on would be a modal, and a modal is the thing this is
                  not. */
               style={{
-                left: `${st.grown ? GROWN_INSET : st.geom.x}%`,
-                top: `${st.grown ? GROWN_INSET : st.geom.y}%`,
-                width: `${st.grown ? 100 - 2 * GROWN_INSET : st.geom.w}%`,
-                height: `${st.grown ? 100 - 2 * GROWN_INSET : st.geom.h}%`,
+                left: st.grown ? RAIL_W + GROWN_GAP : `${st.geom.x}%`,
+                top: st.grown ? GROWN_TOP : `${st.geom.y}%`,
+                width: st.grown ? `calc(100% - ${RAIL_W + 2 * GROWN_GAP}px)` : `${st.geom.w}%`,
+                height: st.grown ? `calc(100% - ${GROWN_TOP + GROWN_GAP}px)` : `${st.geom.h}%`,
                 background: "var(--bg2)",
                 border: "1px solid color-mix(in srgb, var(--primary) 38%, transparent)",
                 boxShadow: "0 30px 70px -18px #000",

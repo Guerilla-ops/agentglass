@@ -59,6 +59,11 @@ function useRailActive(): string {
   return colour;
 }
 
+
+/** The rail's width. Exported because the bench, grown, fills everything the
+ *  rail and the top bar leave — see FloatingBench's GROWN_GAP. */
+export const RAIL_W = 52;
+
 export function ViewRail({
   view, onSelect, onSkills, onSettings, onMachine, pips,
 }: {
@@ -300,8 +305,9 @@ export function ViewRail({
         if (dragId && !e.currentTarget.contains(e.relatedTarget as Node | null)) setSlot(null);
       }}
       onDrop={commit}
-      className="w-[52px] shrink-0 flex flex-col gap-1 p-2 overflow-visible"
+      className="shrink-0 flex flex-col gap-1 p-2 overflow-visible"
       style={{
+        width: RAIL_W,
         /* THE RAIL IS CHROME, and it was painting the content's own colour.
          *
          * Measured across the whole window: 98.4% of every pixel this app
