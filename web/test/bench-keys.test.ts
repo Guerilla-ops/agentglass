@@ -45,12 +45,15 @@ describe("Escape belongs to what is in the tab", () => {
 });
 
 describe("a grown bench", () => {
-  it("keeps the same margin on every side", () => {
-    // It was 92% x 88% from a 4% corner: an 8% strip along the bottom that a
-    // board could have used, with nothing that said why.
-    expect(bench).toContain("const GROWN_INSET = 4;");
-    expect(bench).toContain("width: `${st.grown ? 100 - 2 * GROWN_INSET : st.geom.w}%`");
-    expect(bench).toContain("height: `${st.grown ? 100 - 2 * GROWN_INSET : st.geom.h}%`");
+  it("fills the view's content and leaves the rail, top bar and view header uncovered", () => {
+    // A percentage inset from the whole app left ~80px a side on a wide screen,
+    // and one that covered the rail would hide how a board goes back to its view.
+    expect(bench).toContain("const GROWN_GAP = 8;");
+    expect(bench).toContain("left: st.grown ? RAIL_W + GROWN_GAP");
+    expect(bench).toContain("const GROWN_TOP = TOP_BAR_H + VIEW_HEADER_H + GROWN_GAP;");
+    expect(bench).toContain("top: st.grown ? GROWN_TOP");
+    expect(bench).toContain("width: st.grown ? `calc(100% - ${RAIL_W + 2 * GROWN_GAP}px)`");
+    expect(bench).toContain("height: st.grown ? `calc(100% - ${GROWN_TOP + GROWN_GAP}px)`");
   });
 });
 
