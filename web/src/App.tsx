@@ -52,7 +52,7 @@ import { chordFromEvent, viewForChord, appActionForChord } from "./lib/keybindin
 import { openFocusedPaneDoor, type PaneDoor } from "./components/TerminalPanel.tsx";
 import { FilePalette } from "./components/FilePalette.tsx";
 import { FloatingBench } from "./components/bench/FloatingBench.tsx";
-import { toggleBench, showFile } from "./lib/benchStore.ts";
+import { benchTakesBoard, toggleBench, showFile } from "./lib/benchStore.ts";
 import { PeekFile, isRenderable, type Peek } from "./components/PeekFile.tsx";
 import { clearPeek, peekRequest, subscribePeek } from "./lib/openPeek.ts";
 import { requestFilesReveal } from "./lib/filesReveal.ts";
@@ -206,12 +206,15 @@ export default function App() {
    *  lib/openIssue.ts for why that link used to leave the app. */
   const [issueJump, setIssueJump] = useState<import("./lib/openIssue.ts").IssueJump | null>(null);
   useEffect(() => onOpenSettings((pane) => { setSettingsPane(pane ?? null); setSettingsOpen(true); }), []);
-  useEffect(() => onOpenPrs((j) => { setPrJump(j); goView("pr"); }), [goView]);
+  /* A board goes where the person is reading boards: the bench, when it is open
+     on one; the view otherwise. See benchTakesBoard. */
+  const toBoard = useCallback((kind: "pr" | "tasks") => { if (!benchTakesBoard(kind)) goView(kind); }, [goView]);
+  useEffect(() => onOpenPrs((j) => { setPrJump(j); toBoard("pr"); }), [toBoard]);
   /* The other half: a sender that knows exactly which pull request it means
      gets the panel's jump, which selects and opens, instead of a search. */
-  useEffect(() => onOpenPr(({ repo, number, mention }) => { requestPrJump(repo, number, { mention }); goView("pr"); }), [goView]);
-  useEffect(() => onOpenCard((j) => { setCardJump(j); goView("tasks"); }), [goView]);
-  useEffect(() => onOpenIssue((j) => { setIssueJump(j); goView("tasks"); }), [goView]);
+  useEffect(() => onOpenPr(({ repo, number, mention }) => { requestPrJump(repo, number, { mention }); toBoard("pr"); }), [toBoard]);
+  useEffect(() => onOpenCard((j) => { setCardJump(j); toBoard("tasks"); }), [toBoard]);
+  useEffect(() => onOpenIssue((j) => { setIssueJump(j); toBoard("tasks"); }), [toBoard]);
   /** Which machine tab is open, or none. One piece of state for both surfaces:
    *  the dashboard header and the workspace rail open the same panel, and a
    *  second copy would be a second poll of /proc. */

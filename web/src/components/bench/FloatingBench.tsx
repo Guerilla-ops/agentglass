@@ -38,16 +38,26 @@ import { shortPath } from "../../lib/shortPath.ts";
 import { appChordFor, chordLabel } from "../../lib/keybindings.ts";
 import {
   activateTab, activeTab, addTab, benchRoots, benchState, closeBench, closeTab, freeSlot, openBench,
-  setBenchFab, setBenchGeom, setBenchGrown, setBenchRoot, subscribeBench, tabsFor, zoomBench,
+  setBenchFab, setBenchGeom, setBenchGrown, setBenchRoot, showBoard, subscribeBench, tabsFor, zoomBench,
   READER_SLOT, type BenchTab,
 } from "../../lib/benchStore.ts";
 import { claimZoom } from "../../lib/zoomOwner.ts";
 import { BenchTerm } from "./BenchTerm.tsx";
 import { BenchNote } from "./BenchNote.tsx";
 import { BenchWeb } from "./BenchWeb.tsx";
+import { BoardSlot } from "../workspace/BoardSlot.tsx";
 import type { GitRepoRef } from "../../../../shared/types.ts";
 
 const edge = (pct: number) => `1px solid color-mix(in srgb, var(--text) ${pct}%, transparent)`;
+
+/**
+ * How far a grown window stays from each edge of the app, in percent.
+ *
+ * The same on all four sides. It was 4% on three and 8% along the bottom, for
+ * no reason written anywhere, which on a board is a row of pull requests given
+ * to empty space. Enough margin that the app behind still reads as behind.
+ */
+const GROWN_INSET = 4;
 
 /** The floor the store clamps to, repeated here because the resize has to keep
  *  the anchored edge still WHILE it clamps — see onEdgeMove. */
@@ -83,6 +93,8 @@ const GLYPH: Record<BenchTab["kind"], { glyph: string; tint: string }> = {
   note: { glyph: "▤", tint: "var(--success)" },
   web: { glyph: "◍", tint: "var(--warning)" },
   agent: { glyph: "✳", tint: "var(--error)" },
+  pr: { glyph: "⇄", tint: "var(--primary)" },
+  tasks: { glyph: "☑", tint: "var(--success)" },
 };
 
 /**
@@ -199,6 +211,12 @@ export function FloatingBench() {
     setMenuOpen(false);
   }, [root]);
 
+  const newBoard = useCallback((kind: "pr" | "tasks") => {
+    if (!root) return;
+    showBoard(root, kind);
+    setMenuOpen(false);
+  }, [root]);
+
   /**
    * An agent, in this checkout.
    *
@@ -278,6 +296,32 @@ export function FloatingBench() {
   const giveBack = useCallback(() => { release.current?.(); release.current = null; }, []);
   useEffect(() => giveBack, [giveBack]);
   useEffect(() => { if (!st.open) giveBack(); }, [st.open, giveBack]);
+  /*
+   * Held while the pointer is over the window or the focus is in it — asked of
+   * the DOM, not of React.
+   *
+   * A board shown here is rendered by the workspace and only its element sits
+   * in this window (see boardHost.ts), and React routes enter, leave, focus and
+   * blur along its own tree, not the page's. As JSX handlers, moving from the
+   * tab bar onto a board was "leaving the bench": measured in the rendered
+   * app, Ctrl+= with the pointer over a pull request left the bench at 100%.
+   */
+  useEffect(() => {
+    const el = winRef.current;
+    if (!st.open || !el) return;
+    const leave = () => { if (!el.contains(document.activeElement)) giveBack(); };
+    const blur = (e: FocusEvent) => { if (!el.contains(e.relatedTarget as Node | null)) giveBack(); };
+    el.addEventListener("pointerenter", take);
+    el.addEventListener("pointerleave", leave);
+    el.addEventListener("focusin", take);
+    el.addEventListener("focusout", blur);
+    return () => {
+      el.removeEventListener("pointerenter", take);
+      el.removeEventListener("pointerleave", leave);
+      el.removeEventListener("focusin", take);
+      el.removeEventListener("focusout", blur);
+    };
+  }, [st.open, take, giveBack]);
 
   /*
    * The zoom keys, at the window, for as long as the claim is held.
@@ -434,19 +478,15 @@ export function FloatingBench() {
                  to work on would be a modal, and a modal is the thing this is
                  not. */
               style={{
-                left: `${st.grown ? 4 : st.geom.x}%`,
-                top: `${st.grown ? 4 : st.geom.y}%`,
-                width: `${st.grown ? 92 : st.geom.w}%`,
-                height: `${st.grown ? 88 : st.geom.h}%`,
+                left: `${st.grown ? GROWN_INSET : st.geom.x}%`,
+                top: `${st.grown ? GROWN_INSET : st.geom.y}%`,
+                width: `${st.grown ? 100 - 2 * GROWN_INSET : st.geom.w}%`,
+                height: `${st.grown ? 100 - 2 * GROWN_INSET : st.geom.h}%`,
                 background: "var(--bg2)",
                 border: "1px solid color-mix(in srgb, var(--primary) 38%, transparent)",
                 boxShadow: "0 30px 70px -18px #000",
               }}
               onKeyDown={onKey}
-              onPointerEnter={take}
-              onPointerLeave={() => { if (!winRef.current?.contains(document.activeElement)) giveBack(); }}
-              onFocusCapture={take}
-              onBlurCapture={(e) => { if (!winRef.current?.contains(e.relatedTarget as Node | null)) giveBack(); }}
               role="dialog" aria-label="The bench">
 
               {/*
@@ -559,7 +599,7 @@ export function FloatingBench() {
                 <BenchMenu
                   root={root}
                   onClose={() => setMenuOpen(false)}
-                  onTerm={newTerm} onNote={newNote} onWeb={newWeb} onAgent={newAgent} />
+                  onTerm={newTerm} onNote={newNote} onWeb={newWeb} onAgent={newAgent} onBoard={newBoard} />
               )}
 
               {/* what is in the tab */}
@@ -714,6 +754,7 @@ function BenchFab() {
 /** Everything except a file. The file tabs share one editor and are rendered
  *  once, above — see the reader. */
 function TabBody({ root, tab, active }: { root: string; tab: BenchTab; active: boolean }) {
+  if (tab.kind === "pr" || tab.kind === "tasks") return <BoardSlot kind={tab.kind} place="bench" visible={active} />;
   if (tab.kind === "note") return <BenchNote root={root} active={active} />;
   if (tab.kind === "web") return <BenchWeb active={active} />;
   return <BenchTerm root={root} slot={tab.slot} agent={tab.kind === "agent" ? tab.agent : undefined} type={tab.type} active={active} />;
@@ -746,11 +787,12 @@ function Empty({ chord, onTerm, onNote, onWeb }: { chord: string; onTerm: () => 
   );
 }
 
-function BenchMenu({ root, onClose, onTerm, onNote, onWeb, onAgent }: {
+function BenchMenu({ root, onClose, onTerm, onNote, onWeb, onAgent, onBoard }: {
   root: string;
   onClose: () => void;
   onTerm: () => void; onNote: () => void; onWeb: () => void;
   onAgent: (a: { id: string; label: string }) => void;
+  onBoard: (kind: "pr" | "tasks") => void;
 }) {
   /*
    * A click anywhere else closes it — including inside this window.
@@ -800,6 +842,11 @@ function BenchMenu({ root, onClose, onTerm, onNote, onWeb, onAgent }: {
           <MenuRow glyph={GLYPH.web} label="Browser tab" onClick={onWeb} />
           <div className="px-3 pt-2 pb-1 text-[9px] uppercase tracking-wider" style={{ color: "var(--text4)" }}>An agent, in this checkout</div>
           {AGENTS.map((a) => <MenuRow key={a.id} glyph={GLYPH.agent} label={a.label} onClick={() => onAgent(a)} />)}
+          {/* Not "in this checkout": these are the app's two boards, and the
+              one here is the one the view shows — see boardHost.ts. */}
+          <div className="px-3 pt-2 pb-1 text-[9px] uppercase tracking-wider" style={{ color: "var(--text4)" }}>A board, moved here from its view</div>
+          <MenuRow glyph={GLYPH.pr} label="Pull requests" onClick={() => onBoard("pr")} />
+          <MenuRow glyph={GLYPH.tasks} label="Tasks" onClick={() => onBoard("tasks")} />
         </div>
         <div className="px-3 py-2 text-[10px]" style={{ borderTop: edge(12), color: "var(--text4)" }}>
           A file gets here from the palette, a diff or a pull request — wherever you were reading it.

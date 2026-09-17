@@ -73,6 +73,55 @@ describe("tabs belong to a checkout", () => {
   });
 });
 
+describe("showing a board", () => {
+  it("one tab per checkout, reused and activated", async () => {
+    const b = await load();
+    const first = b.showBoard(A, "pr");
+    b.addTab(A, { kind: "term", title: "shell" });
+    const again = b.showBoard(A, "pr");
+    expect(again.id).toBe(first.id);
+    expect(b.activeTabId(A)).toBe(first.id);
+    expect(b.tabsFor(A).filter((t) => t.kind === "pr")).toHaveLength(1);
+  });
+
+  it("runs nothing, so it takes no session number", async () => {
+    const b = await load();
+    expect(b.showBoard(A, "tasks").slot).toBe(0);
+    expect(b.addTab(A, { kind: "term", title: "shell" }).slot).toBe(1);
+  });
+
+  it("comes back after a reload", async () => {
+    // An unknown kind is dropped on read, so forgetting to list these would
+    // lose the tab on every restart without a word.
+    const b = await load();
+    b.showBoard(A, "pr");
+    b.showBoard(A, "tasks");
+    const again = await load();
+    expect(again.tabsFor(A).map((t) => t.kind)).toEqual(["pr", "tasks"]);
+  });
+});
+
+describe("a panel asking for a board", () => {
+  it("lands in the bench when the bench is open on a board", async () => {
+    // A card's "Open this pull request" pressed in the bench switched the view
+    // underneath and left the window covering the answer.
+    const b = await load();
+    b.showBoard(A, "tasks");
+    expect(b.benchTakesBoard("pr")).toBe(true);
+    expect(b.activeTab(A)?.kind).toBe("pr");
+  });
+
+  it("goes to the view when the bench is on something else, or closed", async () => {
+    const b = await load();
+    b.addTab(A, { kind: "term", title: "shell" });
+    expect(b.benchTakesBoard("pr")).toBe(false);
+    b.showBoard(A, "tasks");
+    b.closeBench();
+    expect(b.benchTakesBoard("pr")).toBe(false);
+    expect(b.tabsFor(A).some((t) => t.kind === "pr")).toBe(false);
+  });
+});
+
 describe("showing a file", () => {
   it("reuses the tab for the same file and only moves the line", async () => {
     const b = await load();

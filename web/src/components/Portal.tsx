@@ -1,6 +1,16 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { pushScope } from "../lib/findScope.ts";
+
+/**
+ * The lowest layer a portal may take, set by whoever hosts the panel.
+ *
+ * A panel writes its portals' numbers for the world it was built in. A board
+ * shown inside the bench is in a different one — the bench sits above those
+ * numbers — so the board is wrapped in a floor and every portal beneath it is
+ * lifted to it. Zero, the default, lifts nothing. See LAYER.benchOverlay.
+ */
+export const PortalFloor = createContext(0);
 
 /** Renders children into document.body so they escape panel stacking contexts.
  *
@@ -41,15 +51,20 @@ export function Portal({ children, z = 9999, find }: {
    * rather than a concession: there is no body to escape to.
    */
   const [el] = useState<HTMLElement | null>(() => (typeof document === "undefined" ? null : document.createElement("div")));
+  const layer = Math.max(z, useContext(PortalFloor));
   useEffect(() => {
     if (!el) return;
     el.style.position = "relative";
-    el.style.zIndex = String(z);
     document.body.appendChild(el);
     return () => {
       document.body.removeChild(el);
     };
-  }, [el, z]);
+  }, [el]);
+  /* Its own effect, so a board moving in or out of the bench restacks an open
+     card rather than detaching it — a detached element forgets its scroll. */
+  useEffect(() => {
+    if (el) el.style.zIndex = String(layer);
+  }, [el, layer]);
   useEffect(() => {
     if (!el || !find) return;
     return pushScope(el, typeof find === "number" ? find : 1);

@@ -19,6 +19,7 @@
 // eight, and the dashboard — fourteen panels and a poll every four seconds — is
 // not among them until you ask for it.
 import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
 import { hiddenOnly } from "./hiddenOnly.ts";
 import { ViewRail, type RailPip } from "./ViewRail.tsx";
 import { pushScope } from "../../lib/findScope.ts";
@@ -39,6 +40,10 @@ import { LanternView } from "../LanternView.tsx";
 import { SeatView } from "../SeatView.tsx";
 import { subscribeLantern, lanternNeed } from "../../lib/lanternStore.ts";
 import { requestTermReview } from "../../lib/termReview.ts";
+import { benchWants, boardActive, boardNode, boardPlace, subscribeBoards, type BoardKind } from "../../lib/boardHost.ts";
+import { BoardSlot } from "./BoardSlot.tsx";
+import { PortalFloor } from "../Portal.tsx";
+import { LAYER } from "../../lib/layers.ts";
 
 /**
  * Views that keep running with the door shut.
@@ -156,6 +161,15 @@ export function Workspace({
     setVisited((cur) => (cur.has(view) ? cur : new Set(cur).add(view)));
     saveLastView(view);
   }, [view]);
+  /* A board opened in the bench counts as a visit to its view: the board is
+     rendered here, with the view, and the view's box is where it goes back to
+     when the bench lets go of it. See lib/boardHost.ts. */
+  const benchPr = useSyncExternalStore(subscribeBoards, () => benchWants("pr"), () => false);
+  const benchTasks = useSyncExternalStore(subscribeBoards, () => benchWants("tasks"), () => false);
+  useEffect(() => {
+    const want = [benchPr && "pr", benchTasks && "tasks"].filter(Boolean) as ViewId[];
+    setVisited((cur) => (want.every((k) => cur.has(k)) ? cur : new Set([...cur, ...want])));
+  }, [benchPr, benchTasks]);
 
   const mounted = useMemo(
     () => VIEWS.filter((v) => visited.has(v.id) || KEEP_RUNNING.has(v.id)),
@@ -199,13 +213,16 @@ export function Workspace({
               <ViewBoundary label={v.label}>
                 {v.id === "dash"
                   ? dashboard(active)
-                  : <Body id={v.id} active={active} openChat={openChat} openChatWith={openChatWith} prJump={prJump}
-                      openBrowser={openBrowser} openLantern={openLantern}
-                      cardJump={cardJump} issueJump={issueJump} reviewInTerminal={reviewInTerminal} chatFocusId={chatFocusId} />}
+                  : <Body id={v.id} active={active} openChat={openChat}
+                      openBrowser={openBrowser} openLantern={openLantern} chatFocusId={chatFocusId} />}
               </ViewBoundary>
             </ViewBox>
           );
         })}
+        {BOARDS.filter((k) => visited.has(k)).map((k) => (
+          <BoardInstance key={k} kind={k} openChatWith={openChatWith} reviewInTerminal={reviewInTerminal}
+            prJump={prJump} cardJump={cardJump} issueJump={issueJump} />
+        ))}
       </div>
     </div>
   );
@@ -254,7 +271,7 @@ function ViewBox({ active, children }: { active: boolean; children: React.ReactN
 
 /** The non-dashboard views, and the props each one wants. Split out so the map
  *  above stays about mounting rather than about plumbing. */
-function BodyImpl({ id, active, openChat, openChatWith, openBrowser, openLantern, reviewInTerminal, chatFocusId, prJump, cardJump, issueJump }: {
+function BodyImpl({ id, active, openChat, openBrowser, openLantern, chatFocusId }: {
   id: ViewId; active: boolean;
   openChat: () => void;
   openLantern: () => void;
@@ -262,19 +279,16 @@ function BodyImpl({ id, active, openChat, openChatWith, openBrowser, openLantern
    *  open a container's port, so a dev server lands in a tab of this app
    *  instead of somewhere else. */
   openBrowser: () => void;
-  openChatWith: (cwd: string, prompt: string, title: string) => void;
-  reviewInTerminal: (root: string, number: number, recipe?: string, card?: string) => void;
   chatFocusId?: string | null;
-  prJump?: import("../../lib/openPrs.ts").PrJump | null;
-  cardJump?: import("../../lib/openCard.ts").CardJump | null;
-  issueJump?: import("../../lib/openIssue.ts").IssueJump | null;
 }) {
   switch (id) {
     case "files": return <FilesView active={active} />;
-    case "tasks": return <TasksView active={active} onOpenChatWith={openChatWith} cardJump={cardJump} issueJump={issueJump} />;
+    /* The two boards are not drawn here: this is one of the two places they
+       can be shown, and the board itself is rendered once, below. */
+    case "tasks": return <BoardSlot kind="tasks" place="rail" visible={active} />;
     case "git": return <GitView active={active} onOpenChat={openChat} />;
     case "diff": return <DiffPage active={active} />;
-    case "pr": return <PrView active={active} onOpenChatWith={openChatWith} onReviewInTerminal={reviewInTerminal} jumpTo={prJump} />;
+    case "pr": return <BoardSlot kind="pr" place="rail" visible={active} />;
     case "docker": return <DockerView active={active} onOpenBrowser={openBrowser} />;
     case "term": return <TermView active={active} />;
     case "chat": return <ChatView active={active} focusId={chatFocusId} />;
@@ -291,3 +305,46 @@ function BodyImpl({ id, active, openChat, openChatWith, openBrowser, openLantern
 }
 
 const Body = memo(BodyImpl, hiddenOnly);
+
+const BOARDS: BoardKind[] = ["pr", "tasks"];
+
+/**
+ * The one pull-request board, or the one task board.
+ *
+ * Rendered into an element that boardHost moves between the view and the bench,
+ * so it is mounted exactly once whichever of them is showing it, and `active` is
+ * whether the place holding it is on screen. Its own boundary, because a portal
+ * is outside the view box's. While the bench holds it, what it opens through a
+ * Portal is lifted above the bench — see PortalFloor.
+ */
+function BoardInstance({ kind, ...props }: Omit<BoardBodyProps, "active">) {
+  const active = useSyncExternalStore(subscribeBoards, () => boardActive(kind), () => false);
+  const inBench = useSyncExternalStore(subscribeBoards, () => boardPlace(kind) === "bench", () => false);
+  const node = boardNode(kind);
+  if (!node) return null;
+  return createPortal(
+    <PortalFloor.Provider value={inBench ? LAYER.benchOverlay : 0}>
+      <ViewBoundary label={VIEWS.find((v) => v.id === kind)?.label ?? kind}>
+        <BoardBody kind={kind} active={active} {...props} />
+      </ViewBoundary>
+    </PortalFloor.Provider>,
+    node,
+  );
+}
+
+interface BoardBodyProps {
+  kind: BoardKind; active: boolean;
+  openChatWith: (cwd: string, prompt: string, title: string) => void;
+  reviewInTerminal: (root: string, number: number, recipe?: string, card?: string) => void;
+  prJump?: import("../../lib/openPrs.ts").PrJump | null;
+  cardJump?: import("../../lib/openCard.ts").CardJump | null;
+  issueJump?: import("../../lib/openIssue.ts").IssueJump | null;
+}
+
+function BoardBodyImpl({ kind, active, openChatWith, reviewInTerminal, prJump, cardJump, issueJump }: BoardBodyProps) {
+  return kind === "pr"
+    ? <PrView active={active} onOpenChatWith={openChatWith} onReviewInTerminal={reviewInTerminal} jumpTo={prJump} />
+    : <TasksView active={active} onOpenChatWith={openChatWith} cardJump={cardJump} issueJump={issueJump} />;
+}
+
+const BoardBody = memo(BoardBodyImpl, hiddenOnly);
