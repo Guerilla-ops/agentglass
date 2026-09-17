@@ -820,7 +820,16 @@ export function ChatView({ active: visible, focusId, onClose = () => {} }: { act
     if (!open) return;
     api.gitRepos().then(({ repos }) => {
       setRepos(repos);
-      setDefaultCwd((c) => c || repos[0]?.root || "");
+      // `defaultCwd` is cached globally (see CWD_KEY below), so a value left
+      // over from a project switched away from — reload and all — survives
+      // into this one. Keeping it unless it still names a repo in *this*
+      // scope's list is what stops a chat from silently opening rooted in
+      // the project you just left, and then being filtered out of sight by
+      // the workspace scope below because its cwd cannot match.
+      setDefaultCwd((c) => {
+        const stillHere = repos.some((r) => c === r.root || c.startsWith(r.root.replace(/\/$/, "") + "/"));
+        return stillHere ? c : (repos[0]?.root || "");
+      });
     }).catch(() => {}).finally(() => setReposKnown(true));
     api.chatEnabled().then((r) => {
       setEnabled(r.enabled);
