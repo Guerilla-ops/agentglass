@@ -33,6 +33,20 @@ export const LAYER = {
   bench: 10030,
 
   /**
+   * What a board opens while it is inside the bench.
+   *
+   * The pull-request and task boards can be shown in the bench (see
+   * boardHost.ts), and what they open — a menu, a card, the file viewer — goes
+   * through a Portal at the number it was written for, which is the view's
+   * world: 9999, or the viewer's 10020. Both are UNDER the bench: measured in
+   * the rendered app, the reviewer picker opened from a pull request in the
+   * bench was covered by the window at every point sampled. Portal lifts
+   * anything below this floor while its board is in the bench. Below the
+   * palette, which still has to cover what it feeds.
+   */
+  benchOverlay: 10035,
+
+  /**
    * The file palette.
    *
    * Above the viewer, and that is the whole design rather than a detail: the
