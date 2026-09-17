@@ -22,6 +22,22 @@ const dir = join(new URL(".", import.meta.url).pathname, "..", "src");
 /** `error: String(e)` and its spellings, anywhere a value is handed back. */
 const RAW = /\berror:\s*String\(\s*(e|err|ex|error)\s*\)/;
 
+/** Where the answer a caller actually reads is built: a `json(...)` body, or a
+ *  `Response` assembled on the spot. */
+const ANSWER = /\bjson\(|new Response\(/;
+
+/** A caught exception's own text inside one, however it is spelled. The rule
+ *  above wants `String(` immediately after `error:`, so a `String(e)` dropped
+ *  into a sentence — or reached through one more operator — reads as a sentence
+ *  the app wrote and is the exception verbatim with a preface on it.
+ *
+ *  Its ceiling: a bare `e.message` is NOT caught here, because a refusal this
+ *  app defines is returned exactly that way — `SourceRefused` and
+ *  `IngestRefused` carry sentences written in this repository, which is the one
+ *  thing refused.ts says to hand back as itself. Separating those from a
+ *  `TypeError` needs to know what the class is, and a line of source does not. */
+const RAW_IN_ANSWER = /String\(\s*(?:e|err|ex|error)\b[^)]*\)/;
+
 describe("what a caller is told when something threw", () => {
   test("no module hands back the text of a caught exception", () => {
     const offenders: string[] = [];
@@ -34,6 +50,21 @@ describe("what a caller is told when something threw", () => {
     expect(
       offenders,
       "use failed(where, e, said) from refused.ts: it logs the real error and answers with a sentence",
+    ).toEqual([]);
+  });
+
+  test("no route answers with the text of a caught exception", () => {
+    const offenders: string[] = [];
+    for (const f of readdirSync(dir)) {
+      if (!f.endsWith(".ts")) continue;
+      readFileSync(join(dir, f), "utf8").split("\n").forEach((line, i) => {
+        const at = line.search(ANSWER);
+        if (at >= 0 && RAW_IN_ANSWER.test(line.slice(at))) offenders.push(`${f}:${i + 1}`);
+      });
+    }
+    expect(
+      offenders,
+      "an HTTP answer is the flow CodeQL traces: failed(where, e, said) instead",
     ).toEqual([]);
   });
 

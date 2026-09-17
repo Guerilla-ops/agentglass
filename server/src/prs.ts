@@ -3187,7 +3187,7 @@ export async function prAsset(rawUrl: unknown): Promise<Response> {
   try {
     res = await fetch(u.toString(), { headers, redirect: "follow", signal: AbortSignal.timeout(20_000) });
   } catch (e) {
-    return new Response(`upstream: ${String(e)}`, { status: 502 });
+    return new Response(failed("pr/asset", e, "upstream did not answer"), { status: 502 });
   }
   if (!res.ok) return new Response(`upstream ${res.status}`, { status: res.status === 404 ? 404 : 502 });
   const type = res.headers.get("content-type") || "application/octet-stream";
