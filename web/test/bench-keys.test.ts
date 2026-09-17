@@ -44,6 +44,16 @@ describe("Escape belongs to what is in the tab", () => {
   });
 });
 
+describe("a grown bench", () => {
+  it("keeps the same margin on every side", () => {
+    // It was 92% x 88% from a 4% corner: an 8% strip along the bottom that a
+    // board could have used, with nothing that said why.
+    expect(bench).toContain("const GROWN_INSET = 4;");
+    expect(bench).toContain("width: `${st.grown ? 100 - 2 * GROWN_INSET : st.geom.w}%`");
+    expect(bench).toContain("height: `${st.grown ? 100 - 2 * GROWN_INSET : st.geom.h}%`");
+  });
+});
+
 describe("where the bench sits", () => {
   it("above the viewer it takes files from", () => {
     // The viewer sends a file here; a window that opened underneath the thing

@@ -50,6 +50,15 @@ import type { GitRepoRef } from "../../../../shared/types.ts";
 
 const edge = (pct: number) => `1px solid color-mix(in srgb, var(--text) ${pct}%, transparent)`;
 
+/**
+ * How far a grown window stays from each edge of the app, in percent.
+ *
+ * The same on all four sides. It was 4% on three and 8% along the bottom, for
+ * no reason written anywhere, which on a board is a row of pull requests given
+ * to empty space. Enough margin that the app behind still reads as behind.
+ */
+const GROWN_INSET = 4;
+
 /** The floor the store clamps to, repeated here because the resize has to keep
  *  the anchored edge still WHILE it clamps — see onEdgeMove. */
 const MIN_W = 22;
@@ -469,10 +478,10 @@ export function FloatingBench() {
                  to work on would be a modal, and a modal is the thing this is
                  not. */
               style={{
-                left: `${st.grown ? 4 : st.geom.x}%`,
-                top: `${st.grown ? 4 : st.geom.y}%`,
-                width: `${st.grown ? 92 : st.geom.w}%`,
-                height: `${st.grown ? 88 : st.geom.h}%`,
+                left: `${st.grown ? GROWN_INSET : st.geom.x}%`,
+                top: `${st.grown ? GROWN_INSET : st.geom.y}%`,
+                width: `${st.grown ? 100 - 2 * GROWN_INSET : st.geom.w}%`,
+                height: `${st.grown ? 100 - 2 * GROWN_INSET : st.geom.h}%`,
                 background: "var(--bg2)",
                 border: "1px solid color-mix(in srgb, var(--primary) 38%, transparent)",
                 boxShadow: "0 30px 70px -18px #000",
