@@ -56,6 +56,7 @@ type DesktopBridge = {
   onDevtoolsZoom?: (fn: (at: { guest: number; level: number }) => void) => () => void;
   /** Absent on shells built before the inspector could be opened from a CLI. */
   onDevtoolsOpen?: (fn: (at: { guest: number; open: boolean }) => void) => () => void;
+  onAppBack?: (fn: (at: { back: boolean }) => void) => () => void;
   onBrowserInspect?: (fn: (at: { x: number; y: number }) => void) => () => void;
   setActiveBrowserGuest?: (id: number) => Promise<boolean>;
   browserPlaces?: (req: { source: string }) => Promise<{ ok: boolean; places?: ImportedPlace[]; error?: string }>;
@@ -287,6 +288,14 @@ export function onDevtoolsZoom(fn: (at: { guest: number; level: number }) => voi
  * source, including the panel's own opens: two sources for one fact are two
  * sources that can disagree.
  */
+/** The mouse's back (or forward) button. It arrives as a window app command —
+ *  Chromium never dispatches it to the page — so this is the only way a view
+ *  can hear it. Outside the desktop shell there is nothing to subscribe to. */
+export function onAppBack(fn: (at: { back: boolean }) => void): () => void {
+  const b = bridge();
+  return b?.onAppBack ? b.onAppBack(fn) : () => {};
+}
+
 export function onDevtoolsOpen(fn: (at: { guest: number; open: boolean }) => void): () => void {
   const b = bridge();
   return b?.onDevtoolsOpen ? b.onDevtoolsOpen(fn) : () => {};

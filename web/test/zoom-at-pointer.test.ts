@@ -26,7 +26,13 @@ const store = new Map<string, string>();
 };
 
 /** Whatever the DOM is pretending to hold this test. */
-let webviews: Array<{ rect: { left: number; top: number; right: number; bottom: number; width: number; height: number } }> = [];
+let webviews: Array<{
+  rect: { left: number; top: number; right: number; bottom: number; width: number; height: number };
+  /** What `getComputedStyle` says about it. The workspace hides an inactive
+   *  view with `visibility: hidden`, which keeps the layout box. */
+  visibility?: string;
+  display?: string;
+}> = [];
 let atPoint: { tag: string; xterm: boolean } | null = null;
 
 const rect = (left: number, top: number, w: number, h: number) =>
@@ -49,9 +55,19 @@ const listeners = new Map<string, (e: any) => void>();
 (globalThis as any).window = {
   addEventListener: (type: string, fn: (e: any) => void) => { listeners.set(type, fn); },
 };
+(globalThis as any).getComputedStyle = (el: any) => ({
+  visibility: el?.__visibility ?? "visible",
+  display: el?.__display ?? "block",
+});
 (globalThis as any).document = {
   querySelectorAll: (sel: string) =>
-    sel === "webview" ? webviews.map((v) => ({ getBoundingClientRect: () => v.rect })) : [],
+    sel === "webview"
+      ? webviews.map((v) => ({
+          getBoundingClientRect: () => v.rect,
+          __visibility: v.visibility ?? "visible",
+          __display: v.display ?? "block",
+        }))
+      : [],
   elementFromPoint: () => atPoint && { closest: (s: string) => (s === ".xterm" && atPoint!.xterm ? {} : null) },
 };
 
@@ -90,6 +106,34 @@ describe("is the pointer over a page", () => {
     webviews = [{ rect: rect(100, 200, 800, 600) }];
     pointAt(50, 50);
     expect(overBrowserPage()).toBe(false);
+  });
+
+  /*
+   * THE ONE THAT WAS WRONG ON A REAL SCREEN.
+   *
+   * The workspace keeps every view mounted and hides the inactive ones with
+   * `visibility: hidden` — on purpose, because `display: none` measures a
+   * terminal at zero and reflows it to one column. A hidden box keeps its
+   * layout, so the guest still had a full-size rect behind the task board, and
+   * Ctrl+ there zoomed a page nobody was looking at: the app never grew and the
+   * browser was found at 350% the next time it was opened.
+   */
+  test("no, when the browser view is merely hidden behind another", () => {
+    webviews = [{ rect: rect(0, 0, 1920, 1080), visibility: "hidden" }];
+    pointAt(800, 500);
+    expect(overBrowserPage()).toBe(false);
+  });
+
+  test("no, when it is display:none either", () => {
+    webviews = [{ rect: rect(0, 0, 1920, 1080), display: "none" }];
+    pointAt(800, 500);
+    expect(overBrowserPage()).toBe(false);
+  });
+
+  test("and yes again once that view is the one on screen", () => {
+    webviews = [{ rect: rect(0, 0, 1920, 1080), visibility: "visible" }];
+    pointAt(800, 500);
+    expect(overBrowserPage()).toBe(true);
   });
 
   test("and no for a panel that is not laid out", () => {

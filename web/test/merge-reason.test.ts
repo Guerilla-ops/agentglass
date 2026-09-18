@@ -12,8 +12,8 @@
  * box is worse than saying nothing, because the half that says "failing" is the
  * half that sends you to the browser.
  */
-import { describe, expect, it } from "bun:test";
-import { mergeBlockedWhy, checksLine, checksStanding, standingLine, mergeVerdict } from "../../shared/mergeReason.ts";
+import { describe, expect, it, test } from "bun:test";
+import { mergeBlockedWhy, checksLine, checksStanding, standingLine, mergeVerdict, githubWillMerge } from "../../shared/mergeReason.ts";
 import type { PrCheckRollup, PrCheck } from "../../shared/types.ts";
 
 const check = (name: string): PrCheck =>
@@ -193,3 +193,45 @@ describe("mergeVerdict, the one ladder", () => {
     expect(mergeVerdict("DIRTY", roll({})).line).toContain("conflicts");
   });
 });
+
+/*
+ * MERGEABLE IS GITHUB'S WORD, NOT OURS.
+ *
+ * `UNSTABLE` is what GitHub reports for a pull request whose failing or running
+ * checks are NOT required — its merge button is live. Only `CLEAN` was treated
+ * as mergeable here, so one failing optional job, with every required check
+ * green, two approvals and no conflicts, could be merged on github.com and not
+ * in this app: the button was disabled and captioned with the name of the job
+ * GitHub had already decided did not matter.
+ */
+describe("the states GitHub will merge", () => {
+  test("clean, unstable and has-hooks are mergeable", () => {
+    for (const s of ["CLEAN", "UNSTABLE", "HAS_HOOKS"]) expect(githubWillMerge(s)).toBe(true);
+  });
+
+  test("conflicts, drafts, a required gate and the unknown are not", () => {
+    for (const s of ["DIRTY", "DRAFT", "BLOCKED", "BEHIND", "UNKNOWN", ""]) expect(githubWillMerge(s)).toBe(false);
+  });
+
+  test("an unstable pull request with a failing optional job is not blocked", () => {
+    const v = mergeVerdict("UNSTABLE", rollup({ total: 65, success: 52, skipped: 12, failure: 1, failing: [check("optional-evals")] }));
+    expect(v.blocked).toBe(false);
+    /* And it still says so — merging past a red job is allowed, not silent. */
+    expect(v.line).toContain("failing");
+    expect(v.line).toContain("not requiring");
+  });
+
+  test("a blocked one still is", () => {
+    const v = mergeVerdict("BLOCKED", rollup({ total: 3, failure: 1, failing: [check("required-tests")] }));
+    expect(v.blocked).toBe(true);
+  });
+
+  test("the panel and the rail both ask this, not `=== \"CLEAN\"`", async () => {
+    for (const f of ["../src/components/PrPanel.tsx", "../src/components/FileRail.tsx"]) {
+      const src = await Bun.file(new URL(f, import.meta.url)).text();
+      expect(src, f).toContain("githubWillMerge(d.mergeState)");
+      expect(src, f).not.toMatch(/mergeState === "CLEAN"/);
+    }
+  });
+});
+

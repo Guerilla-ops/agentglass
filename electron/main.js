@@ -3654,6 +3654,26 @@ function createWindow() {
   // And once more on the way out, unthrottled: the debounce would otherwise be
   // cancelled by the process ending.
   win.on("close", () => { clearTimeout(saveTimer); saveWindowState(win); });
+  /*
+   * THE MOUSE'S BACK BUTTON NEVER REACHES THE PAGE.
+   *
+   * Chromium routes the thumb buttons to the embedder as an APP COMMAND, not
+   * as a DOM event: a renderer listening for `auxclick` waits for something
+   * that is never dispatched, which is exactly what the first attempt at this
+   * did. The window is the only place the press can be read.
+   *
+   * Forwarded as an intention rather than acted on here — what "back" means is
+   * a question about the view on screen, and the shell has no idea which one
+   * that is. A renderer with nothing to go back to ignores it, which is what
+   * the press did before.
+   */
+  win.on("app-command", (e, cmd) => {
+    if (cmd !== "browser-backward" && cmd !== "browser-forward") return;
+    /* Prevented, or Chromium follows it with a history navigation of its own
+       on a window whose history is the app itself. */
+    e.preventDefault();
+    try { win.webContents.send("ag:app-back", { back: cmd === "browser-backward" }); } catch { /* gone */ }
+  });
   win.on("closed", () => { if (mainWindow === win) mainWindow = null; });
 }
 

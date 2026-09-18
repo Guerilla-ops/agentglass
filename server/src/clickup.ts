@@ -183,6 +183,9 @@ export async function workspaces(token: string): Promise<CallResult<ClickUpWorks
  *  is left alone rather than modelled — the same rule tasks.ts follows. */
 interface RawTask {
   id: string;
+  /** Where it sits in its column, in the tracker's hand. A decimal too wide for
+   *  a number, so it is carried as the string it arrived as. */
+  orderindex?: string | number | null;
   custom_id?: string | null;
   name: string;
   url?: string;
@@ -304,6 +307,9 @@ export function toTask(raw: RawTask, myId?: string): ProviderTask {
     title: raw.name ?? "(untitled)",
     url: raw.url ?? "",
     status: raw.status?.status ?? "",
+    /* Kept as the string it arrived as: see `order` on ProviderTask for why a
+       number here loses the only thing it is for. */
+    ...(raw.orderindex != null ? { order: String(raw.orderindex) } : null),
     statusColor: raw.status?.color || undefined,
     /*
      * ClickUp's status TYPE is the only portable thing about a status.

@@ -17,6 +17,7 @@ import { FilterBuilder } from "./tasks/FilterBuilder.tsx";
 import { EMPTY, apply as applyFilters, fieldsOf, liveCount as builtCount, type FilterSet } from "./tasks/filters.ts";
 import type { GitRepoRef, IssueDetail, IssuePr, IssueRow, IssueWork, StartMode, LocalTask, TaskCapability, TasksListResponse, SkillInfo } from "../../../shared/types.ts";
 import type { ProviderTask, ProviderTasksResponse, SavedView, SavedFolder, ViewTasksResponse, ListStatus, ListField, ListPlace, ListMember, TaskDetail, CardEvent, CardField as CardFieldValue } from "../../../shared/providers.ts";
+import { compareOrder } from "../../../shared/orderIndex.ts";
 import { CardWrites } from "../lib/cardWrites.ts";
 import { activityRows, eventLine, foldLabel, folds, spanLabel, seenActor, NO_AUTHOR_NOTE } from "../lib/cardActivity.ts";
 import { layoutCard } from "../lib/cardLayout.ts";
@@ -2159,18 +2160,21 @@ function ClickUpBody({ active, repos, here, onOpenChatWith, jump }: {
       (by.get(k) ?? by.set(k, []).get(k)!).push(t);
     }
     /*
-     * Inside a status group, ClickUp's own order: priority first.
+     * Inside a status group, the tracker's own hand — nothing of ours.
      *
-     * Read off the list's default view rather than guessed — its `sorting` is
-     * `{ field: "priority" }`, which is what makes `URGENT` sit at the top of a
-     * column in ClickUp and looked arbitrary here. Cards with no priority keep
-     * the order the workspace sent them in, which is its own ranking, so this
-     * only ever LIFTS the flagged ones.
+     * Two things were wrong and they hid each other. The API returns a list in
+     * DESCENDING `orderindex` and the tracker's page draws it ASCENDING, so a
+     * column read bottom to top; and on top of that this lifted the flagged
+     * cards, which the page does not do — measured on a real column of nine,
+     * where the one card marked `Low` sits SECOND and would have gone last.
+     *
+     * So the order is the one the workspace keeps, which is the order somebody
+     * dragged the cards into, and a card the tracker has no position for goes
+     * last rather than first.
      */
-    const RANK: Record<string, number> = { urgent: 0, high: 1, normal: 2, low: 3 };
-    const byPriority = (list: ProviderTask[]) => [...list]
+    const byOrder = (list: ProviderTask[]) => [...list]
       .map((t, i) => ({ t, i }))
-      .sort((a, b) => (RANK[a.t.priority ?? ""] ?? 2.5) - (RANK[b.t.priority ?? ""] ?? 2.5) || a.i - b.i)
+      .sort((a, b) => compareOrder(a.t.order, b.t.order) || a.i - b.i)
       .map((x) => x.t);
 
     /*
@@ -2191,7 +2195,7 @@ function ClickUpBody({ active, repos, here, onOpenChatWith, jump }: {
     return [...by.entries()]
       .map(([status, list]) => ({
         status,
-        rows: byPriority(list),
+        rows: byOrder(list),
         color: order.get(status)?.color ?? list[0]?.statusColor,
         done: (order.get(status)?.type ?? "") === "done" || (order.get(status)?.type ?? "") === "closed",
         points: list.reduce((n, t) => n + (t.points ?? 0), 0),

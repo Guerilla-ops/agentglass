@@ -3,6 +3,16 @@
 @tailwind utilities;
 
 :root {
+  /*
+   * The face for somebody's WRITING, as opposed to the machine's.
+   *
+   * This app is monospace everywhere and that is the point — a column of paths
+   * lines up, a diff lines up, a log lines up. A paragraph of English does not
+   * benefit from any of that and pays for all of it, so the two places that
+   * hold prose somebody else wrote — the document viewer and a tracker card —
+   * read in this one instead. Named once so they cannot drift apart.
+   */
+  --font-prose: ui-sans-serif, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   /* fallback (github-dark, the default) until applyTheme() runs */
   --bg: #0d1117;
   --bg2: #161b22;
@@ -1426,7 +1436,40 @@ textarea.bg-transparent:focus-visible { outline: none !important; }
  * everything else sideways with them. Scaled down and given somewhere to scroll
  * rather than rewritten — the text belongs to whoever wrote the card.
  */
-.agx-cu-body { font-size: 12px; line-height: 1.62; color: var(--text2); }
+/*
+ * A CARD IS SOMEBODY'S PROSE, NOT A TERMINAL.
+ *
+ * The app is monospace on purpose and the card's description was too, which is
+ * the one place it costs: a paragraph of English set in a typewriter face at
+ * 12px with 1.62 leading is a wall, and the tracker's own page sets the same
+ * words proportionally with room to breathe. Held to `--font-prose`, the stack
+ * the document viewer already reads in, rather than a second opinion about
+ * type; code and tables stay monospace, because there the columns are the
+ * meaning.
+ */
+.agx-cu-body {
+  font-family: var(--font-prose);
+  font-size: 13px;
+  line-height: 1.72;
+  color: var(--text2);
+}
+/*
+ * AND THE PARAGRAPH REFLOWS TO THE PANE.
+ *
+ * The renderer keeps single newlines, which is right for a chat line and wrong
+ * for a card: these bodies are written in an editor that hard-wraps at about
+ * ninety columns, so every paragraph carried its own line endings and broke in
+ * the same place whatever the pane was — a column of text with a ragged gutter
+ * beside it, in the modal and out of it. Markdown's own rule is that a single
+ * newline is a space, and the tracker's page reflows for the same reason.
+ * A blank line is still a paragraph, and `pre` still keeps every break it has.
+ */
+.agx-cu-body :is(p, blockquote) { white-space: normal; }
+.agx-cu-body li > span { white-space: normal; }
+
+.agx-cu-body :is(code, pre, kbd, samp, table) {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+}
 /*
  * Section headings, with room around them.
  *
@@ -1439,24 +1482,24 @@ textarea.bg-transparent:focus-visible { outline: none !important; }
  */
 .agx-cu-body :is(h1, h2, h3, h4) { color: var(--text); font-weight: 650; }
 .agx-cu-body :is(h1, h2) {
-  font-size: 13.5px; margin: 20px 0 8px; padding-bottom: 4px;
+  font-size: 15px; margin: 26px 0 10px; padding-bottom: 6px;
   border-bottom: 1px solid color-mix(in srgb, var(--text) 11%, transparent);
 }
-.agx-cu-body :is(h3, h4) { font-size: 12.5px; margin: 16px 0 6px; }
+.agx-cu-body :is(h3, h4) { font-size: 13.5px; margin: 20px 0 8px; }
 .agx-cu-body :is(h1, h2, h3, h4):first-child { margin-top: 0; }
 /* Paragraphs apart, not stacked. ClickUp renders a full blank line between
    them and it is most of why the same words read as separated there. */
-.agx-cu-body p { margin: 10px 0; }
+.agx-cu-body p { margin: 12px 0; }
 .agx-cu-body p:first-child { margin-top: 0; }
 .agx-cu-body p:last-child { margin-bottom: 0; }
-.agx-cu-body li { font-size: 12px; line-height: 1.62; }
+.agx-cu-body li { font-size: 13px; line-height: 1.72; margin: 6px 0; }
 .agx-cu-body code { font-size: 11px; overflow-wrap: anywhere; }
 .agx-cu-body pre { overflow-x: auto; font-size: 11px; }
 /* Inside a highlighted block every token carries its own colour; the wrapper
    must not tint them, and the chip styling of INLINE code must not apply. */
 .agx-cu-body pre code { color: inherit; background: none; padding: 0; }
 .agx-cu-body table { display: block; overflow-x: auto; font-size: 11px; }
-.agx-cu-body ul, .agx-cu-body ol { padding-left: 16px; margin: 4px 0; }
+.agx-cu-body ul, .agx-cu-body ol { padding-left: 20px; margin: 10px 0; }
 /* A comment already sits in its own boxed card, so it does not need the rule
    under its headings or the full paragraph gap to read as separate. */
 .agx-cu-note { font-size: 11.5px; }
@@ -1622,7 +1665,7 @@ textarea.bg-transparent:focus-visible { outline: none !important; }
  * was designed with — this is not a better setting, it is a different job.
  */
 .agx-prose {
-  font-family: ui-sans-serif, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-family: var(--font-prose);
   line-height: 1.7;
   color: var(--text2);
   /* Long words — a path, a token, an identifier — break rather than push the
