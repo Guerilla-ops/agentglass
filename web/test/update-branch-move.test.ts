@@ -21,14 +21,14 @@ const head = (over: Partial<PrLocalHead> = {}): PrLocalHead =>
 describe("when there is nothing local to bring along", () => {
   it("behaves exactly as it did before if the server said nothing", () => {
     const m = updateBranchMove(56, "main", undefined);
-    expect(m.label).toBe("↻ Update branch · 56 behind");
+    expect(m.label).toBe("Update branch · 56 behind");
     expect(m.syncLocal).toBe(false);
     expect(m.note).toBeUndefined();
   });
 
   it("says nothing extra when this branch has no local copy", () => {
     const m = updateBranchMove(3, "main", head({ exists: false, sync: "absent" }));
-    expect(m.label).toBe("↻ Update branch · 3 behind");
+    expect(m.label).toBe("Update branch · 3 behind");
     expect(m.syncLocal).toBe(false);
     expect(m.note).toBeUndefined();
   });
@@ -37,7 +37,7 @@ describe("when there is nothing local to bring along", () => {
 describe("when the local copy can come along", () => {
   it("says so on the button, and asks for it", () => {
     const m = updateBranchMove(56, "main", head({ worktree: "/home/x/code/thing" }));
-    expect(m.label).toBe("↻ Update branch & pull · 56 behind");
+    expect(m.label).toBe("Update branch & pull · 56 behind");
     expect(m.syncLocal).toBe(true);
     expect(m.note).toBeUndefined();
     expect(m.title).toContain("/home/x/code/thing");
@@ -56,7 +56,7 @@ describe("when it cannot", () => {
   it("does not ask for a sync, and says why — uncommitted changes", () => {
     const m = updateBranchMove(56, "main", head({ sync: "dirty", dirty: true, worktree: "/home/x/code/agentglass-work" }));
     expect(m.syncLocal).toBe(false);
-    expect(m.label).toBe("↻ Update branch · 56 behind");
+    expect(m.label).toBe("Update branch · 56 behind");
     expect(m.note).toContain("uncommitted changes in agentglass-work");
     expect(m.note).toContain("stays put");
   });

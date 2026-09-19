@@ -91,6 +91,7 @@ import { AppearancePane } from "./ThemePicker.tsx";
 import { ShellConsole } from "./ShellConsole.tsx";
 import { CloseButton } from "./CloseButton.tsx";
 import { ICON } from "../lib/iconSize.ts";
+import { CheckboxIcon, ClockIcon, CrossIcon, DoneIcon } from "../lib/glyphIcons.tsx";
 import { ciOnlyApproved, setCiOnlyApproved } from "../lib/ciNotifyPref.ts";
 import { setTalkNotify, talkNotify, type TalkNotify } from "../lib/talkNotify.ts";
 import { RETENTION, setUnderstudyEnabled, useUnderstudy } from "./understudy/UnderstudyPanel.tsx";
@@ -183,7 +184,7 @@ function SetupCard({ title, steps, note, error }: {
                 : st.done === false
                   ? { color: "var(--warning)", background: "color-mix(in srgb, var(--warning) 16%, transparent)" }
                   : { color: "var(--text4)", background: "color-mix(in srgb, var(--text) 8%, transparent)" }}>
-              {st.done === true ? "✓" : i + 1}
+              {st.done === true ? <DoneIcon size={ICON.xs} /> : i + 1}
             </span>
             <span className="min-w-0">
               <span className="block text-[13px]" style={{ color: "var(--text)" }}>{st.title}</span>
@@ -491,7 +492,7 @@ const TABS: { id: Pane; label: string; group: TabGroup; kw: string; what?: strin
   /* Filed under the work rather than under the pull-request panel: these are
      prompts an agent is given, and the panel is only where the button happens
      to be. */
-  { id: "review-prompts", label: "Review prompts", group: "Agents & work", kw: "review prompts pr pull request claude menu skill re-review reviewer wording edit", what: "What ✦ Review with Claude offers, and the words it sends.", icon: ReviewIcon },
+  { id: "review-prompts", label: "Review prompts", group: "Agents & work", kw: "review prompts pr pull request claude menu skill re-review reviewer wording edit", what: "What Review with Claude offers, and the words it sends.", icon: ReviewIcon },
   { id: "saved-replies", label: "Saved replies", group: "Agents & work", kw: "saved replies canned comment pr pull request review wording snippet template", what: "The sentences you write over and over on other people's pull requests.", icon: QuoteIcon },
   { id: "export", label: "Export", group: "Your data", kw: "export download data json csv daily totals csv markdown events skills catalog", what: "Take your data out, in a shape a spreadsheet or a script can read.", icon: DownloadIcon },
   /* Its own section, not a block inside Tools & services: it is the engine
@@ -626,7 +627,7 @@ const PLACE_LABEL: Record<RailPlace, string> = { work: "Top group", utility: "Bo
 const PLACE_NOTE: Record<RailPlace, string> = {
   work: "Where you work. The only group the numbers count through — ⌘1 to ⌘9, in this order.",
   utility: "What you go and look at, down with settings and ports. No numbers here; record a combination on the Shortcuts page if one of these needs a key.",
-  hidden: "Off the rail. Nothing is lost — put one back from here, or from the ＋ at the foot of the rail.",
+  hidden: "Off the rail. Nothing is lost — put one back from here, or from the + at the foot of the rail.",
 };
 
 /**
@@ -849,7 +850,7 @@ function KeyRow({ id, keyName, capturing, onCapture, error, chord }: {
             // not reach. Still clickable: recording one is exactly how you give
             // a bottom-drawer or hidden view a key of its own.
             title={chord.custom
-              ? `${chordLabel(chord.key)} opens this — click to record another, ✕ to go back to its rail position`
+              ? `${chordLabel(chord.key)} opens this — click to record another, or the cross to go back to its rail position`
               : chord.key
                 ? `${chordLabel(chord.key)} opens this, from its position in the top group — click to record your own`
                 : "Only the top group is numbered — click to record a combination for this one"}
@@ -1017,7 +1018,7 @@ function ActionLine({ a, times = 1 }: { a: ActionRecord; times?: number }) {
         style={{ color: a.ok ? "var(--text4)" : "var(--error)" }}
         title={a.ok ? "succeeded" : a.detail || "failed"}
       >
-        {a.ok ? "·" : "✕"}
+        {a.ok ? "·" : <CrossIcon size={ICON.xs} />}
       </span>
       <span className="min-w-0">
         <span className="text-[11.5px]" style={{ color: "var(--text)" }}>{verb(a.action)}</span>
@@ -1054,7 +1055,7 @@ function GateLine({ g }: { g: GateRecord }) {
         style={{ color: nobody ? "var(--warning)" : g.decision === "deny" ? "var(--error)" : "var(--text4)" }}
         title={nobody ? "nobody decided this" : "decided by a person"}
       >
-        {nobody ? "⏱" : "·"}
+        {nobody ? <ClockIcon size={ICON.xs} /> : "·"}
       </span>
       <span className="min-w-0">
         <span className="text-[11.5px]" style={{ color: "var(--text)" }}>{did}</span>
@@ -1671,7 +1672,7 @@ function CookieImport() {
                 <button key={s.site} onClick={() => setChosen((c) => { const n = new Set(c); if (on) n.delete(s.site); else n.add(s.site); return n; })}
                   className="agx-btn w-full text-left px-2 py-1 rounded flex items-center gap-2 text-[11px]"
                   style={{ background: on ? "color-mix(in srgb, var(--primary) 13%, transparent)" : "transparent", color: "var(--text)" }}>
-                  <span style={{ color: on ? "var(--primary-hover)" : "var(--text4)" }}>{on ? "☑" : "☐"}</span>
+                  <span className="flex" style={{ color: on ? "var(--primary-hover)" : "var(--text4)" }}><CheckboxIcon size={ICON.sm} checked={on} /></span>
                   <span className="flex-1 truncate">{s.site}</span>
                   <span className="t-dim2 tabular-nums text-[10px]">{s.cookies}</span>
                 </button>
@@ -1698,12 +1699,12 @@ function CookieImport() {
           <span className="t-dim2">Bring along:</span>
           <button onClick={() => { const next = !wantHistory; setWantHistory(next); setImportHistory(next); }}
             className="agx-btn flex items-center gap-1.5 px-1.5 py-0.5 rounded" title="Your browsing history, so the address bar completes what you type.">
-            <span style={{ color: wantHistory ? "var(--primary-hover)" : "var(--text4)" }}>{wantHistory ? "☑" : "☐"}</span>
+            <span className="flex" style={{ color: wantHistory ? "var(--primary-hover)" : "var(--text4)" }}><CheckboxIcon size={ICON.sm} checked={wantHistory} /></span>
             <span>browsing history</span>
           </button>
           <button onClick={() => { const next = !wantBookmarks; setWantBookmarks(next); setImportBookmarks(next); }}
             className="agx-btn flex items-center gap-1.5 px-1.5 py-0.5 rounded" title="The pages you bookmarked, ranked first in the address bar.">
-            <span style={{ color: wantBookmarks ? "var(--primary-hover)" : "var(--text4)" }}>{wantBookmarks ? "☑" : "☐"}</span>
+            <span className="flex" style={{ color: wantBookmarks ? "var(--primary-hover)" : "var(--text4)" }}><CheckboxIcon size={ICON.sm} checked={wantBookmarks} /></span>
             <span>bookmarks</span>
           </button>
           <span className="t-dim2 text-[10px]">— cookies are chosen per site above</span>

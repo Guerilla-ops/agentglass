@@ -38,12 +38,12 @@ export function updateBranchMove(behind: number | null, base: string, local?: Pr
   // No answer about the local copy (an older server, a failed read) behaves
   // exactly as it did before: the remote half, and no promises about here.
   if (!local || local.sync === "absent") {
-    return { label: `↻ Update branch${count}`, title: far, syncLocal: false };
+    return { label: `Update branch${count}`, title: far, syncLocal: false };
   }
 
   if (local.sync === "ff") {
     return {
-      label: `↻ Update branch & pull${count}`,
+      label: `Update branch & pull${count}`,
       title: `${far} Then fast-forwards your ${local.worktree ? `checkout in ${local.worktree}` : `local ${local.branch}`}.`,
       syncLocal: true,
     };
@@ -59,7 +59,7 @@ export function updateBranchMove(behind: number | null, base: string, local?: Pr
       : `uncommitted changes in ${tail(local.worktree)} — your local ${local.branch} stays put`;
 
   return {
-    label: `↻ Update branch${count}`,
+    label: `Update branch${count}`,
     title: `${far} Your local copy is not touched: ${local.sync === "diverged"
       ? `it has ${local.ahead} commit${local.ahead === 1 ? "" : "s"} that GitHub does not`
       : local.sync === "busy"

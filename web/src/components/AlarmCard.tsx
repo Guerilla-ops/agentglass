@@ -19,6 +19,7 @@ import { liveReminders, nudgeReminders, subscribeReminders } from "../lib/remind
 import { LAYER } from "../lib/layers.ts";
 import { CloseButton } from "./CloseButton.tsx";
 import { ICON } from "../lib/iconSize.ts";
+import { ClockIcon, HandIcon } from "../lib/glyphIcons.tsx";
 
 /** How long "later" is. Ten minutes is the snooze every clock on earth defaults
  *  to, and a number nobody has to think about is the right one here. */
@@ -79,7 +80,7 @@ export function AlarmCard(
 
       <div className="p-3.5 flex flex-col gap-2.5">
         <div className="flex items-center gap-2">
-          <span aria-hidden style={{ color: "var(--warning)", fontSize: ICON.md, lineHeight: 1 }}>{deputy ? "🙋" : "⏰"}</span>
+          <span aria-hidden className="flex" style={{ color: "var(--warning)" }}>{deputy ? <HandIcon size={ICON.md} /> : <ClockIcon size={ICON.md} />}</span>
           <span className="text-[10px] uppercase tracking-wider" style={{ color: "var(--warning)" }}>{deputy ? "Clone" : "Reminder"}</span>
           <span className="text-[10px] tabular-nums" style={{ color: "var(--text4)" }}>{alarm.when}</span>
           {/* Closing the card is not answering it: the reminder stays live and

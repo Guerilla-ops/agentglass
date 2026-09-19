@@ -48,6 +48,7 @@ import { useSidebarWidth } from "../lib/sidebarWidth.ts";
 import { SidebarGrip } from "./SidebarGrip.tsx";
 import { CloseButton } from "./CloseButton.tsx";
 import { ICON } from "../lib/iconSize.ts";
+import { BoltIcon, CopyIcon, IconLabel, PinIcon, RefreshIcon, StarIcon } from "../lib/glyphIcons.tsx";
 
 // Claude's list arrives from the server, like the other two agents'. It is data
 // there (shared/claude-models.json), filtered to the models whose shutdown date
@@ -67,7 +68,7 @@ const MODES = [
   { id: "default", label: "Ask (denies un-allowed)" },
   { id: "plan", label: "Plan (no edits)" },
   { id: "acceptEdits", label: "Auto-accept edits" },
-  { id: "bypassPermissions", label: "⚡ Bypass (runs all)" },
+  { id: "bypassPermissions", label: "Bypass (runs all)" },
 ];
 
 // Codex draws its line around the filesystem rather than per tool call, so it
@@ -77,7 +78,7 @@ const MODES = [
 const CODEX_MODES = [
   { id: "read-only", label: "Read-only (no writes)" },
   { id: "workspace-write", label: "Write in this repo" },
-  { id: "full-access", label: "⚡ Full access (no sandbox)" },
+  { id: "full-access", label: "Full access (no sandbox)" },
 ];
 
 // Antigravity's four land on Claude's, because it really does decide per tool
@@ -88,7 +89,7 @@ const ANTIGRAVITY_MODES = [
   { id: "request-review", label: "Ask (denies un-allowed)" },
   { id: "plan", label: "Plan (no edits)" },
   { id: "accept-edits", label: "Auto-accept edits" },
-  { id: "always-proceed", label: "⚡ Bypass (runs all)" },
+  { id: "always-proceed", label: "Bypass (runs all)" },
 ];
 
 /** Before the server has answered, and for a CLI that is not installed. */
@@ -1425,9 +1426,9 @@ export function ChatView({ active: visible, focusId, onClose = () => {} }: { act
                             style={active.panePinned
                               ? { color: "var(--primary-hover)", background: "color-mix(in srgb, var(--primary) 14%, transparent)", border: "1px solid color-mix(in srgb, var(--primary) 45%, transparent)" }
                               : { color: "var(--text3)", border: "1px solid color-mix(in srgb, var(--border) 45%, transparent)" }}
-                          >{active.panePinned ? "📌 Pinned" : "📌 Pin"}</button>
+                          ><IconLabel icon={<PinIcon size={ICON.xs} />}>{active.panePinned ? "Pinned" : "Pin"}</IconLabel></button>
                         )}
-                        {active.sessionId && <span className="text-[9.5px] t-dim2 tabular-nums" title="Resuming this session">↻ {active.sessionId.slice(0, 8)}</span>}
+                        {active.sessionId && <span className="text-[9.5px] t-dim2 tabular-nums" title="Resuming this session"><IconLabel icon={<RefreshIcon size={ICON.xs} />}>{active.sessionId.slice(0, 8)}</IconLabel></span>}
                         {/* Pushed right so the two copy actions sit together at
                             the end of the header rather than between pickers. */}
                         <span className="ml-auto flex items-center gap-1.5">
@@ -1441,7 +1442,7 @@ export function ChatView({ active: visible, focusId, onClose = () => {} }: { act
                           {engineFor(active) === "tmux" && (
                             active.attachCommand ? (
                               <CopyButton
-                                label="⧉ tmux"
+                                label="tmux"
                                 title={`This chat runs in a tmux pane. Copy the command that opens it in your own terminal, where you can keep typing:\n\n${active.attachCommand}`}
                                 text={() => active.attachCommand!}
                               />
@@ -1450,7 +1451,7 @@ export function ChatView({ active: visible, focusId, onClose = () => {} }: { act
                                 className="text-[10px] px-2 py-1 rounded-md shrink-0"
                                 style={{ color: "var(--text3)", border: "1px dashed color-mix(in srgb, var(--border) 35%, transparent)" }}
                                 title="This chat will run in a tmux pane. The pane starts with the first message, and this turns into a button that copies the command to open it in your terminal."
-                              >⧉ tmux on send</span>
+                              ><IconLabel icon={<CopyIcon size={ICON.xs} />}>tmux on send</IconLabel></span>
                             )
                           )}
                           <CopyButton
@@ -1641,7 +1642,7 @@ export function ChatView({ active: visible, focusId, onClose = () => {} }: { act
                             title={`${k.description}${k.calls ? `\n\nRun ${k.calls} time${k.calls === 1 ? "" : "s"}` : ""}`}
                             className="text-[10.5px] px-2 py-1 rounded-md shrink-0 flex items-center gap-1"
                             style={{ color: "var(--text2)", border: "1px solid color-mix(in srgb, var(--border) 40%, transparent)" }}>
-                            {pinnedNames.includes(k.name) && <span style={{ color: "var(--primary-hover)" }}>★</span>}
+                            {pinnedNames.includes(k.name) && <span className="flex" style={{ color: "var(--primary-hover)" }}><StarIcon size={ICON.xs} filled /></span>}
                             /{k.name}
                           </button>
                         ))}
@@ -1715,7 +1716,7 @@ export function ChatView({ active: visible, focusId, onClose = () => {} }: { act
                               aria-label={pinnedNames.includes(k.name) ? `Unpin ${k.name}` : `Pin ${k.name}`}
                               className="ml-auto shrink-0 text-[10px] px-1 leading-none hover:opacity-100"
                               style={{ color: pinnedNames.includes(k.name) ? "var(--primary-hover)" : "var(--text3)", opacity: pinnedNames.includes(k.name) ? 1 : 0.55 }}
-                            >★</button>
+                            ><StarIcon size={ICON.xs} filled={pinnedNames.includes(k.name)} /></button>
                           </div>
                         ))}
                         <div className="px-2.5 py-1 text-[9.5px] t-dim2" style={{ borderTop: "1px solid color-mix(in srgb, var(--border) 30%, transparent)" }}>
@@ -1805,7 +1806,7 @@ export function ChatView({ active: visible, focusId, onClose = () => {} }: { act
                       {hint
                         ? <span style={{ color: "var(--warning)" }}>{hint}</span>
                         : <>Runs {cliName(active?.agent ?? "claude")} in {active ? repoName(active.cwd) || "the repo" : "the repo"} · {modesFor(active?.agent ?? "claude").find((x) => x.id === active?.mode)?.label} · tool calls fold away, click to open</>}
-                      {active && active.mode === bypassMode(active.agent) && <span style={{ color: "var(--warning)" }}> · ⚡ runs tools unattended</span>}
+                      {active && active.mode === bypassMode(active.agent) && <span className="inline-flex items-center gap-1" style={{ color: "var(--warning)" }}> · <BoltIcon size={ICON.xs} />runs tools unattended</span>}
                     </div>
                   </div>
                 </div>

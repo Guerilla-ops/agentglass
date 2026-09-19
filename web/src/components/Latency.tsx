@@ -3,6 +3,8 @@ import { motion } from "motion/react";
 import type { StatsSummary } from "../../../shared/types.ts";
 import { Panel } from "./Panel.tsx";
 import { fmtMs } from "../lib/format.ts";
+import { CrossIcon } from "../lib/glyphIcons.tsx";
+import { ICON } from "../lib/iconSize.ts";
 
 export const Latency = memo(function Latency({ stats }: { stats: StatsSummary | null }) {
   const tools = (stats?.tool_latency ?? []).slice(0, 10);
@@ -21,7 +23,7 @@ export const Latency = memo(function Latency({ stats }: { stats: StatsSummary | 
               <div className="flex items-center justify-between text-[11px] mb-0.5">
                 <span style={{ color: "var(--text2)" }}>
                   {t.tool_name}
-                  {t.errors > 0 && <span className="ml-1.5" style={{ color: "var(--error)" }}>{t.errors}✕</span>}
+                  {t.errors > 0 && <span className="ml-1.5 inline-flex items-center gap-0.5" style={{ color: "var(--error)" }}>{t.errors}<CrossIcon size={ICON.xs} /></span>}
                   {/* The percentile sample, said out loud when it is not the
                       call count. A Post with no paired Pre is an invocation
                       with no duration, so "200 calls · p95 5ms" could be five

@@ -8,6 +8,8 @@ import { MERGE_OPTION, mergeBody, mergeSubject, type MergeMethod, type MergeComm
 import { LEAVE_ALONE, movesCard, statusColor, statusOptions, type CardMove } from "../lib/cardMove.ts";
 import { api } from "../lib/api.ts";
 import { MOD_KEY } from "../lib/format.ts";
+import { WarningIcon } from "../lib/glyphIcons.tsx";
+import { ICON } from "../lib/iconSize.ts";
 
 /**
  * The last question before a pull request lands.
@@ -270,7 +272,7 @@ export function MergeDialog({ pending }: { pending: Pending | null }) {
                 <div className="px-4 py-2.5 text-[11.5px] leading-relaxed flex items-start gap-2"
                   style={{ color: "var(--text2)", background: "color-mix(in srgb, var(--warning) 10%, transparent)",
                     borderBottom: "1px solid color-mix(in srgb, var(--warning) 35%, transparent)" }}>
-                  <span aria-hidden style={{ fontSize: 14, lineHeight: "18px", color: "var(--warning)" }}>⚠</span>
+                  <span aria-hidden className="flex" style={{ height: 18, alignItems: "center", color: "var(--warning)" }}><WarningIcon size={ICON.sm} /></span>
                   <span>
                     <b style={{ color: "var(--text)", fontWeight: 500 }}>
                       {pending.awaitingReview!.slice(0, 3).join(", ")}

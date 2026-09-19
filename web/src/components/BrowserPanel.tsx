@@ -64,6 +64,7 @@ import {
   HomeIcon, LockIcon, MoreIcon, NoteIcon, PenIcon, ReloadIcon, SearchIcon,
   SpinnerIcon, StopIcon, TargetIcon, FolderIcon, ContainerIcon, SpaceIcon, CameraIcon, PanelIcon, UpIcon, DownIcon, SplitIcon,
 } from "./browser/icons.tsx";
+import { DoneIcon, SwapIcon } from "../lib/glyphIcons.tsx";
 
 /** Electron's `<webview>` is not in React's JSX catalogue, and its methods are
  *  not on HTMLElement. Narrowed to the handful actually called here rather than
@@ -2306,7 +2307,7 @@ export function BrowserView({ active: viewOn, scope }: {
           <button key={v.name} onClick={() => { setMenuOpen(false); setViewport(v); }}
             className="w-full text-left px-3 py-1.5 flex items-center gap-3"
             style={{ color: v.name === viewport.name ? "var(--text)" : "var(--text2)" }}>
-            <span className="w-3 shrink-0">{v.name === viewport.name ? "✓" : ""}</span>
+            <span className="w-3 shrink-0 flex">{v.name === viewport.name ? <DoneIcon size={ICON.xs} /> : null}</span>
             <span className="flex-1">{v.name}</span>
             {v.width ? <span className="text-[9.5px] tabular-nums" style={{ color: "var(--text4)" }}>{v.width}px</span> : null}
           </button>
@@ -2884,7 +2885,7 @@ export function BrowserView({ active: viewOn, scope }: {
               <button onClick={() => { const other = splitId!; setSplitId(activeId); show(other); }}
                 title="Put the bar on this side" aria-label="Swap the sides"
                 className="grid place-items-center rounded-md"
-                style={{ width: 24, height: 24, background: "var(--bg2)", color: "var(--text3)", border: "1px solid color-mix(in srgb, var(--border) 55%, transparent)" }}>⇄</button>
+                style={{ width: 24, height: 24, background: "var(--bg2)", color: "var(--text3)", border: "1px solid color-mix(in srgb, var(--border) 55%, transparent)" }}><SwapIcon size={ICON.sm} /></button>
               <CloseButton onClick={() => setSplitId(null)} title="Close the split" hit={24}
                 style={{ background: "var(--bg2)", color: "var(--text3)", border: "1px solid color-mix(in srgb, var(--border) 55%, transparent)" }} />
             </div>

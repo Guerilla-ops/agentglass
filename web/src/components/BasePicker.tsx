@@ -1,6 +1,8 @@
 import { useLayoutEffect, useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Portal } from "./Portal.tsx";
+import { DoneIcon } from "../lib/glyphIcons.tsx";
+import { ICON } from "../lib/iconSize.ts";
 
 /**
  * Pick what a branch is measured and merged against.
@@ -129,7 +131,7 @@ export function BasePicker({
                     scrolling a list of 800 to find the highlighted row. */}
                 <div className="mx-1.5 mb-1 px-2 py-1.5 rounded-md flex items-center gap-2 shrink-0"
                   style={{ background: "color-mix(in srgb, var(--primary) 15%, transparent)", border: "1px solid color-mix(in srgb, var(--primary) 35%, transparent)" }}>
-                  <span className="shrink-0" style={{ color: "var(--primary-hover)" }}>✓</span>
+                  <span className="shrink-0 flex" style={{ color: "var(--primary-hover)" }}><DoneIcon size={ICON.xs} /></span>
                   <span className="min-w-0 flex-1 truncate" style={{ color: "var(--text)" }} title={base ?? ""}>{base ?? "no base"}</span>
                   <span className="shrink-0 text-[10px] t-dim2">current base</span>
                 </div>

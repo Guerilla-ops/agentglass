@@ -15,6 +15,7 @@ import { sessionIsLive } from "../lib/derive.ts";
 import { sessionWorktree, sessionCwd } from "../lib/worktree.ts";
 import { useStuckBottom } from "../lib/useStuckBottom.ts";
 import { CloseButton } from "./CloseButton.tsx";
+import { BranchIcon, CopyIcon, IconLabel } from "../lib/glyphIcons.tsx";
 
 const TOOL_RAMP = ["#a78bfa", "#f472b6", "#34d399", "#60a5fa", "#fbbf24", "#22d3ee", "#a3e635", "#fb923c"];
 const shortType = (t: string) => t.replace(/^workflow-subagent$/, "workflow").replace(/^general-purpose$/, "general");
@@ -163,7 +164,7 @@ export function SessionModal({ sessionId, sourceApp, onClose, onFilter, onResume
                     {d && sessionWorktree(d) && (
                       <span className="chip" title={`Linked worktree — ran in ${d.cwd_path}`}
                         style={{ color: "var(--primary-hover)", background: "color-mix(in srgb, var(--primary) 15%, transparent)" }}>
-                        ⑂ {sessionWorktree(d)}
+                        <BranchIcon size={ICON.xs} className="inline-block align-[-2px] mr-1" />{sessionWorktree(d)}
                       </span>
                     )}
                     {d && <span className="text-[10px] t-dim2">{durLabel} · last {fmtAgo(d.last_seen)} ago</span>}
@@ -192,7 +193,7 @@ export function SessionModal({ sessionId, sourceApp, onClose, onFilter, onResume
                     )}
                     {d && onFilter && (
                       <button onClick={() => { onFilter(d.source_app); onClose(); }} className="chip cursor-pointer" style={{ color: "var(--primary-hover)", background: "color-mix(in srgb, var(--primary) 16%, transparent)", borderColor: "color-mix(in srgb, var(--primary) 45%, transparent)" }}>
-                        ⧉ Watch in live feed
+                        <IconLabel icon={<CopyIcon size={ICON.xs} />}>Watch in live feed</IconLabel>
                       </button>
                     )}
                     <CloseButton onClick={onClose} />

@@ -3,6 +3,8 @@ import { motion, AnimatePresence } from "motion/react";
 import { Portal } from "./Portal.tsx";
 import { Avatar } from "./Avatar.tsx";
 import { StatusPill } from "./StatusPill.tsx";
+import { DoneIcon, DotIcon } from "../lib/glyphIcons.tsx";
+import { ICON } from "../lib/iconSize.ts";
 
 /**
  * A multi-select facet dropdown, GitHub-style: a pill that opens a checkbox list
@@ -192,7 +194,7 @@ export function FacetMenu({
                             background: on ? "var(--primary)" : "transparent",
                             color: "var(--bg)",
                           }}>
-                          {on ? (mode === "radio" ? "●" : "✓") : ""}
+                          {on ? (mode === "radio" ? <DotIcon size={ICON.xs} /> : <DoneIcon size={ICON.xs} />) : null}
                         </span>
                         {/* The person, when the facet is about people — the face
                             is how you find a name in a list of twelve. */}

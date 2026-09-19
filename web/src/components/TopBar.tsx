@@ -35,6 +35,7 @@ import { useAmbientNotes, NoteToast, NotifyBell } from "./TopBarNotes.tsx";
 import { NeedsPopover, type NeedsItem } from "./NeedsPopover.tsx";
 import { ICON } from "../lib/iconSize.ts";
 import { appChordFor, chordLabel } from "../lib/keybindings.ts";
+import { FolderIcon, SearchIcon } from "../lib/glyphIcons.tsx";
 
 export const TOP_BAR_H = 30;
 
@@ -620,7 +621,7 @@ export function TopBar({
           border: `1px solid color-mix(in srgb, var(--border) ${workspace ? 55 : 40}%, transparent)`,
           background: workspace ? "color-mix(in srgb, var(--primary) 10%, transparent)" : "color-mix(in srgb, var(--bg3) 45%, transparent)",
         }}>
-        <span className="text-[10px] shrink-0" style={{ color: workspace ? "var(--primary-hover)" : "var(--text4)" }}>▣</span>
+        <span className="shrink-0 flex" style={{ color: workspace ? "var(--primary-hover)" : "var(--text4)" }}><FolderIcon size={ICON.xs} /></span>
         <span className="text-[10.5px] truncate" style={{ color: workspace ? "var(--text)" : "var(--text3)", fontWeight: workspace ? 600 : 400, maxWidth: 190 }}>
           {/* Three states, said differently on purpose: a project, the
               deliberate whole-machine view, and "not known yet" — which used
@@ -781,7 +782,7 @@ export function TopBar({
           {/* 14, not 11. On a narrow window this collapses to the glyph alone,
               and a glyph standing in for a whole control is the one thing on a
               bar that cannot be read at the size of a label. */}
-          <span className="leading-none" style={{ color: "var(--primary)", fontSize: 14 }}>⌕</span>
+          <span className="flex" style={{ color: "var(--primary)" }}><SearchIcon size={ICON.xs} /></span>
           <span className="hidden md:block text-[10px] whitespace-nowrap leading-none" style={{ color: "var(--text3)" }}>
             Find a file…
           </span>

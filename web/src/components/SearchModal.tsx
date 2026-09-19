@@ -6,6 +6,8 @@ import { PresetDiff } from "./diff/PresetDiff.tsx";
 import { api } from "../lib/api.ts";
 import { friendly } from "../lib/labels.ts";
 import { fmtTime, fmtUsd, fmtMs, agentKey } from "../lib/format.ts";
+import { SearchIcon } from "../lib/glyphIcons.tsx";
+import { ICON } from "../lib/iconSize.ts";
 
 /** Render an FTS snippet, highlighting the \x01…\x02 matched spans. */
 function Snippet({ text }: { text: string }) {
@@ -141,7 +143,7 @@ export function SearchModal({ open, onClose, onSelectApp }: { open: boolean; onC
                 style={{ background: "var(--bg2)", border: "1px solid color-mix(in srgb, var(--border) 60%, transparent)", boxShadow: "0 30px 80px -20px rgba(0,0,0,0.8)" }}
               >
                 <div className="flex items-center gap-2 px-4 py-3 border-b shrink-0" style={{ borderColor: "color-mix(in srgb, var(--border) 40%, transparent)" }}>
-                  <span className="t-dim2 text-[13px]">🔎</span>
+                  <span className="t-dim2 flex"><SearchIcon size={ICON.sm} /></span>
                   <input
                     autoFocus value={q} onChange={(e) => setQ(e.target.value)}
                     placeholder={mode === "fleet" ? "Search everything — prompts, commands, outputs, errors…" : mode === "commits" ? "Commit messages… (or a sha prefix)" : mode === "working tree" ? "Grep the working tree…" : "Which commits introduced or removed this string…"}

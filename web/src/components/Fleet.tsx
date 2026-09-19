@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { ICON } from "../lib/iconSize.ts";
+import { AgentIcon, BranchIcon, ClockIcon, CrossIcon, DoneIcon } from "../lib/glyphIcons.tsx";
 import { motion, AnimatePresence } from "motion/react";
 import { stuckBecause, type AgentCard, type AgentOutcome } from "../lib/derive.ts";
 import { Panel } from "./Panel.tsx";
@@ -136,10 +138,10 @@ function evidenceNote(a: AgentCard): string | undefined {
  * Distinct glyphs rather than three coloured dots, so the meaning survives
  * without colour.
  */
-const OUTCOME: Record<AgentOutcome, { glyph: string; color: string; title: string } | null> = {
-  settled: { glyph: "✓", color: "var(--success)", title: "Finished with nothing left trailing" },
-  faulted: { glyph: "✕", color: "var(--error)", title: "Ended on an error, or stopped mid-tool" },
-  unanswered: { glyph: "◷", color: "var(--warning)", title: "Stopped on a question nobody answered" },
+const OUTCOME: Record<AgentOutcome, { glyph: ReactNode; color: string; title: string } | null> = {
+  settled: { glyph: <DoneIcon size={ICON.xs} />, color: "var(--success)", title: "Finished with nothing left trailing" },
+  faulted: { glyph: <CrossIcon size={ICON.xs} />, color: "var(--error)", title: "Ended on an error, or stopped mid-tool" },
+  unanswered: { glyph: <ClockIcon size={ICON.xs} />, color: "var(--warning)", title: "Stopped on a question nobody answered" },
   // Nothing. No terminal event ever arrived, and the absence of a mark is the
   // accurate report — inventing a glyph here would be a guess wearing a badge.
   unclear: null,
@@ -216,7 +218,7 @@ function SessionCard({ a, selected, onSelect }: { a: AgentCard; selected: boolea
           {a.worktree && (
             <span className="chip shrink-0" title={`Working in the ${a.worktree} worktree`}
               style={{ color: "var(--primary-hover)", background: "color-mix(in srgb, var(--primary) 14%, transparent)" }}>
-              ⑂ {a.worktree}
+              <BranchIcon size={ICON.xs} className="inline-block align-[-2px] mr-1" />{a.worktree}
             </span>
           )}
         </div>
@@ -225,7 +227,7 @@ function SessionCard({ a, selected, onSelect }: { a: AgentCard; selected: boolea
             information — and a failed one already says so on the status mark,
             so repeating the ✕ here would be the same fact twice in one row. */}
         {a.status === "idle" && OUTCOME[a.outcome] && (
-          <span className="shrink-0 text-[11px] leading-none" aria-label={OUTCOME[a.outcome]!.title}
+          <span className="shrink-0 flex" aria-label={OUTCOME[a.outcome]!.title}
             title={OUTCOME[a.outcome]!.title}
             style={{ color: OUTCOME[a.outcome]!.color, opacity: a.outcome === "settled" ? 0.6 : 0.95 }}>
             {OUTCOME[a.outcome]!.glyph}
@@ -242,7 +244,7 @@ function SessionCard({ a, selected, onSelect }: { a: AgentCard; selected: boolea
         const named = a.subagentTypes.filter(([t]) => t !== "subagent");
         return (
           <div className="mt-1.5 flex items-center gap-1.5 text-[10px]" style={{ color: "var(--info)" }}>
-            <span aria-hidden>⑃</span>
+            <span aria-hidden className="flex"><AgentIcon size={ICON.xs} /></span>
             <span className="tabular-nums font-medium">{a.subagents} subagent{a.subagents > 1 ? "s" : ""}</span>
             {named.length > 0 && (
               <span className="t-dim2 truncate">
@@ -370,7 +372,7 @@ export function Fleet({ agents, activeApp, onSelect }: { agents: AgentCard[]; ac
                 <span className="text-[11px] font-semibold tracking-wide uppercase" style={{ letterSpacing: "0.06em" }}>{app}</span>
                 {live > 0 && <span className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--success)", boxShadow: "0 0 6px var(--success)" }} />}
                 <span className="ml-auto flex items-center gap-2 text-[9.5px] t-dim2 tabular-nums">
-                  {subs > 0 && <span style={{ color: "var(--info)" }}>⑃{subs}</span>}
+                  {subs > 0 && <span className="inline-flex items-center gap-0.5" style={{ color: "var(--info)" }}><AgentIcon size={ICON.xs} />{subs}</span>}
                   <span>{list.length} session{list.length > 1 ? "s" : ""}</span>
                 </span>
               </button>

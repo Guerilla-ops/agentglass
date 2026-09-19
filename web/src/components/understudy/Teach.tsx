@@ -27,6 +27,7 @@ import { Chip } from "../workspace/Chrome.tsx";
 import { Empty, wash } from "../git/ui.tsx";
 import { fmtBytes } from "../../lib/goneCleanup.ts";
 import { HIT, ICON } from "../../lib/iconSize.ts";
+import { DoneIcon } from "../../lib/glyphIcons.tsx";
 
 interface SourcesBody {
   sources: UnderstudySource[];
@@ -86,7 +87,7 @@ function Step({ n, title, hint, done, active, children }: {
             color: done ? "var(--success)" : active ? "var(--primary)" : "var(--text4)",
           }}
         >
-          {done ? "✓" : n}
+          {done ? <DoneIcon size={ICON.xs} /> : n}
         </span>
         <span className="panel-title" style={{ fontSize: 13 }}>{title}</span>
         {hint && <span className="chip t-dim ml-auto">{hint}</span>}

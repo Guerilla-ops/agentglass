@@ -31,6 +31,7 @@ import { retryLoad } from "../lib/retryLoad.ts";
 import { useDismiss } from "../lib/useDismiss.ts";
 import { keepTermFocus } from "../lib/keepFocus.ts";
 import { CloseButton } from "./CloseButton.tsx";
+import { IconLabel, PlusIcon, StarIcon } from "../lib/glyphIcons.tsx";
 
 /**
  * The four git one-liners this row used to hardcode as always-visible chips.
@@ -251,7 +252,7 @@ function CommandRow({ c, font, on, full, onRun, onPin }: {
         className={`shrink-0 text-[14px] leading-none rounded flex items-center justify-center hover:bg-white/10 ${on ? "" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100"}`}
         style={{ width: 22, height: 22, color: on ? "var(--warning)" : "var(--text3)", opacity: !on && full ? 0.3 : undefined }}
         title={on ? "Unpin" : full ? `${MAX_PINS} pinned already — unpin one first` : `Pin ${r ? r.name : c.cmd} to the bar`}
-      >{on ? "★" : "☆"}</button>
+      ><StarIcon size={ICON.xs} filled={on} /></button>
     </div>
   );
 }
@@ -535,7 +536,7 @@ export function CommandBar({ root, disabled, font, onRun, runTargetInTmux, onClo
               <button type="button" onClick={() => { setCustomOpen((v) => !v); setCustomError(""); }} disabled={full}
                 className="text-[10.5px] px-2 py-1 rounded-md"
                 style={{ color: full ? "var(--text3)" : "var(--primary-hover)", border: "1px dashed color-mix(in srgb, var(--primary) 35%, transparent)", opacity: full ? 0.55 : 1 }}>
-                ＋ Pin a custom command{full ? " (limit reached)" : ""}
+                <PlusIcon size={ICON.xs} className="inline-block align-[-2px] mr-1" />Pin a custom command{full ? " (limit reached)" : ""}
               </button>
               {customOpen && !full && (
                 <form onSubmit={(e) => { e.preventDefault(); saveCustom(); }} className="mt-1.5 grid grid-cols-[92px_minmax(0,1fr)_auto] gap-1.5 items-center">
@@ -577,7 +578,7 @@ export function CommandBar({ root, disabled, font, onRun, runTargetInTmux, onClo
               )}
             </div>
             <div className="shrink-0 px-3 py-1.5 t-dim2 text-[10.5px] border-t" style={{ borderColor: "color-mix(in srgb, var(--border) 30%, transparent)" }}>
-              ☆ Pins a command to the bar — {pins.length} of {MAX_PINS} used, per repo
+              <StarIcon size={ICON.xs} className="inline-block align-[-2px] mr-1" />Pins a command to the bar — {pins.length} of {MAX_PINS} used, per repo
             </div>
           </div>
         )}
@@ -615,7 +616,7 @@ export function CommandBar({ root, disabled, font, onRun, runTargetInTmux, onClo
           // steal the shell's cursor on the way there — see the trigger above.
           <button onMouseDown={keepTermFocus} onClick={() => setOpen(true)} className="text-[10px] px-2 py-1 rounded-md whitespace-nowrap shrink-0"
             style={{ color: "var(--text3)", border: "1px dashed color-mix(in srgb, var(--border) 30%, transparent)" }}
-            title={`Pin up to ${MAX_PINS} commands here — they stay one click away, per repo`}>☆ Pin a command</button>
+            title={`Pin up to ${MAX_PINS} commands here — they stay one click away, per repo`}><IconLabel icon={<StarIcon size={ICON.xs} />}>Pin a command</IconLabel></button>
         )}
       </div>
     </>

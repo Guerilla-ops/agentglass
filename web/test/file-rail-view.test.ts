@@ -453,14 +453,14 @@ describe("your review, which is a review and not a sentence about one", () => {
     const html = render();
     expect(html).toContain("Approve, request changes or comment");
     expect(html).not.toContain("Submit review");
-    expect(html).not.toContain("✓ Approve");
+    expect(html).not.toContain("</svg>Approve</span>");
   });
 
   test("wired, the three verdicts and the send are in the column", () => {
     const html = render({ ...wired, queuedCount: 2 });
-    expect(html).toContain("✓ Approve");
-    expect(html).toContain("✕ Request changes");
-    expect(html).toContain("💬 Comment");
+    expect(html).toContain("</svg>Approve</span>");
+    expect(html).toContain("</svg>Request changes</span>");
+    expect(html).toContain("</svg>Comment</span>");
     expect(html).toContain("Submit review");
     // And the sentence they replace is gone: with the buttons on screen it was
     // reading them back to you.
@@ -471,8 +471,8 @@ describe("your review, which is a review and not a sentence about one", () => {
     // Half-wired is a real state while a caller is being built, and three
     // buttons of which two do nothing is the worst version of it.
     const html = render({ onApprove: noop, onSubmit: noop });
-    expect(html).toContain("✓ Approve");
-    expect(html).not.toContain("✕ Request changes");
+    expect(html).toContain("</svg>Approve</span>");
+    expect(html).not.toContain("</svg>Request changes</span>");
     expect(html).toContain("Submit review");
   });
 
@@ -505,7 +505,7 @@ describe("your review, which is a review and not a sentence about one", () => {
      * the choice, and a gap where Approve was reads as a bug in the rail.
      */
     const html = render({ ...wired, d: detail({ viewerDidAuthor: true } as never) });
-    expect(html).toContain("✓ Approve");
+    expect(html).toContain("</svg>Approve</span>");
     expect(times(html, "disabled=")).toBe(2);
     expect(html).toContain("GitHub does not let you approve or block your own pull request");
   });

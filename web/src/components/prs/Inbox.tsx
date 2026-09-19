@@ -21,7 +21,7 @@
  *     on this machine — see inboxMarks.ts — rather than left out and sending
  *     somebody to a browser for them.
  */
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import type { InboxItem } from "../../../../shared/types.ts";
 import { api } from "../../lib/api.ts";
 import { byDay, facetCounts, facetOrder, FACETS, filterInbox, inFacet, reasonLabel, searchInbox } from "../../lib/ghInbox.ts";
@@ -32,6 +32,8 @@ import { useDialogs } from "../ConfirmDialog.tsx";
 import { openIssue } from "../../lib/openIssue.ts";
 import { Spinner } from "../Spinner.tsx";
 import { ICON } from "../../lib/iconSize.ts";
+import { CommentIcon, DoneIcon, EyeIcon, FlagIcon, HandIcon, InboxIcon, UserIcon } from "../../lib/glyphIcons.tsx";
+import { GitIcon } from "../workspace/icons.tsx";
 
 const edge = (pct: number) => `1px solid color-mix(in srgb, var(--text) ${pct}%, transparent)`;
 
@@ -64,8 +66,18 @@ function Tick({ on }: { on: boolean }) {
 }
 
 /** One control in the shelf rail or the filter list. */
+/** Why each facet of the inbox is there, drawn: these were `◎ ❞ ✋ ❊ ◉` in the
+ *  facet table, each a different size in the system font. */
+const FACET_ICON: Record<string, ReactNode> = {
+  assigned: <UserIcon size={ICON.xs} />,
+  participating: <CommentIcon size={ICON.xs} />,
+  mentioned: <HandIcon size={ICON.xs} />,
+  team: <UserIcon size={ICON.xs} />,
+  review: <EyeIcon size={ICON.xs} />,
+};
+
 function Rail({ mark, label, n, on, hint, onClick }: {
-  mark: string; label: string; n?: number; on: boolean; hint: string; onClick: () => void;
+  mark: ReactNode; label: string; n?: number; on: boolean; hint: string; onClick: () => void;
 }) {
   return (
     <button onClick={onClick} title={hint} aria-pressed={on}
@@ -75,7 +87,7 @@ function Rail({ mark, label, n, on, hint, onClick }: {
         background: on ? "color-mix(in srgb, var(--text) 8%, transparent)" : "transparent",
         boxShadow: on ? "inset 2px 0 0 var(--primary)" : undefined,
       }}>
-      <span aria-hidden className="shrink-0 text-[12px] leading-none" style={{ width: 14 }}>{mark}</span>
+      <span aria-hidden className="shrink-0 flex justify-center" style={{ width: 14 }}>{mark}</span>
       <span className="truncate flex-1 text-left">{label}</span>
       {n != null && n > 0 && (
         <span className="tabular-nums text-[10px] px-1.5 rounded-full shrink-0"
@@ -194,15 +206,15 @@ export function Inbox({ repo, onFlash, onUnread }: {
       <div className="shrink-0 flex flex-col gap-3 px-2 py-2 overflow-y-auto agx-scroll"
         style={{ width: 190, borderRight: edge(11) }}>
         <div className="flex flex-col gap-0.5">
-          <Rail mark="⌸" label="Inbox" n={unread} on={shelf === "inbox"} hint="Everything not finished" onClick={() => { setShelf("inbox"); setPicked(new Set()); }} />
-          <Rail mark="⚑" label="Saved" n={onShelf(all, "saved").length} on={shelf === "saved"} hint="Kept by you, on this machine — GitHub's API has no shelf for it" onClick={() => { setShelf("saved"); setPicked(new Set()); }} />
-          <Rail mark="✓" label="Done" n={undefined} on={shelf === "done"} hint="Finished by you, on this machine" onClick={() => { setShelf("done"); setPicked(new Set()); }} />
+          <Rail mark={<InboxIcon size={ICON.xs} />} label="Inbox" n={unread} on={shelf === "inbox"} hint="Everything not finished" onClick={() => { setShelf("inbox"); setPicked(new Set()); }} />
+          <Rail mark={<FlagIcon size={ICON.xs} filled />} label="Saved" n={onShelf(all, "saved").length} on={shelf === "saved"} hint="Kept by you, on this machine — GitHub's API has no shelf for it" onClick={() => { setShelf("saved"); setPicked(new Set()); }} />
+          <Rail mark={<DoneIcon size={ICON.xs} />} label="Done" n={undefined} on={shelf === "done"} hint="Finished by you, on this machine" onClick={() => { setShelf("done"); setPicked(new Set()); }} />
         </div>
 
         <div className="flex flex-col gap-0.5">
           <div className="text-[9.5px] uppercase tracking-wider px-2 pb-1" style={{ color: "var(--text4)" }}>Filters</div>
           {FACETS.map((f) => (
-            <Rail key={f.id} mark={f.mark} label={f.label} n={facetCount.get(f.id)} hint={f.hint}
+            <Rail key={f.id} mark={FACET_ICON[f.id] ?? null} label={f.label} n={facetCount.get(f.id)} hint={f.hint}
               on={facet === f.id} onClick={() => { setFacet(facet === f.id ? "" : f.id); setPicked(new Set()); }} />
           ))}
         </div>
@@ -211,7 +223,7 @@ export function Inbox({ repo, onFlash, onUnread }: {
           <div className="text-[9.5px] uppercase tracking-wider px-2 pb-1" style={{ color: "var(--text4)" }}>Repositories</div>
           {/* This panel is one repository at a time, so its own is the default
               and the rest are one press away rather than mixed in. */}
-          <Rail mark="◆" label={repo || "This repository"} n={onShelf(all, shelf).filter((n) => n.repo === repo).length}
+          <Rail mark={<GitIcon size={ICON.xs} />} label={repo || "This repository"} n={onShelf(all, shelf).filter((n) => n.repo === repo).length}
             on={!allRepos} hint="Only what is in the repository this panel is showing" onClick={() => setAllRepos(false)} />
           <Rail mark="◇" label="Everywhere" n={onShelf(all, shelf).length}
             on={allRepos} hint="Every repository you get notifications from" onClick={() => setAllRepos(true)} />

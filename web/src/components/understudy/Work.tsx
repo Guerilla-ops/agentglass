@@ -35,6 +35,8 @@ import { Chip } from "../workspace/Chrome.tsx";
 import type {
   UnderstudyAsked, UnderstudyShift, UnderstudyWorkItem, UnderstudyWorkRun, UnderstudyHelp,
 } from "../../../../shared/types.ts";
+import { CircleIcon, DotIcon, MoonIcon } from "../../lib/glyphIcons.tsx";
+import { ICON } from "../../lib/iconSize.ts";
 
 const when = (ms: number) =>
   new Date(ms).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
@@ -732,7 +734,7 @@ export function Work({ active, standing, goTo }: {
       {hold && hold.until > Date.now() && (
         <div data-understudy-asleep className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-[11.5px]"
           style={{ background: wash("--warning", 9), border: `1px solid ${wash("--warning", 35)}`, color: "var(--text2)" }}>
-          <span aria-hidden style={{ fontSize: 14 }}>🌙</span>
+          <span aria-hidden className="flex"><MoonIcon size={ICON.sm} /></span>
           <span><b style={{ color: "var(--text)" }}>Asleep until {new Date(hold.until).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</b> — {hold.why}. It picks the work up again on its own.</span>
         </div>
       )}
@@ -922,8 +924,8 @@ export function Work({ active, standing, goTo }: {
                   boxShadow: p.name === openProject ? "inset 2px 0 0 var(--primary)" : undefined,
                 }}
                 onClick={() => { setRenaming(p.name); void renameTo(p.name); }}>
-                <span style={{ color: p.name === openProject ? "var(--primary)" : "var(--text4)", fontSize: 11 }}>
-                  {p.name === openProject ? "●" : "○"}
+                <span className="flex" style={{ color: p.name === openProject ? "var(--primary)" : "var(--text4)" }}>
+                  {p.name === openProject ? <DotIcon size={ICON.xs} /> : <CircleIcon size={ICON.xs} />}
                 </span>
                 <span className="flex-1 min-w-0 text-[12.5px]" style={{ fontWeight: p.name === openProject ? 600 : 400 }}>
                   {p.name}

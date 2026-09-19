@@ -12,6 +12,7 @@ import { subscribeTermIssue, termIssue, clearTermIssue, type TermIssue } from ".
 import { dirName } from "../lib/worktree.ts";
 import { requestWorktreeJump } from "../lib/worktreeJump.ts";
 import { ICON } from "../lib/iconSize.ts";
+import { ExpandIcon, GridIcon, IconLabel, LockIcon, SearchIcon } from "../lib/glyphIcons.tsx";
 import { nextSeen, type PaneSeen, readPaneSeen, writePaneSeen } from "../lib/paneWorktree.ts";
 import { readBranchPrs, writeBranchPrs, readCardPrios, writeCardPrios, type RememberedPr, type RememberedPrio } from "../lib/paneFacts.ts";
 import { lanternRows } from "../lib/lanternStore.ts";
@@ -92,7 +93,7 @@ const SESS_DOT: Record<SessStatus, { color: string; label: string }> = {
   live: { color: "var(--success, #98c379)", label: "Live" },
   exited: { color: "var(--text2)", label: "Exited" },
   error: { color: "var(--error)", label: "Disconnected" },
-  unauthorized: { color: "var(--error)", label: "Unauthorized ⚿" },
+  unauthorized: { color: "var(--error)", label: "Unauthorized" },
 };
 const repoName = (p: string) => p.split("/").pop() || p;
 
@@ -690,7 +691,7 @@ async function maybeReconnect(s: Sess, wasLive: boolean) {
       if (s.retryTimer) { clearTimeout(s.retryTimer); s.retryTimer = null; }
       s.retries = 0;
       s.status = "unauthorized";
-      s.term.write("\r\n\x1b[31m— unauthorized: this server needs an access token —\x1b[0m\r\n\x1b[2m  reopen the dashboard with ?token=… (or click the ⚿ status) to re-enter it\x1b[0m\r\n");
+      s.term.write("\r\n\x1b[31m— unauthorized: this server needs an access token —\x1b[0m\r\n\x1b[2m  reopen the dashboard with ?token=… (or click the Unauthorized status) to re-enter it\x1b[0m\r\n");
       notify(s);
       return;
     }
@@ -1146,7 +1147,7 @@ function FindBar({ sess, onClose }: { sess: Sess | undefined; onClose: () => voi
       role="search" aria-label="Find in the scrollback"
       onMouseDown={(e) => e.stopPropagation()}
     >
-      <span aria-hidden className="text-[11px]" style={{ color: "var(--text3)" }}>⌕</span>
+      <span aria-hidden className="flex" style={{ color: "var(--text3)" }}><SearchIcon size={ICON.xs} /></span>
       <input
         ref={inputRef}
         value={q}
@@ -2850,7 +2851,7 @@ export function TermView({ active, onClose = () => {} }: { active: boolean; onCl
                 {status === "unauthorized" ? "Token needed" : "Reconnect"}
               </button>
             )}
-            {!tmuxActive && <button onClick={splitPane} disabled={!root || IS_DEMO || disabled || paneIds.length >= 4} title="Show another shell beside this one" className="text-[11px] px-2 py-1 rounded-lg" style={{ color: "var(--text2)", border: "1px solid color-mix(in srgb, var(--border) 30%, transparent)", opacity: paneIds.length >= 4 ? 0.45 : 1 }}>⊞ Split</button>}
+            {!tmuxActive && <button onClick={splitPane} disabled={!root || IS_DEMO || disabled || paneIds.length >= 4} title="Show another shell beside this one" className="text-[11px] px-2 py-1 rounded-lg" style={{ color: "var(--text2)", border: "1px solid color-mix(in srgb, var(--border) 30%, transparent)", opacity: paneIds.length >= 4 ? 0.45 : 1 }}><IconLabel icon={<GridIcon size={ICON.xs} />}>Split</IconLabel></button>}
             {/* The way back, and it lives here because the way out
                 lives in the strip — which is the thing being hidden.
                 A toggle whose "off" state removes the button that
@@ -3136,7 +3137,7 @@ export function TermView({ active, onClose = () => {} }: { active: boolean; onCl
                                     tmuxCmd({ cmd: "locksession", name: x.name, after: x.locked === true });
                                   }}
                                 >
-                                  {x.locked ? "🔒" : "🔓"}
+                                  <LockIcon size={ICON.xs} open={!x.locked} />
                                 </button>
                                 <button
                                   aria-label={current ? `${x.name} is the session you are on` : `End ${x.name}`}
@@ -3301,7 +3302,7 @@ export function TermView({ active, onClose = () => {} }: { active: boolean; onCl
                               </span>
                             </>
                           )}
-                          {zoomed && <span className="text-[10px] font-semibold leading-none" style={{ color: "var(--text4)" }} title="A pane in this window is zoomed">⤢</span>}
+                          {zoomed && <span className="flex" style={{ color: "var(--text4)" }} title="A pane in this window is zoomed"><ExpandIcon size={ICON.xs} /></span>}
                           {/* A phone is watching a pane in this window.
                               Loud on purpose, and the only mark in this strip
                               that is about a PERSON rather than about the work.

@@ -18,6 +18,8 @@
 // Opening a result raises the viewer that already exists — markdown, the editor
 // toggle, the reading width — and this stays on top of it, so the next result
 // is one keystroke away rather than another search.
+import { ICON } from "../lib/iconSize.ts";
+import { IconLabel, SearchIcon, UndoIcon } from "../lib/glyphIcons.tsx";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Portal } from "./Portal.tsx";
@@ -867,7 +869,7 @@ export function FilePalette({
             <div className="px-2.5 py-2.5 shrink-0" style={{ borderTop: edge(18), borderBottom: edge(18) }}>
             <div className="flex items-center gap-2.5 px-2.5 py-2 rounded-md"
               style={{ background: "color-mix(in srgb, var(--bg3) 40%, transparent)", border: edge(14) }}>
-              <span style={{ color: "var(--primary)" }}>⌕</span>
+              <span className="flex" style={{ color: "var(--primary)" }}><SearchIcon size={ICON.xs} /></span>
               <input ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)}
                 spellCheck={false} autoComplete="off" placeholder={active.placeholder}
                 className="flex-1 min-w-0 bg-transparent outline-none text-[12.5px]" style={{ color: "var(--text)" }} />
@@ -915,7 +917,7 @@ export function FilePalette({
                 {browsePath && (
                   <>
                     <button onClick={() => setBrowsePath(null)} title="Volver al sitio elegido"
-                      className="px-1.5 py-0.5 rounded min-h-[20px]" style={{ color: "var(--primary-hover)" }}>↺ volver</button>
+                      className="px-1.5 py-0.5 rounded min-h-[20px]" style={{ color: "var(--primary-hover)" }}><IconLabel icon={<UndoIcon size={ICON.xs} />}>volver</IconLabel></button>
                     <span>·</span>
                   </>
                 )}

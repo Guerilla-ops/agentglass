@@ -20,6 +20,8 @@ import { consoleRoot, runInConsole } from "./TerminalPanel.tsx";
 import { CloseButton } from "./CloseButton.tsx";
 import { SettingRow } from "./SettingRow.tsx";
 import { CheckoutPicker } from "./CheckoutPicker.tsx";
+import { IconLabel, PlusIcon } from "../lib/glyphIcons.tsx";
+import { ICON } from "../lib/iconSize.ts";
 
 const edge = (pct: number) => `1px solid color-mix(in srgb, var(--border) ${pct}%, transparent)`;
 const PARAM_TYPES: RecipeParam["type"][] = ["text", "choice", "flag", "repo", "worktree", "branch"];
@@ -100,7 +102,7 @@ export function RecipesPane({ open }: { open: boolean }) {
         <div className="py-2">
           <button onClick={() => setEditing(blank())} className="text-[12px] px-2.5 py-1 rounded-lg"
             style={{ border: "1px solid color-mix(in srgb, var(--primary) 40%, transparent)", color: "var(--text)" }}>
-            ＋ New recipe
+            <IconLabel icon={<PlusIcon size={ICON.xs} />}>New recipe</IconLabel>
           </button>
         </div>
       )}
@@ -222,7 +224,7 @@ function Editor({ r, repos, onChange, onSave, onDrop, onCancel }: {
           </div>
         ))}
         <button onClick={() => set({ boot: false, params: [...(r.params ?? []), { key: "", label: "", type: "text" }] })}
-          className="self-start text-[10.5px] px-2 py-0.5 rounded" style={{ border: edge(20), color: "var(--text3)" }}>＋ parameter</button>
+          className="self-start text-[10.5px] px-2 py-0.5 rounded" style={{ border: edge(20), color: "var(--text3)" }}><IconLabel icon={<PlusIcon size={ICON.xs} />}>parameter</IconLabel></button>
       </div>
 
       <div className="flex gap-2 flex-wrap pt-1">

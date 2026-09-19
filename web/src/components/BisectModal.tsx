@@ -10,6 +10,8 @@ import { Portal } from "./Portal.tsx";
 import { CloseButton } from "./CloseButton.tsx";
 import { api } from "../lib/api.ts";
 import type { GitBisectStatus } from "../../../shared/types.ts";
+import { CrossIcon, DoneIcon, IconLabel } from "../lib/glyphIcons.tsx";
+import { ICON } from "../lib/iconSize.ts";
 
 export function BisectModal({ root, onClose, onReset, onOpenCommit, onChanged }: {
   root: string;
@@ -87,8 +89,8 @@ export function BisectModal({ root, onClose, onReset, onOpenCommit, onChanged }:
                   <button onClick={() => onOpenCommit(st.current!.sha, st.current!.subject)} className="shrink-0 text-[10px] px-2 py-1 rounded-md" style={{ color: "var(--text2)", border: "1px solid color-mix(in srgb, var(--border) 40%, transparent)" }}>view</button>
                 </div>
                 <div className="flex gap-2">
-                  <button onClick={() => void mark("good")} disabled={busy} className="flex-1 text-[11.5px] font-medium py-2 rounded-lg" style={{ background: "color-mix(in srgb, var(--success) 16%, transparent)", border: "1px solid color-mix(in srgb, var(--success) 45%, transparent)", color: "var(--success)", opacity: busy ? .5 : 1 }}>✓ good — bug gone</button>
-                  <button onClick={() => void mark("bad")} disabled={busy} className="flex-1 text-[11.5px] font-medium py-2 rounded-lg" style={{ background: "color-mix(in srgb, var(--error) 16%, transparent)", border: "1px solid color-mix(in srgb, var(--error) 45%, transparent)", color: "var(--error)", opacity: busy ? .5 : 1 }}>✕ bad — bug here</button>
+                  <button onClick={() => void mark("good")} disabled={busy} className="flex-1 text-[11.5px] font-medium py-2 rounded-lg" style={{ background: "color-mix(in srgb, var(--success) 16%, transparent)", border: "1px solid color-mix(in srgb, var(--success) 45%, transparent)", color: "var(--success)", opacity: busy ? .5 : 1 }}><IconLabel icon={<DoneIcon size={ICON.xs} />}>good — bug gone</IconLabel></button>
+                  <button onClick={() => void mark("bad")} disabled={busy} className="flex-1 text-[11.5px] font-medium py-2 rounded-lg" style={{ background: "color-mix(in srgb, var(--error) 16%, transparent)", border: "1px solid color-mix(in srgb, var(--error) 45%, transparent)", color: "var(--error)", opacity: busy ? .5 : 1 }}><IconLabel icon={<CrossIcon size={ICON.xs} />}>bad — bug here</IconLabel></button>
                 </div>
                 <div className="flex justify-end">
                   <button onClick={() => void reset()} disabled={busy} className="text-[10px] px-2 py-1 rounded-md" style={{ color: "var(--text3)" }}>abort bisect</button>

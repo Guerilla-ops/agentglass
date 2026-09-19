@@ -10,6 +10,8 @@ import { modelLabelOf } from "../../../shared/models.ts";
 import { ScheduleDialog, ScheduledSection, type AgentSchedule } from "./LanternSchedule.tsx";
 import { handOff } from "../lib/lanternAsk.ts";
 import { api } from "../lib/api.ts";
+import { ClockIcon, IconLabel } from "../lib/glyphIcons.tsx";
+import { ICON } from "../lib/iconSize.ts";
 
 /**
  * THE LANTERN. Who needs you, what every agent is working on, and the way there.
@@ -415,7 +417,7 @@ export function LanternView({ active }: { active: boolean }) {
             {rows && (
               <button type="button" onClick={() => setScheduling(true)}
                 className="agx-btn text-[10.5px] px-2 py-0.5 rounded" style={{ color: "var(--text3)", border: edge(20) }}
-                title="Start an agent later: at a clock time, a date-time, or after a delay">⏰ Schedule…</button>
+                title="Start an agent later: at a clock time, a date-time, or after a delay"><IconLabel icon={<ClockIcon size={ICON.xs} />}>Schedule…</IconLabel></button>
             )}
             {rows && (
               <button type="button" onClick={() => { void ask(); }} disabled={asking === "opening…"}

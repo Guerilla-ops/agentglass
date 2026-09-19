@@ -6,6 +6,8 @@ import { LAYER } from "../lib/layers.ts";
 import { api } from "../lib/api.ts";
 import { fmtAgo, fmtUsd } from "../lib/format.ts";
 import { CloseButton } from "./CloseButton.tsx";
+import { DoneIcon } from "../lib/glyphIcons.tsx";
+import { ICON } from "../lib/iconSize.ts";
 
 type Kind = "all" | "skill" | "command";
 type Usage = "all" | "used" | "never";
@@ -63,7 +65,7 @@ function SkillCard({ s, isNew, isTop, expanded, onToggle }: { s: SkillInfo; isNe
           className="chip shrink-0 cursor-pointer"
           style={copied ? { color: "var(--success)", borderColor: "color-mix(in srgb, var(--success) 45%, transparent)" } : { color: "var(--text4)" }}
         >
-          {copied ? "Copied ✓" : "Copy"}
+          {copied ? <span className="inline-flex items-center gap-1">Copied<DoneIcon size={ICON.xs} /></span> : "Copy"}
         </button>
         {isTop && <Badge text="Top" color="var(--warning)" />}
         {isNew && <Badge text="New" color="var(--success)" />}

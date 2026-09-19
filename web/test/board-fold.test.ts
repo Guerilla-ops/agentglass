@@ -365,9 +365,14 @@ describe("the verdict a card leads with", () => {
 
   test("every state carries a glyph, not colour alone", () => {
     // The board's own rule for check state, and this is the first thing read.
-    for (const [kind, glyph] of [["approved", "\u2713"], ["changes", "\u2715"], ["awaiting", "\u25EF"]] as const) {
-      expect(drawnIn({ humanReview: V(kind) }), kind).toContain(glyph);
-    }
+    // Drawn now (lib/glyphIcons.tsx), so "a glyph" is a shape: each state
+    // leaves a different set of drawings on the card, whatever its colour.
+    const shapes = (["approved", "changes", "awaiting"] as const).map((kind) => {
+      const svgs = drawnIn({ humanReview: V(kind) }).match(/<svg[\s\S]*?<\/svg>/g) ?? [];
+      expect(svgs.length, kind).toBeGreaterThan(0);
+      return svgs.join("");
+    });
+    expect(new Set(shapes).size).toBe(3);
   });
 
   test("an approved card still shows its failing checks", () => {

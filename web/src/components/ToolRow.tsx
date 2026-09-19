@@ -13,6 +13,8 @@
 import { memo, useState } from "react";
 import type { TimelineEntry } from "../../../shared/types.ts";
 import { fmtTime } from "../lib/format.ts";
+import { CrossIcon } from "../lib/glyphIcons.tsx";
+import { ICON } from "../lib/iconSize.ts";
 
 // Children shown before the rest fold away, matching the CLI's own
 // `… +N tool uses`. Enough to see what a subagent set off doing, not enough to
@@ -60,7 +62,7 @@ export const ToolRow = memo(function ToolRow({ e, sub = [], nested = false }: To
           className={`min-w-0 flex-1 break-all ${detail ? "cursor-pointer" : ""} ${open ? "" : "truncate"}`}
           style={MONO}
           title={detail && !open ? "Click for the full command and its output" : undefined}>
-          <span style={{ color: tint }}>{e.is_error ? "✕ " : ""}{e.tool}</span>
+          <span className="inline-flex items-center gap-1" style={{ color: tint }}>{e.is_error && <CrossIcon size={ICON.xs} />}{e.tool}</span>
           <span style={{ color: "var(--text4)" }}>(</span>
           <span style={{ color: "var(--text3)" }}>{firstLine}</span>
           <span style={{ color: "var(--text4)" }}>)</span>

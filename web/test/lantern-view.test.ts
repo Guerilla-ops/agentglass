@@ -198,7 +198,7 @@ describe("scheduled starts", () => {
   });
   test("the Lantern offers the dialog from its header and reads the schedules through the api", () => {
     const view = readFileSync(new URL("../src/components/LanternView.tsx", import.meta.url), "utf8");
-    expect(view).toContain("⏰ Schedule…");
+    expect(view).toContain(">Schedule…</IconLabel>");
     expect(view).toContain("api.agentSchedules()");
     expect(view).toContain("<ScheduledSection items={schedules} onCancel={cancelSchedule} />");
     expect(view).toContain("<ScheduleDialog open={scheduling}");

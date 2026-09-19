@@ -3,6 +3,8 @@ import type { ReactNode, RefObject } from "react";
 import { Portal } from "./Portal.tsx";
 import { menuUnder, PICK_W, PICK_H } from "../lib/menuPos.ts";
 import type { ListMember } from "../../../shared/providers.ts";
+import { DoneIcon } from "../lib/glyphIcons.tsx";
+import { ICON } from "../lib/iconSize.ts";
 
 /*
  * The picker this app uses to put somebody on a card.
@@ -91,7 +93,7 @@ export function PeoplePick(p: PeoplePickProps) {
                 </span>
                 {saving
                   ? <span className="agx-spin shrink-0" aria-label="Applying" style={{ width: 10, height: 10, borderWidth: 1.5, borderColor: "var(--text3)", borderTopColor: "transparent" }} />
-                  : on ? <span className="text-[10px]" style={{ color: "var(--success)" }}>✓</span> : null}
+                  : on ? <span className="flex" style={{ color: "var(--success)" }}><DoneIcon size={ICON.xs} /></span> : null}
               </button>
             </div>
           );

@@ -30,6 +30,8 @@ import type {
   BlockChoice, ConflictBlock, ConflictFile, GitActionResult, GitFileChange,
   MergeInfo, MergeSessionView,
 } from "../../../shared/types.ts";
+import { CircleIcon, DoneIcon, DotIcon, IconLabel, MoreIcon } from "../lib/glyphIcons.tsx";
+import { ICON } from "../lib/iconSize.ts";
 
 /** Unchanged lines kept either side of a conflict before the rest is folded.
  *  Twelve is about a function signature plus its opening lines — enough to
@@ -312,7 +314,7 @@ export function ConflictMode(p: ConflictModeProps) {
             : merge?.state === "reverting" ? "Reverting" : "Merging"}
         </span>
         <span className="text-[11px] font-mono truncate" style={{ color: "var(--primary-hover)" }}>{labels.ours}</span>
-        <span className="text-[10px]" style={{ color: "var(--text3)" }}>◀ incoming</span>
+        <span className="text-[10px]" style={{ color: "var(--text3)" }}>← incoming</span>
         <span className="text-[11px] font-mono truncate" style={{ color: "var(--warning)" }}>{labels.theirs}</span>
         {step && (
           <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ color: "var(--text2)", border: "1px solid color-mix(in srgb, var(--border) 40%, transparent)" }}
@@ -336,7 +338,7 @@ export function ConflictMode(p: ConflictModeProps) {
               return (
                 <div key={rel} className="group flex items-center gap-1.5 px-3 py-1 text-[11px]"
                   style={{ background: on ? "var(--bg3)" : "transparent", borderLeft: `2px solid ${on ? "var(--primary)" : "transparent"}` }}>
-                  <span className="shrink-0 w-[1ch]" style={{ color: isLeft ? "var(--text3)" : "var(--success)" }}>{isLeft ? (on ? "●" : "○") : "✓"}</span>
+                  <span className="shrink-0 flex" style={{ color: isLeft ? "var(--text3)" : "var(--success)" }}>{isLeft ? (on ? <DotIcon size={ICON.xs} /> : <CircleIcon size={ICON.xs} />) : <DoneIcon size={ICON.xs} />}</span>
                   <button onClick={() => setSel(rel)} className="min-w-0 flex-1 truncate text-left font-mono"
                     style={{ color: on ? "var(--text)" : "var(--text2)", direction: "rtl", textAlign: "left" }}
                     title={rel}>{rel}</button>
@@ -544,7 +546,7 @@ function Body({ file, picks, labels, cursor, opened, editing, onCursor, onPick, 
               <button onClick={() => onOpenFold(i)}
                 className="w-full text-left px-[5ch] py-1 text-[10.5px]"
                 style={{ color: "var(--text3)", background: "color-mix(in srgb, var(--bg3) 45%, transparent)" }}>
-                ⋯ {hidden} unchanged lines
+                <IconLabel icon={<MoreIcon size={ICON.xs} />}>{hidden} unchanged lines</IconLabel>
               </button>
               {tail > 0 && seg.lines.slice(seg.lines.length - tail).map((l, k) => (
                 <Line key={`t${k}`} n={seg.from + seg.lines.length - tail + k} text={l} />
@@ -563,7 +565,7 @@ function Body({ file, picks, labels, cursor, opened, editing, onCursor, onPick, 
             <button key={i} onClick={() => onPick(b.index, chosen)} onDoubleClick={() => onEdit(b)}
               className="w-full text-left my-1 px-[5ch] py-1 text-[10.5px] flex items-center gap-2"
               style={{ color: "var(--text3)", background: "color-mix(in srgb, var(--success) 7%, transparent)", borderLeft: "2px solid color-mix(in srgb, var(--success) 55%, transparent)" }}>
-              <span style={{ color: "var(--success)" }}>✓</span>
+              <span className="flex" style={{ color: "var(--success)" }}><DoneIcon size={ICON.xs} /></span>
               <span>line {b.line} — {choiceLabel(chosen, labels)}</span>
               <span className="ml-auto" style={{ textDecoration: "underline", textUnderlineOffset: 2 }}>change</span>
             </button>
@@ -668,7 +670,7 @@ function Review({ root, staged, files, busy, writeEnabled, act, ask, merge, step
       <div className="flex-1 min-h-0 overflow-auto agx-scroll py-1">
         {rows.map((r) => (
           <div key={r.path} className="flex items-center gap-2 px-4 py-1 text-[11px] font-mono">
-            <span className="shrink-0 w-[1ch]" style={{ color: r.decided ? "var(--warning)" : "var(--text3)" }}>{r.decided ? "◆" : "·"}</span>
+            <span className="shrink-0 w-[1ch]" style={{ color: r.decided ? "var(--warning)" : "var(--text3)" }}>{r.decided ? <DoneIcon size={ICON.xs} /> : "·"}</span>
             <span className="min-w-0 truncate" style={{ color: r.decided ? "var(--text)" : "var(--text2)" }}>{r.path}</span>
             {r.decided && <span className="shrink-0 text-[10px] px-1 rounded" style={{ color: "var(--warning)", border: "1px solid color-mix(in srgb, var(--warning) 35%, transparent)" }}>you decided this</span>}
             <span className="ml-auto shrink-0 tabular-nums text-[10px]" style={{ color: "var(--text3)" }}>
