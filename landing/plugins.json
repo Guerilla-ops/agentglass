@@ -8,10 +8,23 @@
       "publisher": "agentglass",
       "verified": true,
       "scope": "read",
-      "draws": ["panel", "settings", "pr-notes"],
-      "source": { "kind": "git", "url": "https://github.com/SirAllap/agentglass-local-review", "ref": null },
-      "description": "Reviews your labelled pull requests on this machine with the agent and model you choose, inside a sandbox that cannot write or reach GitHub. The findings land in the pull request view, marked local. Nothing is posted.",
-      "categories": ["review", "github", "agents"],
+      "draws": [
+        "panel",
+        "settings",
+        "pr-notes",
+        "pr-button"
+      ],
+      "source": {
+        "kind": "git",
+        "url": "https://github.com/SirAllap/agentglass-local-review",
+        "ref": null
+      },
+      "description": "Reviews your pull requests on this machine with the agent and model you choose, inside a sandbox that cannot write or reach GitHub. Press Local review in a pull request, or label one and every push is reviewed. The findings land in the pull request itself, marked local \u2014 the prompt is a box you edit. Nothing is posted.",
+      "categories": [
+        "review",
+        "github",
+        "agents"
+      ],
       "added": "2026-09-19"
     }
   ]
