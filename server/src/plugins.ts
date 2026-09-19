@@ -15,7 +15,7 @@
 // somewhere new asks again.
 import { createHash } from "node:crypto";
 import {
-  existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync,
+  existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync,
 } from "node:fs";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { homedir, tmpdir } from "node:os";
@@ -43,6 +43,11 @@ export interface PluginManifest {
   /** Where it may draw. Optional in the file; always present once read, so
    *  a manifest from before drawing existed reads as "draws nowhere". */
   contributes: Contributes;
+  /** Its own mark: a file in its folder (svg, png or webp) and a colour. Both
+   *  optional and both only ever shown — the icon is served as an image, never
+   *  inlined, so an SVG's scripts have nowhere to run. */
+  icon?: string;
+  color?: string;
 }
 
 /** One path segment, the same character set `projectadd.ts` holds a cloned
@@ -94,6 +99,12 @@ export function validateManifest(raw: unknown): PluginManifest | string {
   }
   const contributes = validateContributes(m.contributes);
   if (!contributes.ok) return contributes.error;
+  if (m.icon !== undefined && (typeof m.icon !== "string" || !ICON_RE.test(m.icon) || m.icon.split("/").includes(".."))) {
+    return "icon must be a relative path to an .svg, .png or .webp file in the plugin folder";
+  }
+  if (m.color !== undefined && (typeof m.color !== "string" || !/^#[0-9a-fA-F]{6}$/.test(m.color))) {
+    return "color must be a hex colour like #7c5cf5";
+  }
   return {
     name: m.name,
     publisher: m.publisher.trim().slice(0, 200),
@@ -101,7 +112,33 @@ export function validateManifest(raw: unknown): PluginManifest | string {
     entrypoint: m.entrypoint.trim(),
     scope: m.scope,
     contributes: contributes.value,
+    ...(typeof m.icon === "string" ? { icon: m.icon } : {}),
+    ...(typeof m.color === "string" ? { color: m.color.toLowerCase() } : {}),
   };
+}
+
+const ICON_RE = /^[A-Za-z0-9._-][A-Za-z0-9._\/-]{0,99}\.(svg|png|webp)$/;
+const ICON_TYPES: Record<string, string> = { svg: "image/svg+xml", png: "image/png", webp: "image/webp" };
+const ICON_MAX_BYTES = 256 * 1024;
+
+/**
+ * A plugin's icon as bytes and a type, or null. The path came from its
+ * manifest and is checked again here against the folder it was installed to:
+ * resolved, it must still be inside, and it must not be a link out of it.
+ */
+export function pluginIcon(name: string): { bytes: Uint8Array; type: string } | null {
+  const rec = read().plugins.find((p) => p.name === name);
+  if (!rec?.icon || !ICON_RE.test(rec.icon) || !insidePluginsRoot(rec.installDir)) return null;
+  const root = resolve(rec.installDir);
+  const file = resolve(root, rec.icon);
+  if (!file.startsWith(root + sep)) return null;
+  try {
+    const st = lstatSync(file);
+    if (!st.isFile() || st.size > ICON_MAX_BYTES) return null;
+    return { bytes: new Uint8Array(readFileSync(file)), type: ICON_TYPES[file.slice(file.lastIndexOf(".") + 1)]! };
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -122,6 +159,10 @@ export function manifestHash(m: PluginManifest): string {
     // before drawing existed and its approval is not cleared by an upgrade of
     // this app.
     ...(Object.keys(m.contributes ?? {}).length ? { contributes: m.contributes } : {}),
+    // Its look is part of what was approved too, so a plugin cannot take on
+    // another's face after the fact; absent keeps the old hash.
+    ...(m.icon ? { icon: m.icon } : {}),
+    ...(m.color ? { color: m.color } : {}),
   });
   return createHash("sha256").update(canonical).digest("hex");
 }

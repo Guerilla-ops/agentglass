@@ -7,6 +7,7 @@ import { ICON } from "../../lib/iconSize.ts";
 import { Spinner } from "../Spinner.tsx";
 import { PluginTree } from "./PluginTree.tsx";
 import { PanelGlyph } from "./panelGlyph.tsx";
+import { PluginMark } from "./PluginMark.tsx";
 
 /**
  * The rail's home for plugins: every panel an enabled plugin declared, one
@@ -126,7 +127,9 @@ export function PluginsView({ active }: { active: boolean }) {
                   background: on ? "color-mix(in srgb, var(--primary) 12%, transparent)" : "transparent",
                   border: "1px solid transparent",
                 }}>
-                <PanelGlyph icon={p.icon} size={ICON.sm} />
+                {p.hasIcon || p.color
+                  ? <PluginMark name={p.plugin} icon={p.hasIcon ? "icon" : undefined} color={p.color ?? undefined} size={ICON.lg} stamp={p.stamp} />
+                  : <PanelGlyph icon={p.icon} size={ICON.sm} />}
                 {p.title}
                 {!p.running && <span className="w-1.5 h-1.5 rounded-full" style={{ background: "var(--text4)" }} title="not running" />}
               </button>

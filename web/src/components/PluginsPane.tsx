@@ -6,6 +6,10 @@
 // enabling is the one moment a human grants a scope, and disabling stops
 // the process that scope was minted for. Reviewing that from a terminal is
 // not review, which is the whole reason this file exists.
+import { PluginMark } from "./plugins/PluginMark.tsx";
+import { emitControl } from "../lib/controlBus.ts";
+import { openSettings } from "../lib/openSettings.ts";
+import { useDialogs } from "./ConfirmDialog.tsx";
 import { useCallback, useEffect, useState } from "react";
 import { Fold, SettingRow, Switch } from "./SettingRow.tsx";
 import { api } from "../lib/api.ts";
@@ -51,35 +55,6 @@ const CARD_STYLE: React.CSSProperties = {
   background: "var(--surface-card)",
   boxShadow: "var(--surface-lift)",
 };
-
-/**
- * Two letters standing in for an icon nobody shipped.
- *
- * A board of cards needs something to aim at before the words are read, and
- * plugins have no artwork — the manifest carries a name and a publisher and
- * that is all. Initials off the name are the same answer an avatar is: a
- * shape, in a stable colour, that tells one card from another at a glance.
- *
- * Hue from the name's own bytes, so the same plugin is the same colour on
- * every machine and no two adjacent cards are alike unless their names are.
- */
-function Initials({ name }: { name: string }) {
-  const letters = name.replace(/[^a-zA-Z0-9]+/g, " ").trim().split(/\s+/)
-    .slice(0, 2).map((w) => w[0]!.toUpperCase()).join("") || "?";
-  let h = 0;
-  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 360;
-  return (
-    <span aria-hidden className="shrink-0 grid place-items-center rounded-xl text-[13px] font-semibold"
-      style={{
-        width: 40, height: 40,
-        color: `oklch(0.86 0.09 ${h})`,
-        background: `oklch(0.34 0.06 ${h} / 0.45)`,
-        border: `1px solid oklch(0.55 0.08 ${h} / 0.4)`,
-      }}>
-      {letters}
-    </span>
-  );
-}
 
 /**
  * A tile the same size and shape as a plugin card, not a text field wedged
@@ -524,7 +499,20 @@ function PluginCard({ plugin, masterOn, onChanged }: { plugin: PublicPlugin; mas
   // server/src/plugins.ts, updatePlugin.
   const updatable = plugin.source.kind !== "local-path";
 
+  const { ask, dialog } = useDialogs();
   const setEnabled = async (next: boolean) => {
+    // Switching it on IS the approval (enablePlugin records it), so the
+    // switch cannot be locked until something is approved — it was, and a
+    // plugin nobody had approved could never be turned on. It asks once,
+    // with what is being approved in front of it.
+    if (next && needsReview) {
+      const ok = await ask({
+        title: `Switch on ${plugin.name}?`,
+        body: [SCOPE_SENTENCE[plugin.scope], `Runs: ${plugin.entrypoint}`, ...drawsWhere(plugin)].join("\n\n"),
+        confirmLabel: "Approve and switch on",
+      });
+      if (!ok) return;
+    }
     setBusy(true);
     if (next) await api.pluginEnable(plugin.name);
     else await api.pluginDisable(plugin.name);
@@ -549,32 +537,45 @@ function PluginCard({ plugin, masterOn, onChanged }: { plugin: PublicPlugin; mas
     onChanged();
   };
 
+  const tint = plugin.color ?? "var(--primary)";
+  const hasPanel = (plugin.contributes?.panels?.length ?? 0) > 0;
+  const hasSettings = (plugin.contributes?.settings?.length ?? 0) > 0;
   return (
-    <div className="rounded-xl p-3.5 flex flex-col" style={CARD_STYLE}>
+    <>
+    {/* Outside the card: the card clips what spills over its rounded edge,
+        and a dialog drawn inside it was clipped away entirely. */}
+    {dialog}
+    <div className="rounded-xl p-4 flex flex-col relative overflow-hidden" style={{
+      ...CARD_STYLE,
+      // The plugin's own colour, as a wash in the corner its mark sits in:
+      // enough to tell two cards apart at a glance, never enough to fight the
+      // text. No colour declared, the app's accent.
+      backgroundImage: `radial-gradient(120% 90% at 0% 0%, color-mix(in srgb, ${tint} 13%, transparent), transparent 55%)`,
+    }}>
       {/* Name and publisher stack against the mark rather than running along
           one line with the description under all three. A card is scanned in
           a grid, and what gets scanned is the top-left corner: a shape, then
           a name, then who wrote it. */}
       <div className="flex items-start gap-3">
-        <Initials name={plugin.name} />
-        <div className="min-w-0 flex-1">
+        <PluginMark name={plugin.name} icon={plugin.icon} color={plugin.color} stamp={plugin.contentHash} />
+        <div className="min-w-0 flex-1 pt-0.5">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[13.5px] font-medium" style={{ color: "var(--text)" }}>{plugin.name}</span>
-            <StateDot enabled={plugin.enabled} running={running} reconsent={reconsent} />
+            <span className="text-[15px] font-semibold tracking-tight" style={{ color: "var(--text)" }}>{plugin.name}</span>
+            <StatePill enabled={plugin.enabled} running={running} reconsent={reconsent} needsReview={needsReview} pid={plugin.pid} />
           </div>
           <div className="text-[11.5px] t-dim mt-0.5">by {plugin.publisher}</div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <button onClick={() => setEnabled(!plugin.enabled)}
-            disabled={busy || (!plugin.enabled && (needsReview || !masterOn))}
-            title={!plugin.enabled && needsReview ? "Review what it declares before enabling" : !plugin.enabled && !masterOn ? "Plugins are switched off" : undefined}
+            disabled={busy || (!plugin.enabled && !masterOn)}
+            title={!plugin.enabled && needsReview ? "Switching it on approves what it declares below" : !plugin.enabled && !masterOn ? "Plugins are switched off" : undefined}
             className="disabled:cursor-not-allowed">
             <Switch on={plugin.enabled} busy={busy} />
           </button>
         </div>
       </div>
 
-      <div className="text-[12px] mt-2.5" style={{ color: "var(--text2)" }}>{plugin.description}</div>
+      <div className="text-[12.5px] leading-relaxed mt-3" style={{ color: "var(--text2)" }}>{plugin.description}</div>
 
       {/* Chips, because a card in a grid is read by its badges before its
           prose — the scope is the one fact worth knowing before installing
@@ -587,12 +588,13 @@ function PluginCard({ plugin, masterOn, onChanged }: { plugin: PublicPlugin; mas
         }}>
           {SCOPE_WORD[plugin.scope]}
         </span>
-        <span className="chip text-[10px]" style={{
-          color: running ? "var(--success)" : plugin.enabled ? "var(--warning)" : "var(--text4)",
-          borderColor: `color-mix(in srgb, ${running ? "var(--success)" : plugin.enabled ? "var(--warning)" : "var(--border)"} 45%, transparent)`,
-        }}>
-          {running ? `running · pid ${plugin.pid}` : plugin.enabled ? "enabled, not running" : "not running"}
-        </span>
+        {/* Where it shows up, before any prose: a panel, a settings page, notes
+            in pull requests. The same facts the review below spells out. */}
+        {(plugin.contributes?.panels ?? []).map((p) => (
+          <DrawChip key={p.id} tint={tint} label={`panel · ${p.title}`} />
+        ))}
+        {hasSettings && <DrawChip tint={tint} label="settings" />}
+        {plugin.contributes?.prNotes && <DrawChip tint={tint} label="notes in PRs" />}
       </div>
       <div className="text-[11px] t-dim mt-1.5 truncate" title={formatSource(plugin.source)}>
         From <span className="t-mono">{formatSource(plugin.source)}</span>
@@ -659,6 +661,22 @@ function PluginCard({ plugin, masterOn, onChanged }: { plugin: PublicPlugin; mas
                 re-consent path as a fresh install — see updatePlugin on the
                 server — so this never claims to have "updated" anything
                 itself, only to have gone and looked. */}
+            {/* Straight to where it shows up — the answer to "I switched it on,
+                now what". */}
+            {hasPanel && plugin.enabled && (
+              <button onClick={() => { emitControl({ cmd: "view", to: "plugins" }); emitControl({ cmd: "esc" }); }}
+                className="text-[12px] px-2.5 py-1 rounded-lg whitespace-nowrap hover:opacity-80"
+                style={{ color: tint, border: `1px solid color-mix(in srgb, ${tint} 45%, transparent)`, background: `color-mix(in srgb, ${tint} 10%, transparent)` }}>
+                Open
+              </button>
+            )}
+            {hasSettings && (
+              <button onClick={() => openSettings(`plugin:${plugin.name}`)}
+                className="text-[12px] px-2.5 py-1 rounded-lg whitespace-nowrap hover:opacity-80"
+                style={{ color: "var(--text)", border: "1px solid color-mix(in srgb, var(--border) 45%, transparent)" }}>
+                Settings
+              </button>
+            )}
             {updatable && (
               <button onClick={update} disabled={busy || updating}
                 title="Re-fetch this plugin at its recorded source. A changed declaration will need review again before it can run."
@@ -676,6 +694,7 @@ function PluginCard({ plugin, masterOn, onChanged }: { plugin: PublicPlugin; mas
         )}
       </div>
     </div>
+    </>
   );
 }
 
@@ -692,20 +711,6 @@ function Alert({ tone, children }: { tone: "warning" | "error"; children: React.
   );
 }
 
-/** enabled+running is green, enabled-but-not-running is the failure this page
- *  exists to catch (amber, not green — the switch is not the truth), asking
- *  for review is its own colour so it cannot read as a plain "off". */
-function StateDot({ enabled, running, reconsent }: { enabled: boolean; running: boolean; reconsent: boolean }) {
-  const tint = reconsent ? "var(--warning)" : enabled && running ? "var(--success)" : enabled ? "var(--warning)" : "var(--text4)";
-  return (
-    <span className="shrink-0 rounded-full mt-1" aria-hidden style={{
-      width: 8, height: 8,
-      background: enabled && running ? tint : "transparent",
-      border: `1px solid ${tint}`,
-    }} />
-  );
-}
-
 /** What a plugin declared it draws, as the sentences a reviewer reads. */
 function drawsWhere(p: PublicPlugin): string[] {
   const c = p.contributes ?? {};
@@ -714,4 +719,34 @@ function drawsWhere(p: PublicPlugin): string[] {
   if (c.settings?.length) out.push(`Adds a settings page with ${c.settings.length} ${c.settings.length === 1 ? "field" : "fields"}`);
   if (c.prNotes) out.push("Writes notes on pull requests, shown only in this app and never sent to GitHub");
   return out;
+}
+
+/** Running, off, or waiting on you — a word, not only a dot, because the dot
+ *  alone had to be learned and it is the first thing asked of a card. */
+function StatePill({ enabled, running, reconsent, needsReview, pid }: { enabled: boolean; running: boolean; reconsent: boolean; needsReview: boolean; pid: number | null }) {
+  const [label, tint] = reconsent ? ["asks again", "var(--warning)"]
+    : needsReview && !enabled ? ["not approved", "var(--warning)"]
+    : enabled && running ? ["running", "var(--success)"]
+    // Switched on and nothing running: the failure a plugin screen exists to
+    // show, and the one an `enabled` flag alone cannot.
+    : enabled ? ["enabled, not running", "var(--warning)"]
+    : ["off", "var(--text3)"];
+  return (
+    <span className="inline-flex items-center gap-1.5 text-[10px] uppercase tracking-wide px-1.5 py-px rounded-full"
+      title={running && pid ? `pid ${pid}` : undefined}
+      style={{ color: tint, background: `color-mix(in srgb, ${tint} 12%, transparent)` }}>
+      <span className="w-1.5 h-1.5 rounded-full" style={{ background: tint, boxShadow: enabled && running ? `0 0 6px ${tint}` : undefined }} />
+      {label}
+    </span>
+  );
+}
+
+function DrawChip({ tint, label }: { tint: string; label: string }) {
+  return (
+    <span className="chip text-[10px]" style={{
+      color: `color-mix(in srgb, ${tint} 75%, var(--text))`,
+      background: `color-mix(in srgb, ${tint} 10%, transparent)`,
+      borderColor: `color-mix(in srgb, ${tint} 35%, transparent)`,
+    }}>{label}</span>
+  );
 }

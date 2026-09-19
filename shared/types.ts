@@ -4555,6 +4555,8 @@ export interface PublicPlugin {
    *  runs in the background. */
   contributes: import("./pluginUi.ts").Contributes;
   settings?: Record<string, unknown>;
+  icon?: string;
+  color?: string;
   running: boolean;
   pid: number | null;
 }

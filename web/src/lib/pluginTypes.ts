@@ -8,6 +8,11 @@ export type PluginPanel = PanelContribution & {
   plugin: string;
   publisher: string;
   running: boolean;
+  /** The plugin's own mark (see PluginMark): whether it ships an icon, its
+   *  colour, and a stamp that changes when it is reinstalled. */
+  hasIcon?: boolean;
+  color?: string | null;
+  stamp?: string;
   tree: UiNode | null;
   updatedAt: number | null;
 };

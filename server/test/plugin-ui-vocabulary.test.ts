@@ -146,3 +146,14 @@ describe("a timestamp a Date cannot hold", () => {
     expect(validateTree(big).ok).toBe(false);
   });
 });
+
+describe("a plugin's own face", () => {
+  const base = { name: "orbit-lint", publisher: "acme", description: "d", entrypoint: "true", scope: "read" };
+  test("an icon is a relative svg, png or webp in its folder, and a colour is hex", () => {
+    expect(typeof validateManifest({ ...base, icon: "assets/icon.svg", color: "#8B5CF6" })).toBe("object");
+    for (const icon of ["../icon.svg", "/etc/icon.svg", "icon.js", "a/../../icon.png", "icon.svg\n"]) {
+      expect(validateManifest({ ...base, icon })).toContain("icon");
+    }
+    for (const color of ["red", "#fff", "#12345g", "url(x)"]) expect(validateManifest({ ...base, color })).toContain("color");
+  });
+});

@@ -177,7 +177,7 @@ import { resolveToken, tokenOk, isIntake, isAuthExempt, callerFor, allowed, scop
 import {
   listPlugins, masterEnabled, setMaster, installPlugin, installFromCatalogue, updatePlugin, enablePlugin, disablePlugin, removePlugin,
   listCatalogues, addCatalogue, removeCatalogue,
-  contributesOf, isRunning, pluginSettings, setPluginSettings, resumeEnabledPlugins, stopAllPluginsSync,
+  contributesOf, isRunning, pluginSettings, setPluginSettings, resumeEnabledPlugins, stopAllPluginsSync, pluginIcon,
 } from "./plugins.ts";
 import {
   setPluginUiHook, setPanel, panelState, setOptions, pushEvent, takeEvents, upsertRun, upsertNotes, notesFor, setNoteStatus, flushPluginNotes,
@@ -4777,6 +4777,19 @@ const server = Bun.serve<WsData>({
     /* --- plugins that draw: the window's side. Reads are reads; every write
        is unlisted in ANSWER_POST/READ_POST, so it needs `full` like the rest
        of /plugins, and goes through the same CSRF check. */
+    if (pathname === "/plugins/icon" && req.method === "GET") {
+      // An image, and only ever used as one (`<img>`), with headers that keep
+      // it that way if something opens the URL directly: no sniffing, and a
+      // sandboxing CSP that gives an SVG no script and no network.
+      const icon = pluginIcon(url.searchParams.get("name") ?? "");
+      if (!icon) return new Response("not found", { status: 404 });
+      return new Response(icon.bytes, { headers: {
+        "Content-Type": icon.type,
+        "X-Content-Type-Options": "nosniff",
+        "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+        "Cache-Control": "private, max-age=300",
+      } });
+    }
     if (pathname === "/plugins/panels" && req.method === "GET") {
       // `?plugin=&panel=` asks for one; a redraw ping names which, so an open
       // window fetches the panel that changed rather than every tree.
@@ -4788,7 +4801,11 @@ const server = Bun.serve<WsData>({
         for (const panel of p.contributes.panels ?? []) {
           if (onlyPanel && panel.id !== onlyPanel) continue;
           const st = panelState(p.name, panel.id);
-          out.push({ plugin: p.name, publisher: p.publisher, ...panel, running: isRunning(p.name), tree: st?.tree ?? null, updatedAt: st?.updatedAt ?? null });
+          out.push({
+            plugin: p.name, publisher: p.publisher, ...panel, running: isRunning(p.name),
+            hasIcon: !!p.icon, color: p.color ?? null, stamp: p.contentHash.slice(0, 12),
+            tree: st?.tree ?? null, updatedAt: st?.updatedAt ?? null,
+          });
         }
       }
       return json({ ok: true, panels: out });

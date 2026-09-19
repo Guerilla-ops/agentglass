@@ -49,7 +49,7 @@ describe("a switch on with nothing running is the failure this page catches", ()
        nothing is running", which is the failure a plugin screen exists to
        show and the one an `enabled` flag alone cannot. */
     expect(pane).toMatch(/enabled, not running/);
-    expect(pane).toContain("pid ${plugin.pid}");
+    expect(pane).toContain("pid ${pid}");
   });
 });
 
@@ -74,7 +74,12 @@ describe("install takes a local path or a git URL, and cannot enable an unreview
     expect(pane).toMatch(/A local folder's absolute path, or a git URL/);
   });
 
-  test("the enable switch is disabled while review is outstanding or the master switch is off", () => {
-    expect(pane).toContain("!plugin.enabled && (needsReview || !masterOn)");
+  test("switching on an unreviewed plugin asks first, and only the master switch locks it", () => {
+    // Switching it on is the approval (enablePlugin records it). Locking the
+    // switch until something was approved left a new plugin that could never
+    // be turned on; it asks instead, with what is being approved.
+    expect(pane).toContain("disabled={busy || (!plugin.enabled && !masterOn)}");
+    expect(pane).toMatch(/if \(next && needsReview\) \{\s*const ok = await ask\(/);
+    expect(pane).toContain("if (!ok) return;");
   });
 });

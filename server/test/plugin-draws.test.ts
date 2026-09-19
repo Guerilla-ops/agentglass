@@ -25,6 +25,8 @@ const MANIFEST = {
   // The argument only marks the process, so the test can look for it by name.
   entrypoint: "bun run plugin.js agx-draws-marker",
   scope: "read",
+  icon: "icon.svg",
+  color: "#8b5cf6",
   contributes: {
     panels: [{ id: "main", title: "Reviews", icon: "review" }],
     prNotes: true,
@@ -121,6 +123,7 @@ beforeAll(async () => {
   mkdirSync(src);
   writeFileSync(join(src, "plugin.json"), JSON.stringify(MANIFEST));
   writeFileSync(join(src, "plugin.js"), PLUGIN);
+  writeFileSync(join(src, "icon.svg"), '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/></svg>');
   port = await freePort();
   base = `http://127.0.0.1:${port}`;
   await boot();
@@ -165,6 +168,25 @@ describe("a plugin draws in the app", () => {
   test("without a plugin's own token there is no self to draw as", async () => {
     const r = await fetch(base + "/plugin/self/panel", { method: "POST", body: JSON.stringify({ id: "main", tree: { type: "divider" } }) });
     expect(r.status).toBe(403);
+  });
+});
+
+describe("its icon", () => {
+  test("is served as an image that cannot run anything", async () => {
+    const r = await fetch(base + `/plugins/icon?name=${MANIFEST.name}`);
+    expect(r.status).toBe(200);
+    expect(r.headers.get("content-type")).toBe("image/svg+xml");
+    expect(r.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(r.headers.get("content-security-policy")).toContain("sandbox");
+    expect(await r.text()).toContain("<circle");
+  });
+
+  test("a link that leads out of the plugin's folder is not followed", async () => {
+    const installed = join(dir, "agentglass", "plugins", MANIFEST.name, "icon.svg");
+    const { rmSync: rm, symlinkSync } = await import("node:fs");
+    rm(installed);
+    symlinkSync("/etc/hostname", installed);
+    expect((await fetch(base + `/plugins/icon?name=${MANIFEST.name}`)).status).toBe(404);
   });
 });
 
