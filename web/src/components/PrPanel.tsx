@@ -96,9 +96,9 @@ import { openCard } from "../lib/openCard.ts";
 import { openIssue } from "../lib/openIssue.ts";
 import { useClickupSetup } from "../lib/clickupSetup.ts";
 import type { ListStatus as CuStatus, ListMember as CuMember, ProviderTask } from "../../../shared/providers.ts";
-import { CloseButton } from "./CloseButton.tsx";
+import { CloseButton, CloseIcon } from "./CloseButton.tsx";
 import { ICON } from "../lib/iconSize.ts";
-import { AgentIcon, AttachIcon, BlockedIcon, BoltIcon, BranchIcon, CaretIcon, CheckboxIcon, CircleIcon, ClockIcon, CommentIcon, CopyIcon, CrossIcon, DoneIcon, DraftIcon, EditIcon, EyeIcon, FileIcon, FlagIcon, IconLabel, LinkIcon, MergeIcon, MoreIcon, PlusIcon, RefreshIcon, SearchIcon, SparkleIcon, StarIcon, TagIcon, UndoIcon, UserIcon } from "../lib/glyphIcons.tsx";
+import { AgentIcon, ArrowIcon, AttachIcon, BlockedIcon, BoltIcon, BranchIcon, CaretIcon, CheckboxIcon, CircleIcon, ClockIcon, CommentIcon, CopyIcon, CrossIcon, DoneIcon, DraftIcon, EditIcon, EyeIcon, FileIcon, FlagIcon, IconLabel, LinkIcon, MergeIcon, MoreIcon, PlusIcon, RefreshIcon, SearchIcon, SparkleIcon, StarIcon, TagIcon, UndoIcon, UserIcon } from "../lib/glyphIcons.tsx";
 import { PrIcon } from "./workspace/icons.tsx";
 import { CardChip } from "../lib/priority.tsx";
 import { ColumnsIcon, InboxIcon, QuoteIcon } from "./settingsNavIcons.tsx";
@@ -1442,8 +1442,8 @@ function PinnedCapsule({ pinned, pinState, selected, current, onOpen }: {
               title={`Unpin #${p.number}`}
               aria-label={`Unpin #${p.number}`}
               className={`leading-none grid place-items-center ${p.number === selected ? "" : "opacity-0 group-hover:opacity-100 focus:opacity-100"}`}
-              style={{ color: "var(--text3)", fontSize: 14, width: 18, height: 18 }}>
-              ×
+              style={{ color: "var(--text3)", width: 18, height: 18 }}>
+              <CloseIcon size={ICON.xs} />
             </button>
           </span>
         ))}
@@ -5805,7 +5805,7 @@ function BodyEditor({ prNumber, initial, busy, onSave, onCancel, onOpenGithub }:
           <span className="min-w-0 truncate"><b>{attachNote}</b> can't be attached from here — GitHub has no public upload API for attachments.</span>
           <button onClick={onOpenGithub} className="agx-btn ml-auto shrink-0 px-2 py-0.5 rounded"
             style={{ color: "var(--warning)", border: "1px solid color-mix(in srgb, var(--warning) 45%, transparent)" }}>Attach on GitHub ↗</button>
-          <button onClick={() => setAttachNote(null)} className="agx-btn shrink-0 px-1" style={{ color: "var(--text3)" }} aria-label="Dismiss">×</button>
+          <button onClick={() => setAttachNote(null)} className="agx-btn shrink-0 grid place-items-center w-5 h-5 rounded" style={{ color: "var(--text3)" }} aria-label="Dismiss"><CloseIcon size={ICON.xs} /></button>
         </div>
       )}
 
@@ -9118,7 +9118,7 @@ function FilesTab({ d, root, byPath, loaded, diffErr, seenFiles, onSeen, onSeenM
           <span className="flex" style={{ color: "var(--text3)" }}><SearchIcon size={ICON.xs} /></span>
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filter files…"
             className="bg-transparent outline-none text-[10.5px] w-28" style={{ color: "var(--text)" }} />
-          {q && <button onClick={() => setQ("")} title="Clear" style={{ color: "var(--text3)" }}>×</button>}
+          {q && <CloseButton onClick={() => setQ("")} title="Clear" size={ICON.xs} hit={20} />}
         </span>
         <FilesFilterMenu
           facets={extFacets} hiddenExts={hiddenExts}
@@ -9719,9 +9719,9 @@ function GhLink({ href, title }: { href: string; title: string }) {
       <a href={safe} target="_blank" rel="noreferrer noopener" title={title} className={box} style={wide}>
         <span className="inline-flex items-center" style={{ gap: 2 }}>
           <GhMark size={ICON.xs} />
-          {/* Raised like a superscript rather than sat on the baseline, where it
-              read as a second glyph of equal weight instead of a modifier. */}
-          <span aria-hidden style={{ fontSize: 8, lineHeight: 1, opacity: 0.75, transform: "translateY(-3px)" }}>↗</span>
+          {/* The "leaves the app" arrow, drawn: it was an 8px `↗` lifted 3px
+              as a superscript — five pixels of ink, and off the line it sat on. */}
+          <span aria-hidden className="flex" style={{ opacity: 0.75 }}><ArrowIcon size={ICON.xs} /></span>
         </span>
       </a>
       <button type="button" className={box} style={{ ...style, color: copied ? "var(--success)" : style.color }}
@@ -11140,14 +11140,14 @@ function Composer({ onSend, busy, placeholder, sendLabel, sendTitle, quiet, onOp
             <button onClick={onOpenGithub} className="agx-btn ml-auto shrink-0 px-2 py-0.5 rounded"
               style={{ color: "var(--warning)", border: "1px solid color-mix(in srgb, var(--warning) 45%, transparent)" }}>Attach on GitHub ↗</button>
           )}
-          <button onClick={() => setImageNote(null)} className="agx-btn shrink-0 px-1" style={{ color: "var(--text3)" }} aria-label="Dismiss">×</button>
+          <button onClick={() => setImageNote(null)} className="agx-btn shrink-0 grid place-items-center w-5 h-5 rounded" style={{ color: "var(--text3)" }} aria-label="Dismiss"><CloseIcon size={ICON.xs} /></button>
         </div>
       )}
       {restored && (
         <div className="flex items-center gap-2 px-2.5 py-1 text-[10px]"
           style={{ color: "var(--primary)", background: "color-mix(in srgb, var(--primary) 10%, transparent)", borderBottom: "1px solid color-mix(in srgb, var(--text) 11%, transparent)" }}>
           <span>Picked up where you left off — this was never sent.</span>
-          <button onClick={() => setRestored(false)} className="agx-btn ml-auto shrink-0 px-1" style={{ color: "var(--text3)" }} aria-label="Dismiss">×</button>
+          <button onClick={() => setRestored(false)} className="agx-btn ml-auto shrink-0 grid place-items-center w-5 h-5 rounded" style={{ color: "var(--text3)" }} aria-label="Dismiss"><CloseIcon size={ICON.xs} /></button>
         </div>
       )}
       {preview ? (

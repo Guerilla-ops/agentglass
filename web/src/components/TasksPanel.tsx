@@ -4374,7 +4374,7 @@ function NoteStrip({ note, onClose }: { note: { ok: boolean; text: string; go?: 
           style={{ color: tone }}>{note.go.label}</button>
       )}
       <button onClick={onClose} title="Dismiss" aria-label="Dismiss"
-        className="shrink-0 px-1 rounded hover:bg-white/10" style={{ color: tone }}>×</button>
+        className="shrink-0 grid place-items-center w-5 h-5 rounded hover:bg-white/10" style={{ color: tone }}><CloseIcon size={ICON.xs} /></button>
     </div>
   );
 }
@@ -4642,7 +4642,7 @@ function ClickUpRow({ t, today, on, onPick, grid, showWho, showSquad, showSprint
               language; drawn on every row it also keeps the titles on one left
               edge instead of ragged. A card with no priority gets the outline
               one, which is what its own picker shows for none. */}
-          <span className="shrink-0" title={`Priority: ${prioLook(t.priority).label}`}>
+          <span className="shrink-0 flex self-center" title={`Priority: ${prioLook(t.priority).label}`}>
             <Flag c={prioLook(t.priority).c} on={!!t.priority} />
           </span>
           <span className="truncate text-[12.5px] leading-snug" style={{ color: done ? "var(--text3)" : "var(--text)" }}
@@ -5223,13 +5223,13 @@ function TagEdit({ t, busy, onApply, board }: {
         <span key={tag} className="inline-flex items-center gap-1 text-[10.5px] px-1.5 py-0.5 rounded-md"
           style={{ color: "var(--text2)", background: "color-mix(in srgb, var(--text) 7%, transparent)", border: edge(14) }}>
           {tag}
-          <button className="agx-btn rounded" title={`Remove ${tag}`} disabled={busy}
-            style={{ color: "var(--text4)", lineHeight: 1 }}
+          <button className="agx-btn rounded flex" title={`Remove ${tag}`} disabled={busy}
+            style={{ color: "var(--text4)" }}
             onClick={() => onApply(`tag:${tag}`, {
               done: `Removed ${tag}`,
               optimistic: { tags: t.tags.filter((x) => x !== tag) },
               go: () => api.clickupTag(t.id, tag, false),
-            })}>×</button>
+            })}><CloseIcon size={ICON.xs} /></button>
         </span>
       ))}
       <span className="relative inline-block" ref={box}>
@@ -7986,7 +7986,7 @@ function TaskFields({ t, today, projects, tags, onEdit }: {
             </button>
             {t.due && (
               <button onClick={() => onEdit({ due: null })} title="Clear the due date"
-                className="agx-onrow text-[11px] px-1" style={{ color: "var(--text4)" }}>×</button>
+                className="agx-onrow grid place-items-center w-5 h-5" style={{ color: "var(--text4)" }}><CloseIcon size={ICON.xs} /></button>
             )}
           </div>
         )}
@@ -8018,7 +8018,7 @@ function TaskFields({ t, today, projects, tags, onEdit }: {
               style={{ color: "var(--text2)", background: "color-mix(in srgb, var(--text) 8%, transparent)" }}>
               {tag}
               <button onClick={() => onEdit({ tags: t.tags.filter((x) => x !== tag) })}
-                title={`Remove ${tag}`} style={{ color: "var(--text4)" }}>×</button>
+                title={`Remove ${tag}`} className="flex" style={{ color: "var(--text4)" }}><CloseIcon size={ICON.xs} /></button>
             </span>
           ))}
           {addingTag ? (
@@ -8302,8 +8302,7 @@ function SearchHits({ asked, rows, looking, onAsk, onPick, onClose }: {
             spellCheck={false}
             className="flex-1 min-w-0 bg-transparent outline-none text-[13px]"
             style={{ color: "var(--text)", caretColor: "var(--primary)" }} />
-          <button onClick={onClose} className="agx-btn rounded px-1 shrink-0" title="Close · Esc" aria-label="Close"
-            style={{ color: "var(--text3)" }}>×</button>
+          <CloseButton onClick={onClose} title="Close · Esc" size={ICON.sm} />
         </div>
         <div className="px-3 py-1.5 flex items-center gap-2 text-[10.5px] shrink-0"
           style={{ color: "var(--text3)", borderBottom: edge(12) }}>

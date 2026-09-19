@@ -52,6 +52,7 @@ import type { GitRepoRef } from "../../../../shared/types.ts";
 import { ICON } from "../../lib/iconSize.ts";
 import { AgentIcon, ExpandIcon, FileIcon, NoteIcon } from "../../lib/glyphIcons.tsx";
 import { BrowserIcon, IssuesIcon, PrIcon, TerminalIcon } from "../workspace/icons.tsx";
+import { CloseIcon } from "../CloseButton.tsx";
 
 const edge = (pct: number) => `1px solid color-mix(in srgb, var(--text) ${pct}%, transparent)`;
 
@@ -579,8 +580,8 @@ export function FloatingBench() {
                         {on && (
                           <button onClick={() => { if (isLanternTab(t)) void api.benchEnd(root, t.slot); closeTab(root, t.id); }}
                             title={isLanternTab(t) ? "Close the Lantern's chat (ends it)" : "Forget this tab (what it runs keeps running)"}
-                            className="agx-bench-hit shrink-0 text-[14px] leading-none flex items-center justify-center"
-                            style={{ width: 26, height: 28, color: "var(--text3)" }}>×</button>
+                            className="agx-bench-hit shrink-0 flex items-center justify-center rounded-md"
+                            style={{ width: 26, height: 26, color: "var(--text3)" }}><CloseIcon size={ICON.sm} /></button>
                         )}
                       </span>
                     );

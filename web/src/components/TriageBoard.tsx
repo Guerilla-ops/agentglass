@@ -33,6 +33,7 @@ import { unreadOf, type Unread } from "../lib/prUnread.ts";
 import { UnreadBadge } from "./UnreadBadge.tsx";
 import { matchIndex, prMatches, stepMatch } from "../lib/prBoardFind.ts";
 import { closeFind, openFind, registerEngine, topScope } from "../lib/findScope.ts";
+import { CloseIcon } from "./CloseButton.tsx";
 
 const edge = (pct: number) => `1px solid color-mix(in srgb, var(--text) ${pct}%, transparent)`;
 const TRUNKS = new Set(["main", "master", "trunk", "develop", "development"]);
@@ -631,7 +632,7 @@ export function TriageBoard({
                 {(find || onlyLane !== null) && (
                   <button onClick={() => { setFind(""); closeFind(); setOnlyLane(null); }}
                     title={find ? "Clear the search (Esc)" : "Show every lane again"}
-                    className="agx-btn rounded px-1" style={{ color: "var(--text3)" }}>×</button>
+                    className="agx-btn rounded grid place-items-center w-5 h-5" style={{ color: "var(--text3)" }}><CloseIcon size={ICON.xs} /></button>
                 )}
               </span>
             )}
