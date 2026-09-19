@@ -71,7 +71,22 @@ const listeners = new Map<string, (e: any) => void>();
   elementFromPoint: () => atPoint && { closest: (s: string) => (s === ".xterm" && atPoint!.xterm ? {} : null) },
 };
 
-const { zoomAtPointer, overBrowserPage, overTerminal } = await import("../src/lib/zoomTarget.ts");
+/*
+ * A FRESH COPY OF THE MODULE, not whichever one was loaded first.
+ *
+ * `zoomTarget.ts` starts tracking the pointer when it is imported, on whatever
+ * `window` exists at that moment. `bun test` runs every file in one process, and
+ * other files import it too — through the browser panel and the app — so when
+ * one of them ran first it was already tracking THAT file's window, and every
+ * pointer this file moves went nowhere. On ext4 this file happened to run
+ * early; on btrfs, which lists a directory in a different order, it ran 346th
+ * of 349 and all sixteen cases failed with nothing wrong in the code. A query
+ * on the specifier is a separate module instance in bun, so this one is
+ * imported after the stubs above exist, whatever ran before it.
+ */
+const FRESH = "../src/lib/zoomTarget.ts?fresh";
+const { zoomAtPointer, overBrowserPage, overTerminal } =
+  (await import(FRESH)) as typeof import("../src/lib/zoomTarget.ts");
 const { setPageZoomer } = await import("../src/lib/browserDrive.ts");
 const { currentScale } = await import("../src/lib/uiScale.ts");
 

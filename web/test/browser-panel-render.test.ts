@@ -12,13 +12,22 @@
  * exactly where a whole section drawn only "once you have dragged something
  * into it" hides.
  */
-import { beforeEach, describe, expect, test } from "bun:test";
+import { afterAll, beforeEach, describe, expect, test } from "bun:test";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 /* The panel asks the shell whether there is a browser at all and returns null
    when there is not — so the bridge has to exist BEFORE the module is imported,
    which is why this is a dynamic import below. */
+/* PUT BACK afterwards. `bun test` runs every file in one process, and a
+   `document` whose `body` is not an element makes the next suite that renders a
+   Portal throw "Target container is not a DOM element" — measured on a btrfs
+   checkout, where directories list in a different order than on ext4 and this
+   file ran before the file palette and the Docker panel suites. */
+const G = globalThis as unknown as Record<string, unknown>;
+const prior = { window: G.window, document: G.document, location: G.location, localStorage: G.localStorage };
+afterAll(() => { for (const [k, v] of Object.entries(prior)) { if (v === undefined) delete G[k]; else G[k] = v; } });
+
 const store = new Map<string, string>();
 (globalThis as unknown as { localStorage: Storage }).localStorage = {
   getItem: (k: string) => store.get(k) ?? null,
