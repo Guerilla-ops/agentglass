@@ -37,7 +37,7 @@ import { SOURCE, label, mutates, readRoutes } from "./routeTable.ts";
  * that a route which mutates or executes may be reached by a caller that sent
  * no Origin header — which on the `AGENTGLASS_BIND=0.0.0.0` install the README
  * documents means any machine that can reach the port. There are three reasons
- * on the list and no others: seven callers that are subprocesses rather than
+ * on the list and no others: eight callers that are subprocesses rather than
  * browsers and have no Origin to send, six steps of the pairing handshake that
  * happen before the device on the other end is trusted at all, and one read
  * that takes a POST because the question needs a body.
@@ -63,6 +63,14 @@ const EXEMPT = new Map<string, string>([
     "A read wearing a POST: it takes a body because the question needs a list " +
     "of paths, not because it changes anything. Pinned so a later sweep does " +
     "not tighten it and break the hooks that call it."],
+  ["POST /plugin/self/settings",
+    "A plugin process writing its own settings. It is a subprocess with no " +
+    "browser in the chain and no Origin to send, and it is held by its own " +
+    "token instead: the plugin it writes as comes from that token, never " +
+    "from the request, so there is no field here to name somebody else " +
+    "with. Its siblings on the same channel — the panel, the options, the " +
+    "notes — are not on this list only because they do not restrict " +
+    "themselves to POST in the condition this test reads."],
   ["POST /pair/ticket",
     "Pairing a phone. The device on the other end is not yet trusted by " +
     "definition — that is what pairing is for — and the flow is protected by " +
