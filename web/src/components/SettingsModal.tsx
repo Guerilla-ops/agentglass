@@ -16,7 +16,7 @@ import { SavedRepliesPane } from "./SavedRepliesPane.tsx";
 import { lastTerminalRoot } from "./TerminalPanel.tsx";
 import { Filter, Fold, SettingRow } from "./SettingRow.tsx";
 import { motion, AnimatePresence } from "motion/react";
-import { Portal } from "./Portal.tsx";
+import { Portal, PortalFloor } from "./Portal.tsx";
 import { LAYER } from "../lib/layers.ts";
 import { api } from "../lib/api.ts";
 import { browserPlaces, CAN_IMPORT_COOKIES, cookieSources, importCookies, forgetCookies, type CookieSource, type CookieImportReply } from "../lib/desktop.ts";
@@ -3533,6 +3533,12 @@ export function SettingsModal({ open, onClose, sound, onSound, scale, onZoom, on
   }, [open, onClose, escArmed]);
 
   return (
+    /* Everything this dialog opens — a confirm, a menu, a picker — is a portal
+       of its own, and a portal's floor is 9999 unless it is told otherwise.
+       Under a dialog that sits at LAYER.settings they were drawn BEHIND it:
+       measured with the plugin approval, which answered a click by showing
+       nothing at all. Inside here the floor is this dialog's own layer. */
+    <PortalFloor.Provider value={LAYER.settings + 1}>
     <Portal z={LAYER.settings} find>
       <AnimatePresence>
         {open && (
@@ -4456,6 +4462,7 @@ export function SettingsModal({ open, onClose, sound, onSound, scale, onZoom, on
         )}
       </AnimatePresence>
     </Portal>
+    </PortalFloor.Provider>
   );
 }
 
