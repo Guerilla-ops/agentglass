@@ -9,6 +9,7 @@
 // usable somewhere around a dozen, and this is meant to hold far more than
 // that. It filters, and it says which chats answered while you were elsewhere.
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { GearIcon } from "./workspace/icons.tsx";
 import { ViewHeader } from "./workspace/ViewHeader.tsx";
 import { motion, AnimatePresence } from "motion/react";
 import { CHAT_EFFORTS } from "../../../shared/types.ts";
@@ -1399,9 +1400,9 @@ export function ChatView({ active: visible, focusId, onClose = () => {} }: { act
                             onClick={() => send(active.id, "/config", () => openRef.current && activeIdRef.current === active.id, [])}
                             disabled={active.sending}
                             title="Open Claude Code's own settings in this chat's pane. They apply to every chat, not just this one."
-                            className="text-[10px] px-2 py-1 rounded-md shrink-0 disabled:opacity-40"
+                            className="text-[10px] px-2 py-1 rounded-md shrink-0 disabled:opacity-40 inline-flex items-center gap-1"
                             style={{ color: "var(--text3)", border: "1px solid color-mix(in srgb, var(--border) 45%, transparent)" }}
-                          >⚙ Config</button>
+                          ><GearIcon size={ICON.xs} />Config</button>
                         )}
                         {/* Keep this one, however long you are away.
                             The engine reclaims a warm CLI after half an hour

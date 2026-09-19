@@ -1,5 +1,7 @@
 import { memo, useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
+import { ICON } from "../lib/iconSize.ts";
+import { GearIcon } from "./workspace/icons.tsx";
 import type { SessionDetail, TimelineEntry } from "../../../shared/types.ts";
 import { Portal } from "./Portal.tsx";
 import { PresetDiff } from "./diff/PresetDiff.tsx";
@@ -317,14 +319,14 @@ export function SessionModal({ sessionId, sourceApp, onClose, onFilter, onResume
                             </button>
                           )}
                           <button onClick={() => setShowTools((s) => !s)}
-                            className="text-[9.5px] px-1.5 py-0.5 rounded-full"
+                            className="text-[9.5px] px-1.5 py-0.5 rounded-full inline-flex items-center gap-1"
                             title={showTools ? "Hide tool runs" : "Show tool runs"}
                             style={{
                               color: showTools ? "var(--primary-hover)" : "var(--text3)",
                               background: `color-mix(in srgb, var(--primary) ${showTools ? 15 : 6}%, transparent)`,
                               border: `1px solid color-mix(in srgb, var(--primary) ${showTools ? 40 : 18}%, transparent)`,
                             }}>
-                            ⚙ Tools {toolCount > 0 && <span className="tabular-nums">{toolCount}</span>}
+                            <GearIcon size={ICON.xs} />Tools {toolCount > 0 && <span className="tabular-nums">{toolCount}</span>}
                           </button>
                         </div>
                         {/* Watched for height changes — the eyebrow row above is
