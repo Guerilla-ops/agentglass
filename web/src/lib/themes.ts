@@ -121,15 +121,22 @@ export function isDarkTheme(t: Theme): boolean {
  */
 export function applyTheme(id: string, { sync = false } = {}) {
   /* The desktop's palette is a live source, not an entry in the list: painted
-     like any theme, never written to storage (the next switch on the desktop
-     would make that copy stale), and never broadcast to tmux and nvim — the
-     desktop already themes its own terminal and editor, and a second writer
-     there would fight it. */
+     like any theme and never written to storage — the next switch on the
+     desktop would make that copy stale.
+
+     It IS carried out to this app's tmux, which is what a pane here is drawn
+     in. Held back at first, to leave the desktop's own terminal and editor
+     alone, and the result was a window whose chrome followed the desktop while
+     every pane inside it kept the last theme's background: tmux paints its own
+     colours over the terminal's. The palette sent is the desktop's own, so
+     there is nothing to fight — it is the same colours arriving by a second
+     road. */
   if (id === DESKTOP_ID && desktop) {
     const root = document.documentElement;
     for (const [k, v] of Object.entries(floorTiers(desktop.vars))) root.style.setProperty(k, v);
     root.setAttribute("data-theme", DESKTOP_ID);
     applyAccent();
+    if (sync) syncTheme(desktop as unknown as Theme);
     return;
   }
   const known = THEMES.find((x) => x.id === id);
@@ -308,6 +315,8 @@ export function themeAnsi(id: string): AnsiPalette | undefined {
 }
 
 const POLL_MS = 3000;
+/** The desktop palette last carried out to tmux — see the tick below. */
+const SYNCED_KEY = "agentglass-desktop-synced";
 
 /** Call once at boot. */
 export function watchDesktopPalette(): void {
@@ -320,7 +329,6 @@ export function watchDesktopPalette(): void {
       const r = await fetch(`${SERVER}/desktop/palette`, { headers: authHeaders() });
       if (r.ok) next = ((await r.json()) as { palette: Answer | null }).palette;
     } catch { /* no server yet, or none at all (the static demo) */ }
-    const was = desktop;
     const changed = (next?.stamp ?? "") !== stamp;
     stamp = next?.stamp ?? "";
     desktop = next?.theme ?? null;
@@ -336,8 +344,25 @@ export function watchDesktopPalette(): void {
         if (untouched) persistThemeMode("system");
       }
     }
-    if (changed || was !== desktop) {
-      if (themeMode() === "system") applyTheme(resolveThemeMode("system") ?? DEFAULT_THEME);
+    /*
+     * ON A NEW STAMP ONLY.
+     *
+     * This compared the objects as well, and every answer is a new object — so
+     * it repainted on every poll. A repaint rewrites the root's style, every
+     * terminal watches that and swaps its whole theme on it, and the panes
+     * blinked every three seconds whether anything had changed or not.
+     */
+    if (changed) {
+      if (themeMode() === "system") {
+        const id = resolveThemeMode("system") ?? DEFAULT_THEME;
+        /* Out to tmux once per palette, not once per document: a reload with
+           the desktop unchanged must not repaint running panes for nothing. */
+        let sent = "";
+        try { sent = localStorage.getItem(SYNCED_KEY) ?? ""; } catch {}
+        const send = !!desktop && stamp !== sent;
+        applyTheme(id, { sync: send });
+        if (send) { try { localStorage.setItem(SYNCED_KEY, stamp); } catch {} }
+      }
       for (const fn of desktopListeners) fn();
     }
   };
