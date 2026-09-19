@@ -1,6 +1,6 @@
 import type { ComponentType } from "react";
 import type { ViewId } from "../../../../shared/types.ts";
-import { GitIcon, DiffIcon, DockerIcon, TerminalIcon, ChatIcon, PrIcon, BrowserIcon, FilesIcon, DashIcon, IssuesIcon, LanternIcon, SeatIcon } from "./icons.tsx";
+import { GitIcon, DiffIcon, DockerIcon, TerminalIcon, ChatIcon, PrIcon, BrowserIcon, FilesIcon, DashIcon, IssuesIcon, LanternIcon, SeatIcon, PluginsIcon } from "./icons.tsx";
 import { HAS_BROWSER } from "../../lib/desktop.ts";
 import { IS_DEMO } from "../../lib/demo.ts";
 
@@ -93,6 +93,10 @@ export const VIEWS: ViewDef[] = [
    * first.
    */
   { id: "seat", label: "Orchestrator", key: "s", icon: SeatIcon, hint: "Who is minding this project: the seat, its last word, and the rules it was seated with", group: "utility" },
+  // Appended, same reason as every entry above it: a number already in
+  // somebody's fingers is not renumbered. Bottom drawer, because it is where
+  // plugins draw rather than a place you work in by default.
+  { id: "plugins", label: "Plugins", key: "x", icon: PluginsIcon, hint: "Panels your plugins draw — drawn by this app, never run in it", group: "utility" },
 ];
 
 export const VIEW_IDS = VIEWS.map((v) => v.id);

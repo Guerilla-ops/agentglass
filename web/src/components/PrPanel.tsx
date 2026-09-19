@@ -19,6 +19,7 @@
 //
 // 4. Nothing waits on the network. `gh` costs a second or more per call and the
 //    server has one thread; every read is a cached answer with its age shown.
+import { useLocalNotes, groupByRun, RunCard, NoteCard, LocalMark, sortNotes, type LocalNotes, type LocalNote } from "./plugins/LocalReview.tsx";
 import { createContext, Fragment, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from "react";
 import { handoffTo } from "../lib/handoffTo.ts";
 import { isBackButton } from "../lib/mouseBack.ts";
@@ -178,7 +179,7 @@ const SEEN_KEY = "agentglass.pr.seen";
 /** Which voices the conversation is showing. `new` is not a voice — it is
  *  "only what arrived since I last looked", which cuts across all of them and
  *  is the one filter that answers "where is the reply I came back for". */
-type ConvWho = "all" | "human" | "bot" | "new";
+type ConvWho = "all" | "human" | "bot" | "new" | "local";
 const DRAFT_KEY = "agentglass.pr.drafts";
 /** The unsent review itself — the verdict you picked and the note you typed,
  *  which used to live only in the Review tab's own state. Switching to Files to
@@ -3944,6 +3945,10 @@ export function PrView({ active, onOpenChatWith, onReviewInTerminal, jumpTo }: {
      per pull request here rather than inside a tab: Review lists them and Files
      draws them on the lines they belong to, and two fetches would be two
      answers that can disagree. */
+  /* What plugins wrote on this pull request, kept here and never on GitHub —
+     the Conversation draws the runs, the Files tab draws the notes at their
+     lines. */
+  const local = useLocalNotes(repo?.nameWithOwner, selected);
   const [held, setHeld] = useState<PendingLine[]>([]);
   useEffect(() => {
     if (!selected) { setHeld([]); return; }
@@ -4636,6 +4641,8 @@ export function PrView({ active, onOpenChatWith, onReviewInTerminal, jumpTo }: {
                              the pull request is re-read afterwards. */
                           onSaveComment={(nodeId, kind, body) => act("Save", () => api.prEditComment(root, nodeId, body, kind))}
                           onHideComment={(nodeId, on) => void act(on ? "Hide" : "Unhide", () => api.prHideComment(root, nodeId, on))}
+                          local={local}
+                          onOpenFile={(path) => { setTab("files"); setSelFile(path); }}
                         />
                       )}
                     </div>
@@ -4755,6 +4762,7 @@ export function PrView({ active, onOpenChatWith, onReviewInTerminal, jumpTo }: {
                     onRefetchSince={() => setSinceTick((n) => n + 1)}
                     sel={selFile} onSel={setSelFile} onShowing={setShowingFile}
                     split={split} wrap={wrap} onSplit={setSplit} onWrap={setWrap} held={held}
+                    local={local}
                     drafts={myDrafts} onAddDraft={addDraft} onPostOne={postOneComment} onDropDraft={dropDraftItem}
                     onPeek={async (p) => {
                       // The pull request's copy, not the checkout's. A branch
@@ -8302,8 +8310,10 @@ function DetailSkeleton({ number }: { number: number | null }) {
  *  because the component is what goes away when you change tab. */
 const FILES_SCROLL = new Map<string, number>();
 
-function FilesTab({ d, root, byPath, loaded, diffErr, seenFiles, onSeen, onSeenMany, noWs, onNoWs, wsOnly, since, moved, movedHere, wantSince, onRefetchSince, sel, onSel, onShowing, split, wrap, onSplit, onWrap, drafts, held, onAddDraft, onPostOne, onDropDraft, onPeek, onResolve, onReply, onApply, busy }: {
+function FilesTab({ d, root, byPath, loaded, diffErr, seenFiles, onSeen, onSeenMany, noWs, onNoWs, wsOnly, since, moved, movedHere, wantSince, onRefetchSince, sel, onSel, onShowing, split, wrap, onSplit, onWrap, drafts, held, onAddDraft, onPostOne, onDropDraft, onPeek, onResolve, onReply, onApply, busy, local }: {
   d: PrDetail; root: string; byPath: Map<string, FileChange>; loaded: boolean;
+  /** Notes plugins wrote on this pull request, drawn at their lines. */
+  local?: LocalNotes;
   /** Why the diff is missing, when it is missing for a reason rather than for a
    *  moment. Without it a refusal is drawn as a spinner. */
   diffErr?: string;
@@ -9304,6 +9314,17 @@ function FilesTab({ d, root, byPath, loaded, diffErr, seenFiles, onSeen, onSeenM
           if (anchored) { const arr = inlineThreads.get(t.line!) ?? []; arr.push(t); inlineThreads.set(t.line!, arr); }
           else belowThreads.push(t);
         }
+        // Plugins' notes, placed by the same rule as a thread: under the line
+        // when the diff shows it, under the file when it does not. A note
+        // about a line of an older commit still lands on that line number;
+        // its card says which commit it was written against.
+        const inlineNotes = new Map<number, LocalNote[]>();
+        const belowNotes: LocalNote[] = [];
+        for (const n of local ? sortNotes(local.notes.filter((x) => x.path === f.path)) : []) {
+          const anchored = n.line != null && !!change?.hunks.some((h) => n.line! >= h.newStart && n.line! <= h.newStart + h.newLines - 1);
+          if (anchored) { const arr = inlineNotes.get(n.line!) ?? []; arr.push(n); inlineNotes.set(n.line!, arr); }
+          else belowNotes.push(n);
+        }
         return (
           <div key={f.path} data-file={focused ? "active" : undefined} data-path={f.path} className="rounded"
             style={{
@@ -9443,8 +9464,9 @@ function FilesTab({ d, root, byPath, loaded, diffErr, seenFiles, onSeen, onSeenM
                         onPick={(pk) => pickLine(f.path, pk)}
                         sel={selRange?.path === f.path ? selRange.sel : null}
                         permalink={repoName && headSha ? (line) => `https://github.com/${repoName}/blob/${headSha}/${f.path}#L${line}` : undefined}
-                        rowAfter={(inlineThreads.size || pendingHere.size || heldHere.size || composing?.path === f.path) ? (newN, oldN) => {
+                        rowAfter={(inlineThreads.size || pendingHere.size || heldHere.size || inlineNotes.size || composing?.path === f.path) ? (newN, oldN) => {
                           const ts = newN != null ? inlineThreads.get(newN) : null;
+                          const ln = newN != null ? (inlineNotes.get(newN) ?? []) : [];
                           // A queued comment has to be visible where it was
                           // written. It used to exist only as a number on the
                           // file's header and a row in the Review tab, so
@@ -9455,7 +9477,7 @@ function FilesTab({ d, root, byPath, loaded, diffErr, seenFiles, onSeen, onSeenM
                           const composeHere = composing?.path === f.path &&
                             ((composing.side === "RIGHT" && composing.line === newN) || (composing.side === "LEFT" && composing.line === oldN));
                           const heldOnLine = newN != null ? (heldHere.get(newN) ?? []) : [];
-                          if (!ts?.length && !pend.length && !heldOnLine.length && !composeHere) return null;
+                          if (!ts?.length && !ln.length && !pend.length && !heldOnLine.length && !composeHere) return null;
                           const pfx = composing?.side === "LEFT" ? "L" : "R";
                           // Bounded and pinned to the left so it reads at a sane
                           // width and stays put while the code scrolls sideways.
@@ -9472,6 +9494,7 @@ function FilesTab({ d, root, byPath, loaded, diffErr, seenFiles, onSeen, onSeenM
                               width: split ? "min(560px, 46vw)" : "min(900px, 92vw)",
                             }}>
                               {ts?.map((t) => <Thread key={t.id} t={t} inline onResolve={onResolve} onReply={onReply} onApply={onApply} busy={busy} />)}
+                              {ln.map((n) => <NoteCard key={`${n.plugin}/${n.id}`} n={n} compact onStatus={(st) => { void local?.setStatus(n, st); }} />)}
                               {pend.map((dc, i) => (
                                 <div key={`p${i}`} className="rounded-lg overflow-hidden text-[11.5px]" style={{
                                   background: "var(--bg2)",
@@ -9643,6 +9666,14 @@ function FilesTab({ d, root, byPath, loaded, diffErr, seenFiles, onSeen, onSeenM
                     <div className="px-2.5 py-2"><Md body={h.body} /></div>
                   </div>
                 ))}
+              </div>
+            )}
+            {open && belowNotes.length > 0 && (
+              <div className="px-2.5 py-2 flex flex-col gap-1.5" style={{ borderTop: "1px solid color-mix(in srgb, var(--text) 11%, transparent)", background: "color-mix(in srgb, var(--primary) 4%, transparent)" }}>
+                <div className="flex items-center gap-2 text-[9.5px] uppercase tracking-wider" style={{ color: "var(--text3)" }}>
+                  <LocalMark />Notes on lines this diff does not show
+                </div>
+                {belowNotes.map((n) => <NoteCard key={`${n.plugin}/${n.id}`} n={n} compact onStatus={(st) => { void local?.setStatus(n, st); }} />)}
               </div>
             )}
             {open && belowThreads.length > 0 && (
@@ -10382,7 +10413,7 @@ function NewRail({ container, atoms, onGo, depKey }: {
 }
 
 function Conversation({ d, lanes, raw, onRaw, onResolve, onReply, onComment, onReact, onApply, busy, who, onWho,
-  atoms, newSet, onMarkRead, sinceMine, onUnmarkRead, viewer, onSaveComment, onHideComment }: {
+  atoms, newSet, onMarkRead, sinceMine, onUnmarkRead, viewer, onSaveComment, onHideComment, local, onOpenFile }: {
   d: PrDetail;
   lanes: { humans: PrReview[]; botReviews: PrReview[]; humanComments: PrComment[]; bots: PrComment[] };
   raw: boolean; onRaw: (v: boolean) => void;
@@ -10411,6 +10442,9 @@ function Conversation({ d, lanes, raw, onRaw, onResolve, onReply, onComment, onR
   onSaveComment?: (nodeId: string, kind: "issue" | "review", body: string) => Promise<boolean>;
   /** Fold one away, or put it back. */
   onHideComment?: (nodeId: string, on: boolean) => void;
+  /** What plugins wrote on this pull request, here only. See LocalReview.tsx. */
+  local?: LocalNotes;
+  onOpenFile?: (path: string, line?: number) => void;
 }) {
   const [newest, setNewest] = useState(false);
   /** Which remark is being edited here, by node id. One at a time: two open editors
@@ -10546,7 +10580,7 @@ function Conversation({ d, lanes, raw, onRaw, onResolve, onReply, onComment, onR
   /** Who said it, so the timeline can be narrowed to one kind of voice. An
    *  `event` is nobody speaking — a push, a label — and belongs to neither
    *  side, so it shows in the whole timeline and in no filtered view. */
-  type Lane = "human" | "bot" | "event";
+  type Lane = "human" | "bot" | "event" | "local";
   /** `ms` is what the timeline sorts on, and for a thread it is its LAST
    *  comment. It used to be the first, which is the ordering bug this whole
    *  feature was written for. */
@@ -10666,6 +10700,22 @@ function Conversation({ d, lanes, raw, onRaw, onResolve, onReply, onComment, onR
     });
   }
 
+  // What plugins said about this pull request, on this machine only: one
+  // entry per pass, placed in time like everything else so a review read
+  // after a push sits after the push. Its own lane, so Humans and Bots stay
+  // what GitHub says they are.
+  if (local) {
+    for (const g of groupByRun(local)) {
+      entries.push({
+        at: new Date(g.ms).toISOString(), ms: g.ms, key: g.key, lane: "local",
+        node: <span style={{ color: "var(--primary)" }}>◆</span>,
+        body: g.run
+          ? <RunCard run={g.run} notes={g.notes} publisher={local.publishers[g.run.plugin]} onStatus={local.setStatus} onOpenFile={onOpenFile} />
+          : <div className="flex flex-col gap-1.5">{g.notes.map((n) => <NoteCard key={n.id} n={n} onStatus={(st) => local.setStatus(n, st)} onOpenFile={onOpenFile} />)}</div>,
+      });
+    }
+  }
+
   entries.sort((a, b) => (newest ? b.ms - a.ms : a.ms - b.ms));
 
   // Events are not remarks, so they are not counted — Humans plus Bots adds up
@@ -10673,6 +10723,7 @@ function Conversation({ d, lanes, raw, onRaw, onResolve, onReply, onComment, onR
   // timeline, where the push that invalidated a review is part of the story.
   const humanCount = entries.filter((e) => e.lane === "human").length;
   const botCount = entries.filter((e) => e.lane === "bot").length;
+  const localCount = entries.filter((e) => e.lane === "local").length;
   const laned = who === "all" ? entries
     : who === "new" ? entries.filter((e) => !!e.hot)
     : entries.filter((e) => e.lane === who);
@@ -10837,11 +10888,12 @@ function Conversation({ d, lanes, raw, onRaw, onResolve, onReply, onComment, onR
           you came back with. It appears only when there is something under it —
           a filter that is always there and usually empty teaches people not to
           press it. */}
-      {(botCount > 0 || atoms.length > 0) && (
+      {(botCount > 0 || atoms.length > 0 || localCount > 0) && (
         <div className="flex mb-3 rounded-lg overflow-hidden" style={{ border: "1px solid color-mix(in srgb, var(--text) 16%, transparent)" }}>
           {([
-            ["all", "All", humanCount + botCount] as const,
+            ["all", "All", humanCount + botCount + localCount] as const,
             ...(botCount > 0 ? [["human", "Humans", humanCount] as const, ["bot", "Bots", botCount] as const] : []),
+            ...(localCount > 0 ? [["local", "Local", localCount] as const] : []),
             ...(atoms.length ? [["new", "New", atoms.length] as const] : []),
           ]).map(([id, label, n]) => (
             <button key={id} onClick={() => setWho(id)}

@@ -18,6 +18,7 @@
 // opened does not exist yet. On a fresh window that is one view rather than
 // eight, and the dashboard — fourteen panels and a poll every four seconds — is
 // not among them until you ask for it.
+import { PluginsView } from "../plugins/PluginsView.tsx";
 import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { hiddenOnly } from "./hiddenOnly.ts";
@@ -300,6 +301,7 @@ function BodyImpl({ id, active, openChat, openBrowser, openLantern, chatFocusId 
     /* Its chat is a tab on the floating bench, not a seeded Chat view — see
        lanternAsk.ts. Nothing to hand it. */
     case "lantern": return <LanternView active={active} />;
+    case "plugins": return <PluginsView active={active} />;
     default: return null;
   }
 }

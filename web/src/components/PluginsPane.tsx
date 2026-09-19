@@ -586,6 +586,14 @@ function PluginCard({ plugin, masterOn, onChanged }: { plugin: PublicPlugin; mas
           <p className="m-0 mt-1.5 t-mono text-[11px]" style={{ color: "var(--text3)" }}>
             runs: {plugin.entrypoint}
           </p>
+          {/* Where it draws is part of what is being approved: a plugin that
+              starts drawing somewhere new has a new manifest hash, and is
+              asked about again. Drawn by this app, never run in it. */}
+          {drawsWhere(plugin).length > 0 && (
+            <ul className="m-0 mt-2 pl-4 text-[11.5px] flex flex-col gap-0.5" style={{ color: "var(--text2)" }}>
+              {drawsWhere(plugin).map((w) => <li key={w}>{w}</li>)}
+            </ul>
+          )}
         </Fold>
       </div>
 
@@ -657,4 +665,14 @@ function StateDot({ enabled, running, reconsent }: { enabled: boolean; running: 
       border: `1px solid ${tint}`,
     }} />
   );
+}
+
+/** What a plugin declared it draws, as the sentences a reviewer reads. */
+function drawsWhere(p: PublicPlugin): string[] {
+  const c = p.contributes ?? {};
+  const out: string[] = [];
+  for (const panel of c.panels ?? []) out.push(`Adds a panel, "${panel.title}", to the Plugins view`);
+  if (c.settings?.length) out.push(`Adds a settings page with ${c.settings.length} ${c.settings.length === 1 ? "field" : "fields"}`);
+  if (c.prNotes) out.push("Writes notes on pull requests, shown only in this app and never sent to GitHub");
+  return out;
 }
