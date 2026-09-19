@@ -1792,7 +1792,10 @@ export type WsFrame =
   /** The understudy scorecard, recomputed and pushed whole. It reports what
    *  the understudy WOULD have done and how often that matched; it commands
    *  nothing, which is why it rides the same read-only socket. */
-  | { type: "understudy"; data: UnderstudyFrame };
+  | { type: "understudy"; data: UnderstudyFrame }
+  /** A plugin redrew a panel or wrote notes on a pull request. Only where to
+   *  look again — the contents are fetched over the token. See plugin-ui.ts. */
+  | { type: "plugin"; data: { kind: "panels" } | { kind: "pr"; repo: string; number: number } };
 
 export interface AlertNote {
   title: string;

@@ -6,11 +6,13 @@
 // exact shape EXTENDING.md documents for a hand-written extension, now
 // installable by someone who did not write it.
 //
-// What this deliberately does not do: render anything. A plugin with a
-// `full` token can call every route this server has, and there is nowhere
-// for it to put a pixel — see the "Where this stops being small" section of
-// the decision doc. Building a view/widget surface under cover of this task
-// would be a second, undesigned feature wearing this one's name.
+// Drawing is a separate module: a plugin may declare panels, a settings page
+// and notes on pull requests in its manifest (`contributes`), and send what to
+// show as data. plugin-ui.ts keeps it and the window draws it with its own
+// components, so no plugin code ever runs in the window — see "Drawing in the
+// app" in docs/PLUGINS.md. Declaring is part of what gets reviewed: the
+// contributions are in `manifestHash`, so a plugin that starts drawing
+// somewhere new asks again.
 import { createHash } from "node:crypto";
 import {
   existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync,
@@ -25,6 +27,8 @@ import {
 } from "./plugin-sources.ts";
 import { fetchCatalogue } from "./plugin-catalogue.ts";
 import { blockedEntry, type BlockEntry } from "./plugin-blocklist.ts";
+import { type Contributes, validateContributes } from "../../shared/pluginUi.ts";
+import { coerceSettings, dropNotesOf, fieldsWithOptions, forgetPlugin, pushEvent, resolveSettings } from "./plugin-ui.ts";
 
 /** What a plugin folder must carry at its root, translated from `orca-plugin.json`
  *  in the decision doc into a name that names nothing but this app. */
@@ -36,6 +40,9 @@ export interface PluginManifest {
   description: string;
   entrypoint: string;
   scope: Scope;
+  /** Where it may draw. Optional in the file; always present once read, so
+   *  a manifest from before drawing existed reads as "draws nowhere". */
+  contributes: Contributes;
 }
 
 /** One path segment, the same character set `projectadd.ts` holds a cloned
@@ -85,12 +92,15 @@ export function validateManifest(raw: unknown): PluginManifest | string {
   if (m.scope !== "read" && m.scope !== "answer" && m.scope !== "full") {
     return "scope must be one of read, answer, full";
   }
+  const contributes = validateContributes(m.contributes);
+  if (!contributes.ok) return contributes.error;
   return {
     name: m.name,
     publisher: m.publisher.trim().slice(0, 200),
     description: m.description.trim().slice(0, MAX_TEXT),
     entrypoint: m.entrypoint.trim(),
     scope: m.scope,
+    contributes: contributes.value,
   };
 }
 
@@ -108,6 +118,10 @@ export function manifestHash(m: PluginManifest): string {
   const canonical = JSON.stringify({
     name: m.name, publisher: m.publisher, description: m.description,
     entrypoint: m.entrypoint, scope: m.scope,
+    // Only when present, so a plugin that draws nothing keeps the hash it had
+    // before drawing existed and its approval is not cleared by an upgrade of
+    // this app.
+    ...(Object.keys(m.contributes ?? {}).length ? { contributes: m.contributes } : {}),
   });
   return createHash("sha256").update(canonical).digest("hex");
 }
@@ -181,6 +195,10 @@ export interface PluginRecord extends PluginManifest {
    * security check, so `enablePlugin` never reads it.
    */
   hadApproval: boolean;
+  /** What the person chose on the plugin's settings page, coerced to the
+   *  declared fields. Survives updates; a field an update removed is simply
+   *  never read again. */
+  settings?: Record<string, unknown>;
 }
 
 export function pluginsConfigDir(): string {
@@ -274,6 +292,7 @@ async function stopRunning(name: string): Promise<void> {
   if (!r) return;
   running.delete(name);
   revokePluginToken(r.token);
+  forgetPlugin(name);
   try { r.proc.kill(); } catch { /* already gone */ }
   try { await r.proc.exited; } catch { /* ignore */ }
 }
@@ -319,7 +338,7 @@ async function startProcess(rec: PluginRecord): Promise<void> {
     // already lives by, generalized from "the run ends" to "the process ends".
     proc.exited.then(() => {
       const cur = running.get(rec.name);
-      if (cur === entry) { revokePluginToken(entry.token); running.delete(rec.name); }
+      if (cur === entry) { revokePluginToken(entry.token); running.delete(rec.name); forgetPlugin(rec.name); }
     });
   } catch (e) {
     revokePluginToken(token);
@@ -341,8 +360,72 @@ async function git(args: string[], cwd: string, timeoutMs: number): Promise<{ ok
 
 export type PublicPlugin = PluginRecord & { running: boolean; pid: number | null };
 
+/** A record from before `contributes` existed has none on disk. */
+function withContributes(p: PluginRecord): PluginRecord {
+  return p.contributes ? p : { ...p, contributes: {} };
+}
+
 export function listPlugins(): PublicPlugin[] {
-  return read().plugins.map((p) => ({ ...p, running: running.has(p.name), pid: running.get(p.name)?.pid ?? null }));
+  return read().plugins.map((p) => ({ ...withContributes(p), running: running.has(p.name), pid: running.get(p.name)?.pid ?? null }));
+}
+
+/** What a plugin declared, for the routes that check a draw against it. */
+export function contributesOf(name: string): Contributes {
+  return read().plugins.find((p) => p.name === name)?.contributes ?? {};
+}
+
+export function isRunning(name: string): boolean {
+  return running.has(name);
+}
+
+export function pluginSettings(name: string): { fields: ReturnType<typeof fieldsWithOptions>; values: Record<string, unknown> } | null {
+  const rec = read().plugins.find((p) => p.name === name);
+  if (!rec) return null;
+  return { fields: fieldsWithOptions(name, rec.contributes?.settings), values: resolveSettings(rec.contributes?.settings, rec.settings) };
+}
+
+/**
+ * Save what the person chose, typed by the manifest, and tell the plugin.
+ * Merged over what was there, so a form that only shows some fields cannot
+ * erase the rest.
+ */
+export function setPluginSettings(name: string, raw: unknown): { ok: true; values: Record<string, unknown> } | { ok: false; error: string } {
+  const store = read();
+  const rec = store.plugins.find((p) => p.name === name);
+  if (!rec) return { ok: false, error: "no such plugin" };
+  const fields = rec.contributes?.settings;
+  if (!fields?.length) return { ok: false, error: "this plugin has no settings" };
+  rec.settings = { ...(rec.settings ?? {}), ...coerceSettings(fields, raw) };
+  write(store);
+  const values = resolveSettings(fields, rec.settings);
+  pushEvent(name, { type: "settings", settings: values, at: Date.now() });
+  return { ok: true, values };
+}
+
+/**
+ * Bring back what was running before the server went down.
+ *
+ * A token cannot survive a restart (they live in memory, on purpose), but the
+ * person's decision can: `enabled` with an approval that still matches what
+ * is on disk. Everything `enablePlugin` refuses is refused here too — master
+ * off, blocked, or files that changed since they were approved — and a
+ * plugin that fails to start stays off rather than stopping the boot.
+ */
+export async function resumeEnabledPlugins(): Promise<string[]> {
+  const store = read();
+  if (!store.master) return [];
+  const started: string[] = [];
+  for (const rec of store.plugins) {
+    if (!rec.enabled || !rec.approvedFingerprint || rec.approvedFingerprint !== rec.fingerprint) continue;
+    if (blockedEntry(rec.name)) continue;
+    try {
+      await startProcess(withContributes(rec));
+      started.push(rec.name);
+    } catch {
+      /* one bad plugin must not keep the others down */
+    }
+  }
+  return started;
 }
 
 export function masterEnabled(): boolean {
@@ -432,6 +515,7 @@ async function finishInstall(
     enabled: existing?.enabled === true && stillApproved,
     installedAt: existing?.installedAt ?? Date.now(),
     hadApproval: existing?.hadApproval === true,
+    ...(existing?.settings ? { settings: existing.settings } : {}),
   };
   write({ ...store, plugins: [...store.plugins.filter((p) => p.name !== manifest.name), record] });
   return { ok: true, plugin: { ...record, running: running.has(record.name), pid: running.get(record.name)?.pid ?? null } };
@@ -608,6 +692,7 @@ export async function removePlugin(name: string): Promise<boolean> {
   // a stale entry is a nuisance, a deleted config directory is not.
   if (insidePluginsRoot(rec.installDir)) rmSync(rec.installDir, { recursive: true, force: true });
   write({ ...store, plugins: store.plugins.filter((p) => p.name !== name) });
+  dropNotesOf(name);
   return true;
 }
 

@@ -415,6 +415,14 @@ export function mintPluginToken(scope: Scope, name: string): string {
   return t;
 }
 
+/** Which plugin holds this token, if any. The `/plugin/self` routes ask this
+ *  directly, because on a loopback box with no machine token configured the
+ *  global gate never builds a caller at all. */
+export function pluginOfRequest(req: Request, url: URL): string | null {
+  const t = presented(req, url);
+  return t ? pluginTokens.get(t)?.name ?? null : null;
+}
+
 export function revokePluginToken(t: string): void {
   pluginTokens.delete(t);
 }
@@ -611,6 +619,12 @@ export function allowed(caller: Caller, method: string, pathname: string): boole
      check — the seat's token says `full` so its reads work, and an `||` here
      would hand back every write this exists to withhold. */
   if (caller.principal === "seat") return seatAllows(caller.seat?.powers ?? "speak", method, pathname);
+  // A plugin's own channel: its panels, its settings, its event queue, its
+  // notes. Open at any scope because drawing is not a power over anything
+  // else — what it may draw was declared in its manifest and approved, and
+  // the handlers check each request against that. Only a plugin token gets
+  // here; anybody else asking for `/plugin/self` has no self to be.
+  if (caller.kind === "plugin" && (pathname === "/plugin/self" || pathname.startsWith("/plugin/self/"))) return true;
   return scopeAllows(caller.scope, scopeNeeded(method, pathname));
 }
 
