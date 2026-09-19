@@ -5,6 +5,7 @@
 // This uses an unofficial endpoint (the one Claude Code's `/usage` calls). It may
 // change; failures degrade gracefully to { available: false }.
 import { homedir, tmpdir } from "os";
+import { failed } from "./refused.ts";
 import { join } from "path";
 
 const USAGE_URL = "https://api.anthropic.com/api/oauth/usage";
@@ -424,7 +425,13 @@ export async function getUsage(now: number = Date.now()): Promise<UsagePayload> 
     retryAfterMs = 0;
   } catch (e) {
     failures++;
-    cache = degrade(now, String(e), e instanceof UsageHttpError ? e.status : null);
+    /* An HTTP status is a fact this code built, and the one worth showing: a
+       429 means "wait", a 401 means "sign in again". It is written from the
+       number, not read off the exception, so no exception text travels. Any
+       other failure goes to the log and the caller gets a sentence. */
+    cache = degrade(now,
+      e instanceof UsageHttpError ? `HTTP ${e.status}` : failed("usage", e, "usage could not be read"),
+      e instanceof UsageHttpError ? e.status : null);
   }
   cacheAt = now;
   return cache;
