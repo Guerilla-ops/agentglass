@@ -9491,10 +9491,19 @@ function FilesTab({ d, root, byPath, loaded, diffErr, seenFiles, onSeen, onSeenM
                               // read as older than the app around it. One
                               // visible container: the card below.
                               position: "sticky", left: 0,
-                              width: split ? "min(560px, 46vw)" : "min(900px, 92vw)",
+                              // Never wider than the pane it is seen in. 46vw assumed
+                              // each half of a split diff is about half the window,
+                              // and with the file tree and the side panel open a
+                              // half is under 500px: the card ran past the edge and
+                              // its buttons were cut off (measured at 1600px wide:
+                              // a 560px card in a 482px pane). `100%` is no better —
+                              // that is the code's width, wider than the pane
+                              // whenever a line is long. `cqw` is the pane itself;
+                              // see the size containers in DiffLines.tsx.
+                              width: split ? "min(560px, calc(100cqw - 16px))" : "min(900px, calc(100cqw - 16px))",
                             }}>
                               {ts?.map((t) => <Thread key={t.id} t={t} inline onResolve={onResolve} onReply={onReply} onApply={onApply} busy={busy} />)}
-                              {ln.map((n) => <NoteCard key={`${n.plugin}/${n.id}`} n={n} compact onStatus={(st) => { void local?.setStatus(n, st); }} />)}
+                              {ln.map((n) => <NoteCard key={`${n.plugin}/${n.id}`} n={n} compact md={localMd} onStatus={(st) => { void local?.setStatus(n, st); }} />)}
                               {pend.map((dc, i) => (
                                 <div key={`p${i}`} className="rounded-lg overflow-hidden text-[11.5px]" style={{
                                   background: "var(--bg2)",
