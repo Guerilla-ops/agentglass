@@ -27,6 +27,26 @@ describe("the tree a plugin sends", () => {
     expect(r.ok).toBe(true);
   });
 
+  test("a row can point at a pull request, and the app is the one that opens it", () => {
+    const r = validateTree({ type: "list", items: [
+      { id: "r1", title: "Retry the webhook", open: { repo: "acme/orbit", number: 42, focus: "local" } },
+      { id: "r2", title: "Idempotency keys", open: { repo: "acme/billing", number: "15" } },
+    ] });
+    expect(r.ok).toBe(true);
+    const items = (r as { value: { items: { open?: unknown }[] } }).value.items;
+    expect(items[0]!.open).toEqual({ repo: "acme/orbit", number: 42, focus: "local" });
+    // A number as a string is what a plugin in a language without integers
+    // sends, and it names the same pull request.
+    expect(items[1]!.open).toEqual({ repo: "acme/billing", number: 15 });
+  });
+
+  test("a row that says it opens a pull request and names none is refused, not quietly dropped", () => {
+    for (const open of [{ repo: "acme", number: 42 }, { repo: "acme/orbit" }, { repo: "acme/orbit", number: -1 }, "acme/orbit#42"]) {
+      const r = validateTree({ type: "list", items: [{ id: "r1", title: "Row", open }] });
+      expect(r.ok).toBe(false);
+    }
+  });
+
   test("a node the vocabulary does not have is refused, not skipped", () => {
     const r = validateTree({ type: "stack", children: [{ type: "html", html: "<img onerror=alert(1)>" }] });
     expect(r.ok).toBe(false);

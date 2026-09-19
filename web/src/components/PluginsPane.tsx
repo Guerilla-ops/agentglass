@@ -718,6 +718,7 @@ function drawsWhere(p: PublicPlugin): string[] {
   for (const panel of c.panels ?? []) out.push(`Adds a panel, "${panel.title}", to the Plugins view`);
   if (c.settings?.length) out.push(`Adds a settings page with ${c.settings.length} ${c.settings.length === 1 ? "field" : "fields"}`);
   if (c.prNotes) out.push("Writes notes on pull requests, shown only in this app and never sent to GitHub");
+  for (const a of c.prActions ?? []) out.push(`Adds a button, "${a.label}", to every pull request`);
   return out;
 }
 

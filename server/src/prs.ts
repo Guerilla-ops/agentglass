@@ -529,6 +529,29 @@ const ID_TTL_MS = 5 * 60_000;
  * has filled it. Two `git remote get-url` each is nothing on its own and forty
  * of them at once, five minutes apart, is not nothing.
  */
+/**
+ * Which of these checkouts is `owner/name`?
+ *
+ * The panel reads a pull request through a local checkout, because that is
+ * where the remote — and so the repository's identity — comes from. A link to
+ * a pull request in another project therefore has nowhere to land until this
+ * has answered, and the answer is a path.
+ *
+ * Case-insensitively: GitHub treats `Acme/Orbit` and `acme/orbit` as the same
+ * repository, and a link copied out of a browser carries whichever spelling
+ * the page used. Sequential on purpose — `repoIdFor` caches per root and the
+ * first match usually arrives within a few checkouts, so firing forty `git
+ * remote get-url` at once buys nothing.
+ */
+export async function locateRepo(want: string, roots: string[]): Promise<string | null> {
+  const target = want.toLowerCase();
+  for (const root of roots) {
+    const id = await repoIdFor(root);
+    if (id?.nameWithOwner.toLowerCase() === target) return root;
+  }
+  return null;
+}
+
 const idInflight = new Map<string, Promise<PrRepoId | null>>();
 
 export async function repoIdFor(rootIn: unknown): Promise<PrRepoId | null> {

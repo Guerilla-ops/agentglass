@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import type { Field, UiAction, UiNode } from "../../lib/pluginTypes.ts";
+import type { Field, UiAction, UiNode, UiOpenPr } from "../../lib/pluginTypes.ts";
+import { openPr } from "../../lib/openPrs.ts";
 import { Markdown } from "../../lib/markdown.tsx";
 import { openExternal } from "../../lib/externalUrl.ts";
 import { ago } from "../../lib/fileRecents.ts";
@@ -50,6 +51,22 @@ interface Ctx {
    *  spinning when its answer arrives rather than after a guess. */
   version: number;
   ask: (spec: ConfirmSpec) => Promise<boolean>;
+}
+
+/**
+ * What pressing a row does.
+ *
+ * `open` is the app's errand and `action` is the plugin's, and a row may carry
+ * both — a reviewer's row opens the pull request AND tells the plugin the
+ * finding has been looked at. The app's runs first and never waits for the
+ * plugin's: a slow plugin must not delay the thing the click was for.
+ */
+function rowClick(it: { action?: UiAction; open?: UiOpenPr }, ctx: Ctx): (() => void) | undefined {
+  if (!it.action && !it.open) return undefined;
+  return () => {
+    if (it.open) openPr(it.open.repo, it.open.number, { focus: it.open.focus });
+    if (it.action) void ctx.onAction(it.action);
+  };
 }
 
 export function PluginTree({ node, onAction, version }: { node: UiNode; onAction: ActionFn; version: number }) {
@@ -155,7 +172,7 @@ function Node({ node, ctx }: { node: UiNode; ctx: Ctx }): ReactNode {
               chips={it.badges?.length ? <>{it.badges.map((b, i) => <Chip key={i} tone={TO_ROW_TONE[b.tone ?? "default"]}>{b.text}</Chip>)}</> : undefined}
               facts={[it.subtitle, it.meta].filter((x): x is string => !!x)}
               selected={it.selected}
-              onClick={it.action ? () => { void ctx.onAction(it.action!); } : undefined} />
+              onClick={rowClick(it, ctx)} />
           ))}
         </div>
       );
@@ -171,9 +188,9 @@ function Node({ node, ctx }: { node: UiNode; ctx: Ctx }): ReactNode {
                 background: "var(--bg)", border: `2px solid ${TONE_COLOR[it.tone ?? "muted"]}`,
               }} />
               <div className="flex items-baseline gap-2 min-w-0 flex-wrap">
-                <button type="button" disabled={!it.action}
-                  onClick={it.action ? () => { void ctx.onAction(it.action!); } : undefined}
-                  className={`text-[12.5px] font-medium text-left ${it.action ? "agx-rowhit hover:underline" : "cursor-default"}`}
+                <button type="button" disabled={!it.action && !it.open}
+                  onClick={rowClick(it, ctx)}
+                  className={`text-[12.5px] font-medium text-left ${it.action || it.open ? "agx-rowhit hover:underline" : "cursor-default"}`}
                   style={{ color: "var(--text)", background: "transparent", border: 0, padding: 0 }}>
                   {it.title}
                 </button>

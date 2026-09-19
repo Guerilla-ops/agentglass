@@ -32,6 +32,19 @@ export interface UiAction { id: string; payload?: unknown }
 
 export interface UiBadge { text: string; tone?: Tone }
 
+/**
+ * "Take me to that pull request" — the app opens it and the plugin is not
+ * told, because there is nothing for it to do.
+ *
+ * A row about a pull request that cannot be clicked into is a dead end: a
+ * reviewer plugin listed six of them and the only way to reach one was to
+ * remember which project it lived in and go there by hand. `action` cannot
+ * serve this — it is a message to the plugin, and what has to happen is the
+ * app's. The pull request is opened wherever it lives, whatever project is
+ * open (see `/pr/locate`), and `focus` says which lane to land on.
+ */
+export interface UiOpenPr { repo: string; number: number; focus?: "local" }
+
 export interface UiListItem {
   id: string;
   title: string;
@@ -39,6 +52,7 @@ export interface UiListItem {
   meta?: string;
   badges?: UiBadge[];
   action?: UiAction;
+  open?: UiOpenPr;
   selected?: boolean;
 }
 
@@ -51,6 +65,7 @@ export interface UiTimelineItem {
   tone?: Tone;
   badges?: UiBadge[];
   action?: UiAction;
+  open?: UiOpenPr;
 }
 
 export type FieldType = "string" | "text" | "number" | "boolean" | "select" | "list" | "multi";
@@ -157,6 +172,18 @@ function action(v: unknown, w: Walk, what: string): UiAction | null {
   try { bytes = JSON.stringify(a.payload).length; } catch { return w.fail(`${what}.payload is not JSON`); }
   if (bytes > UI_LIMITS.payloadBytes) return w.fail(`${what}.payload is over ${UI_LIMITS.payloadBytes} bytes`);
   return { id, payload: JSON.parse(JSON.stringify(a.payload)) };
+}
+
+/** Where a row points. Rejected rather than dropped: a row that says it opens
+ *  a pull request and silently does not is worse than a tree that refused. */
+function openPr(v: unknown, w: Walk, what: string): UiOpenPr | null | undefined {
+  if (v === undefined) return undefined;
+  if (!v || typeof v !== "object" || Array.isArray(v)) return w.fail(`${what} must be an object with repo and number`);
+  const o = v as Record<string, unknown>;
+  const ref = validPrRef(o.repo, o.number);
+  if (!ref) return w.fail(`${what} needs repo as owner/name and a pull request number`);
+  const focus = oneOf(o.focus, ["local"] as const);
+  return focus ? { ...ref, focus } : ref;
 }
 
 function badges(v: unknown, w: Walk): UiBadge[] | undefined {
@@ -394,7 +421,9 @@ function node(raw: unknown, w: Walk, depth: number): UiNode | null {
         if (typeof id !== "string" || typeof title !== "string" || subtitle === null || meta === null) return null;
         const a = r.action === undefined ? undefined : action(r.action, w, "list item action");
         if (a === null) return null;
-        items.push({ id, title, subtitle, meta, badges: badges(r.badges, w), action: a, selected: r.selected === true });
+        const to = openPr(r.open, w, "list item open");
+        if (to === null) return null;
+        items.push({ id, title, subtitle, meta, badges: badges(r.badges, w), action: a, open: to, selected: r.selected === true });
       }
       const empty = str(n.empty, S, w, "list.empty", true);
       return empty === null ? null : { type: "list", items, empty };
@@ -414,8 +443,10 @@ function node(raw: unknown, w: Walk, depth: number): UiNode | null {
         if (typeof id !== "string" || typeof title !== "string" || body === null) return null;
         const a = r.action === undefined ? undefined : action(r.action, w, "timeline item action");
         if (a === null) return null;
+        const to = openPr(r.open, w, "timeline item open");
+        if (to === null) return null;
         const at = validMs(r.at);
-        items.push({ id, at, title, body, tone: tone(r.tone), badges: badges(r.badges, w), action: a });
+        items.push({ id, at, title, body, tone: tone(r.tone), badges: badges(r.badges, w), action: a, open: to });
       }
       const empty = str(n.empty, S, w, "timeline.empty", true);
       return empty === null ? null : { type: "timeline", items, empty };
@@ -602,10 +633,22 @@ export function validateNote(raw: unknown, now = Date.now()): Ok<Omit<PrNote, "s
 
 export interface PanelContribution { id: string; title: string; icon?: string }
 
+/**
+ * A button in a pull request's header, next to the app's own. Pressing it
+ * tells the plugin which pull request; what it does is the plugin's.
+ *
+ * The first one declared is the button; the rest live in the caret beside it.
+ * A reviewer needs four ("review the new part", "review all of it", "watch
+ * this one", "stop") and a header that grew four plugin buttons would be a
+ * header nobody can read, so only one of them is ever on the row.
+ */
+export interface PrActionContribution { id: string; label: string }
+
 export interface Contributes {
   settings?: Field[];
   panels?: PanelContribution[];
   prNotes?: boolean;
+  prActions?: PrActionContribution[];
 }
 
 /** Icons a panel may name. A word, mapped to the app's own icon set, so a
@@ -640,6 +683,22 @@ export function validateContributes(raw: unknown): Ok<Contributes> | Err {
   if (c.prNotes !== undefined) {
     if (typeof c.prNotes !== "boolean") return { ok: false, error: "contributes.prNotes must be true or false" };
     out.prNotes = c.prNotes;
+  }
+  if (c.prActions !== undefined) {
+    // A few, short: the first shares a header row with the app's own buttons
+    // and the others hang off its caret.
+    if (!Array.isArray(c.prActions) || c.prActions.length > 5) return { ok: false, error: "contributes.prActions must be a list of at most 5" };
+    out.prActions = [];
+    const seen = new Set<string>();
+    for (const a of c.prActions) {
+      if (!a || typeof a !== "object") return { ok: false, error: "a pull request action must be an object" };
+      const r = a as Record<string, unknown>;
+      if (typeof r.id !== "string" || !/^[a-z][a-z0-9-]{0,39}$/.test(r.id)) return { ok: false, error: "action id must be 1-40 of a-z, 0-9, - and start with a letter" };
+      if (seen.has(r.id)) return { ok: false, error: `action id "${r.id}" appears twice` };
+      seen.add(r.id);
+      if (typeof r.label !== "string" || !r.label.trim() || r.label.length > 28) return { ok: false, error: "action label must be 1-28 characters" };
+      out.prActions.push({ id: r.id, label: r.label.trim() });
+    }
   }
   return { ok: true, value: out };
 }

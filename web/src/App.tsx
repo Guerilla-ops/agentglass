@@ -212,7 +212,7 @@ export default function App() {
   useEffect(() => onOpenPrs((j) => { setPrJump(j); toBoard("pr"); }), [toBoard]);
   /* The other half: a sender that knows exactly which pull request it means
      gets the panel's jump, which selects and opens, instead of a search. */
-  useEffect(() => onOpenPr(({ repo, number, mention }) => { requestPrJump(repo, number, { mention }); toBoard("pr"); }), [toBoard]);
+  useEffect(() => onOpenPr(({ repo, number, mention, focus }) => { requestPrJump(repo, number, { mention, focus }); toBoard("pr"); }), [toBoard]);
   useEffect(() => onOpenCard((j) => { setCardJump(j); toBoard("tasks"); }), [toBoard]);
   useEffect(() => onOpenIssue((j) => { setIssueJump(j); toBoard("tasks"); }), [toBoard]);
   /** Which machine tab is open, or none. One piece of state for both surfaces:

@@ -115,7 +115,8 @@ export type PluginEvent =
   | { type: "action"; panel?: string; action: UiAction; values?: Record<string, unknown>; at: number }
   | { type: "settings"; settings: Record<string, unknown>; at: number }
   | { type: "note-status"; repo: string; number: number; id: string; status: NoteStatus; at: number }
-  | { type: "pr-open"; repo: string; number: number; at: number };
+  | { type: "pr-open"; repo: string; number: number; at: number }
+  | { type: "pr-action"; id: string; repo: string; number: number; at: number };
 
 const MAX_QUEUE = 200;
 const queues = new Map<string, PluginEvent[]>();

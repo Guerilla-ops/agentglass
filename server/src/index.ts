@@ -132,7 +132,7 @@ import {
   prBaseOf,
   ghRateLimit,
   branchBehind, localHead, prRollup,
-  prBranches, prsForBranch, nodeIdOk } from "./prs.ts";
+  prBranches, prsForBranch, nodeIdOk, locateRepo } from "./prs.ts";
 import { repoSpend } from "./spend.ts";
 import { generateWalkthrough, WALKTHROUGH_ENABLED } from "./walkthrough.ts";
 import { ptyOpen, ptyMessage, ptyClose, projectCommands, shutdownTerminals, lastTmuxTarget, sessionTitle, TERMINAL_ENABLED, PTY_BACKEND, type PtyWsData } from "./terminal.ts";
@@ -4855,6 +4855,20 @@ const server = Bun.serve<WsData>({
       const r = setNoteStatus(b.plugin, b.id, b.status);
       return json(r, r.ok ? 200 : 400);
     }
+    if (pathname === "/plugins/pr-action" && req.method === "POST") {
+      // A button a plugin declared in a pull request's header was pressed.
+      // Only a declared action of a running plugin; the plugin is told which
+      // pull request and nothing else.
+      if (!trustedCaller(req, from)) return csrfBlocked();
+      let b: { plugin?: unknown; id?: unknown; repo?: unknown; number?: unknown };
+      try { b = (await req.json()) as typeof b; } catch { return json({ ok: false, error: "invalid json" }, 400); }
+      const ref = validPrRef(b.repo, b.number);
+      if (typeof b.plugin !== "string" || typeof b.id !== "string" || !ref) return json({ ok: false, error: "plugin, id, repo and number are required" }, 400);
+      if (!isRunning(b.plugin)) return json({ ok: false, error: "that plugin is not running" }, 409);
+      if (!contributesOf(b.plugin).prActions?.some((a) => a.id === b.id)) return json({ ok: false, error: "that plugin declares no such action" }, 400);
+      pushEvent(b.plugin, { type: "pr-action", id: b.id, ...ref, at: Date.now() });
+      return json({ ok: true });
+    }
     if (pathname === "/plugins/pr-open" && req.method === "POST") {
       // The person opened a pull request. Told to every running plugin that
       // writes notes, so a reviewer can offer to look without polling GitHub
@@ -6563,6 +6577,46 @@ const server = Bun.serve<WsData>({
       const channel = nudgeChannel();
       const sent = b.send === true && channel.configured ? await sendNudge(text) : null;
       return json({ ok: true, text, channel: channel.configured, sent: sent?.sent ?? false, ...(sent?.error ? { error: sent.error } : {}) });
+    }
+    if (pathname === "/prs/locate") {
+      /*
+       * "Which checkout on this machine is owner/name?"
+       *
+       * Every pull request read goes through a local root, because that is
+       * where the remote — and therefore the repository's identity — is read
+       * from. That was fine while a pull request was only ever reached from
+       * the project it belongs to, and it made a link from anywhere else a
+       * dead end: a row in a plugin's list, or a notification about a review,
+       * could name a pull request the open project has no checkout of, and
+       * the panel answered by searching for the number in the wrong
+       * repository.
+       *
+       * The sweep is the picker's, `all=1`, so a project that is not the open
+       * one still counts; `repoIdFor` caches per root for five minutes and is
+       * two `git remote get-url` on a miss. Nothing here opens anything: it
+       * answers with a path, and the panel decides.
+       */
+      const want = url.searchParams.get("repo") || "";
+      if (!/^[\w.-]+\/[\w.-]+$/.test(want)) return json({ ok: false, error: "repo must be owner/name" }, 400);
+      return json(await singleFlight(`locate:${want}`, async () => {
+        const paths = getChanges(300).map((c) => c.file_path);
+        const known = knownProjects().map((p) => p.path);
+        /*
+         * The open project FIRST, and it is not an optimisation.
+         *
+         * `ignoreScope` is the picker's sweep, and it deliberately leaves out
+         * the scoped project and folds linked worktrees into the project they
+         * belong to. Both of those are right for a picker and wrong here: the
+         * pull request being read is usually in the project that is open, or
+         * in one of its worktrees, and asking the picker's sweep for it
+         * answered "no checkout of it on this machine" while the app was
+         * showing that very repository.
+         */
+        const scoped = await discoverRepos(paths, known, {});
+        const root = await locateRepo(want, scoped.map((r) => r.root))
+          ?? await locateRepo(want, (await discoverRepos(paths, known, { ignoreScope: true })).map((r) => r.root));
+        return root ? { ok: true, root } : { ok: false, error: `no checkout of ${want} on this machine` };
+      }));
     }
     if (pathname === "/prs/detail") {
       return json(await prDetail(

@@ -30,6 +30,7 @@ const MANIFEST = {
   contributes: {
     panels: [{ id: "main", title: "Reviews", icon: "review" }],
     prNotes: true,
+    prActions: [{ id: "review", label: "Local review" }, { id: "cancel", label: "Stop" }],
     settings: [{ key: "repos", type: "list", label: "Repositories" }],
   },
 };
@@ -66,6 +67,10 @@ for (;;) {
     // Re-sent as open, with a new title, so the test can see that it really
     // arrived and that the person's "resolved" still won.
     if (ev.type === "note-status") await post("/plugin/self/pr/notes", { notes: [note("open", "Off by one (seen again)")] });
+    // The button in the pull request's own header. The queued run is posted
+    // at once, which is what that button reads its state from.
+    if (ev.type === "pr-action" && ev.id === "review")
+      await post("/plugin/self/pr/run", { id: "r2", repo: ev.repo, number: ev.number, state: "queued", title: "Review · asked for" });
   }
 }
 `;
@@ -208,6 +213,26 @@ describe("notes on a pull request", () => {
     expect(n1.title).toBe("Off by one (seen again)");
     expect(n1.status).toBe("resolved");
     expect(n1.statusBy).toBe("person");
+  });
+});
+
+describe("a button the plugin put in a pull request", () => {
+  test("carries which pull request to the plugin, which answers with a queued run", async () => {
+    const r = await post("/plugins/pr-action", { plugin: MANIFEST.name, id: "review", repo: "acme/orbit", number: 44 });
+    expect(r.status).toBe(200);
+    const notes = await until(() => get("/plugins/pr-notes?repo=acme/orbit&number=44"), (x) => (x.runs?.length ?? 0) > 0);
+    expect(notes.runs[0]).toMatchObject({ id: "r2", state: "queued", plugin: MANIFEST.name });
+  });
+
+  test("an action the plugin never declared is refused, whatever the window sends", async () => {
+    const r = await post("/plugins/pr-action", { plugin: MANIFEST.name, id: "delete-everything", repo: "acme/orbit", number: 44 });
+    expect(r.status).toBe(400);
+    expect(((await r.json()) as Json).error).toContain("no such action");
+  });
+
+  test("and so is a pull request reference that is not one", async () => {
+    const r = await post("/plugins/pr-action", { plugin: MANIFEST.name, id: "review", repo: "acme", number: 0 });
+    expect(r.status).toBe(400);
   });
 });
 
