@@ -165,7 +165,7 @@ function SetupCard({ title, steps, note, error }: {
   const done = known.filter((s) => s.done).length;
   const all = known.length > 0 && done === known.length;
   return (
-    <div className="mb-5 rounded-xl overflow-hidden" style={{ border: "1px solid color-mix(in srgb, var(--border) 45%, transparent)", background: "var(--bg2)" }}>
+    <div className="agx-inset mb-5 rounded-xl overflow-hidden" style={{ border: "1px solid color-mix(in srgb, var(--border) 45%, transparent)", background: "var(--bg2)" }}>
       <div className="flex items-center gap-3 px-4 py-2.5" style={{ borderBottom: "1px solid color-mix(in srgb, var(--border) 35%, transparent)" }}>
         <span className="text-[13.5px] font-medium" style={{ color: "var(--text)" }}>{title}</span>
         <span className="ml-auto text-[11.5px] tabular-nums px-2 py-0.5 rounded-full"
@@ -1419,7 +1419,7 @@ function AboutPane({ open }: { open: boolean }) {
                 toolchain has to be here before it starts — said up front
                 rather than left to fail the build and report it in the panel
                 above, after the app has already gone down to restart. */}
-            <div className="text-[10.5px] px-2.5 py-1.5 rounded-lg" style={{ color: "var(--text2)", background: "color-mix(in srgb, var(--warning) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--warning) 30%, transparent)" }}>
+            <div className="agx-inset text-[10.5px] px-2.5 py-1.5 rounded-lg" style={{ color: "var(--text2)", background: "color-mix(in srgb, var(--warning) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--warning) 30%, transparent)" }}>
               Built on your machine from source — needs <span style={{ color: "var(--warning)" }}>git</span> and <span style={{ color: "var(--warning)" }}>bun</span> installed, and is Linux-only for now.
             </div>
             <div className="flex items-center gap-2">
@@ -1903,7 +1903,7 @@ function HooksPane({ open }: { open: boolean }) {
       <div className="py-2 flex flex-col gap-2.5">
 
         {!st.bundled ? (
-          <div className="text-[11px] px-2.5 py-2 rounded-lg" style={{ color: "var(--warning)", background: "color-mix(in srgb, var(--warning) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--warning) 30%, transparent)" }}>
+          <div className="agx-inset text-[11px] px-2.5 py-2 rounded-lg" style={{ color: "var(--warning)", background: "color-mix(in srgb, var(--warning) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--warning) 30%, transparent)" }}>
             This build does not carry the hook scripts, so there is nothing to wire. Install from a Release, or run <span className="t-mono">bun run setup</span> in a checkout.
           </div>
         ) : (
@@ -1941,7 +1941,7 @@ function HooksPane({ open }: { open: boolean }) {
 
             {/* The gate. Below the forwarder because it is the stronger thing,
                 and read second for the same reason. */}
-            <div className="flex flex-col gap-1.5 px-2.5 py-2 rounded-lg"
+            <div className="agx-inset flex flex-col gap-1.5 px-2.5 py-2 rounded-lg"
               style={{ background: "color-mix(in srgb, var(--primary) 7%, transparent)", border: "1px solid color-mix(in srgb, var(--primary) 26%, transparent)" }}>
               <div className="flex items-center gap-2">
                 <span className="text-[12px]" style={{ color: "var(--text)" }}>
@@ -1969,7 +1969,7 @@ function HooksPane({ open }: { open: boolean }) {
                 Until you turn this on, that line is held by each agent remembering it.
               </span>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 pt-3">
               {!st.installed ? null : (
                 <button onClick={() => act("uninstall")} disabled={busy}
                   className="text-[11.5px] px-3 py-1.5 rounded-lg hover:opacity-80"
@@ -1981,7 +1981,7 @@ function HooksPane({ open }: { open: boolean }) {
             {/* The forwarder is a python script; the install writes the command
                 but cannot make an interpreter appear. Said up front rather than
                 left to a session that streams nothing and no error anywhere. */}
-            <div className="text-[10.5px] px-2.5 py-1.5 rounded-lg" style={{ color: "var(--text2)", background: "color-mix(in srgb, var(--warning) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--warning) 30%, transparent)" }}>
+            <div className="agx-inset text-[10.5px] px-2.5 py-1.5 rounded-lg" style={{ color: "var(--text2)", background: "color-mix(in srgb, var(--warning) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--warning) 30%, transparent)" }}>
               The hooks run under <span style={{ color: "var(--warning)" }}>{st.python}</span> — it has to be on your PATH for events to arrive. Takes effect on the next Claude Code session; hooks load at startup.
             </div>
             <span className="text-[9.5px] t-dim2">

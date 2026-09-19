@@ -90,8 +90,7 @@ function Initials({ name }: { name: string }) {
  * URL — installPlugin on the server tells them apart by `isAbsolute`, so
  * this asks for one field rather than a toggle nobody needs to set.
  */
-function AddPluginCard({ onInstalled }: { onInstalled: () => void }) {
-  const [open, setOpen] = useState(false);
+function AddPluginCard({ onInstalled, open, setOpen }: { onInstalled: () => void; open: boolean; setOpen: (v: boolean) => void }) {
   const [source, setSource] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -106,18 +105,10 @@ function AddPluginCard({ onInstalled }: { onInstalled: () => void }) {
     else setError(r.error);
   };
 
-  if (!open) {
-    return (
-      <button onClick={() => setOpen(true)}
-        className="w-full rounded-xl p-2.5 text-[12.5px] hover:opacity-80 flex items-center gap-1.5"
-        style={{ color: "var(--text3)", border: "1px dashed color-mix(in srgb, var(--border) 55%, transparent)", background: "transparent" }}>
-        <span aria-hidden>+</span> Install a plugin
-      </button>
-    );
-  }
+  if (!open) return null;
 
   return (
-    <div className="rounded-xl p-3" style={CARD_STYLE}>
+    <div className="rounded-xl p-3 mb-3" style={CARD_STYLE}>
       <div className="text-[12.5px] font-medium" style={{ color: "var(--text)" }}>Install a plugin</div>
       <div className="text-[11px] t-dim mt-0.5">
         A local folder's absolute path, or a git URL. Copies the folder and reads its manifest — nothing in it runs yet.
@@ -250,7 +241,7 @@ function CatalogueRow({
   };
 
   return (
-    <div className="py-2.5" style={{ borderTop: "1px solid color-mix(in srgb, var(--border) 30%, transparent)" }}>
+    <div className="py-3">
       <div className="flex items-center gap-2.5">
         <button onClick={toggle} className="min-w-0 flex-1 flex items-baseline gap-2 text-left hover:opacity-80">
           <span className="t-mono text-[12.5px] truncate" style={{ color: "var(--text)" }}>{url}</span>
@@ -329,67 +320,67 @@ function CataloguesSection({ plugins, onInstalled }: { plugins: PublicPlugin[]; 
     else setError(r.error ?? "Could not add that catalogue");
   };
 
+  /* Rows, like every other settings card: a line between them and the
+     column's own margin, never a bordered box inside the card. Two boxes had
+     been nested here — a dashed "add" button and the offer below — each with
+     its border drawn on the card's edge. */
+  const btn = "text-[12px] px-2.5 py-1 rounded-lg whitespace-nowrap hover:opacity-80 disabled:opacity-50";
   return (
     <div className="agx-settings-section">
       <div className="panel-eyebrow pb-1">Catalogues</div>
       <div className="agx-settings-rows">
-        {open ? (
-          <div className="rounded-xl p-3" style={CARD_STYLE}>
-            <div className="text-[12.5px] font-medium" style={{ color: "var(--text)" }}>Add a catalogue</div>
-            <div className="text-[11px] t-dim mt-0.5">
-              A URL to a JSON catalogue somebody else publishes — a list of plugins by their git source. Nothing installs until you pick one from it.
-            </div>
-            <div className="flex items-center gap-2 mt-2">
-              <input value={url} onChange={(e) => setUrl(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") add(); if (e.key === "Escape") setOpen(false); }}
-                placeholder="https://…/catalogue.json"
-                disabled={busy}
-                autoFocus
-                className="t-mono text-[11.5px] px-2.5 py-1.5 rounded-lg min-w-0 flex-1"
-                style={{ color: "var(--text)", background: "color-mix(in srgb, var(--bg) 70%, transparent)", border: "1px solid color-mix(in srgb, var(--border) 50%, transparent)" }} />
-              <button onClick={add} disabled={busy || !url.trim()}
-                className="text-[12px] px-2.5 py-1 rounded-lg whitespace-nowrap hover:opacity-80 disabled:opacity-50"
-                style={{ color: "var(--text)", border: "1px solid color-mix(in srgb, var(--border) 45%, transparent)" }}>
-                {busy ? "Adding…" : "Add"}
-              </button>
-              <button onClick={() => { setOpen(false); setError(null); }} disabled={busy}
-                className="text-[12px] px-2 py-1 rounded-lg whitespace-nowrap hover:opacity-80"
-                style={{ color: "var(--text3)" }}>
-                Cancel
-              </button>
-            </div>
-            {error && <Alert tone="error">{error}</Alert>}
-          </div>
-        ) : (
-          <button onClick={() => setOpen(true)}
-            className="rounded-xl p-2.5 text-[12.5px] hover:opacity-80 flex items-center gap-1.5"
-            style={{ color: "var(--text3)", border: "1px dashed color-mix(in srgb, var(--border) 55%, transparent)", background: "transparent" }}>
-            <span aria-hidden>+</span> Add a catalogue
-          </button>
-        )}
         {!catalogues.includes(PROJECT_CATALOGUE) && (
-          <div className="rounded-xl p-3 flex items-center gap-3" style={CARD_STYLE}>
+          <div className="py-3 flex items-center gap-4">
             <div className="min-w-0 flex-1">
-              <div className="text-[12.5px] font-medium" style={{ color: "var(--text)" }}>The agentglass catalogue</div>
+              <div className="text-[12.5px]" style={{ color: "var(--text)" }}>The agentglass catalogue</div>
               <div className="text-[11px] t-dim mt-0.5">
                 The plugins listed on this project's site. Adding it fetches that list from GitHub Pages when you browse it; nothing installs until you pick one.
               </div>
             </div>
-            <button onClick={addProject} disabled={busy}
-              className="text-[12px] px-2.5 py-1 rounded-lg whitespace-nowrap hover:opacity-80 disabled:opacity-50"
+            <button onClick={addProject} disabled={busy} className={btn}
               style={{ color: "var(--primary)", border: "1px solid color-mix(in srgb, var(--primary) 45%, transparent)" }}>
               Add
             </button>
           </div>
         )}
-        {!open && error && <Alert tone="error">{error}</Alert>}
-        {catalogues.length === 0 ? (
-          <div className="py-2 text-[12px] t-dim">No catalogues added yet.</div>
-        ) : (
-          catalogues.map((u) => (
-            <CatalogueRow key={u} url={u} plugins={plugins} onInstalled={onInstalled} onRemoved={() => remove(u)} />
-          ))
-        )}
+        {catalogues.map((u) => (
+          <CatalogueRow key={u} url={u} plugins={plugins} onInstalled={onInstalled} onRemoved={() => remove(u)} />
+        ))}
+        <div className="py-3">
+          {open ? (
+            <>
+              <div className="text-[12.5px]" style={{ color: "var(--text)" }}>Add a catalogue</div>
+              <div className="text-[11px] t-dim mt-0.5">
+                A URL to a JSON catalogue somebody else publishes — a list of plugins by their git source. Nothing installs until you pick one from it.
+              </div>
+              <div className="flex items-center gap-2 mt-2.5">
+                <input value={url} onChange={(e) => setUrl(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") add(); if (e.key === "Escape") setOpen(false); }}
+                  placeholder="https://…/catalogue.json" disabled={busy} autoFocus
+                  className="agx-input t-mono min-w-0 flex-1" />
+                <button onClick={add} disabled={busy || !url.trim()} className={btn}
+                  style={{ color: "var(--text)", border: "1px solid color-mix(in srgb, var(--border) 45%, transparent)" }}>
+                  {busy ? "Adding…" : "Add"}
+                </button>
+                <button onClick={() => { setOpen(false); setError(null); }} disabled={busy} className={btn} style={{ color: "var(--text3)" }}>
+                  Cancel
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="flex items-center gap-4">
+              <div className="min-w-0 flex-1">
+                <div className="text-[12.5px]" style={{ color: "var(--text)" }}>Another catalogue</div>
+                <div className="text-[11px] t-dim mt-0.5">Somebody else's list, by its URL.</div>
+              </div>
+              <button onClick={() => setOpen(true)} className={btn}
+                style={{ color: "var(--text2)", border: "1px solid color-mix(in srgb, var(--border) 45%, transparent)" }}>
+                Add by URL…
+              </button>
+            </div>
+          )}
+          {error && <Alert tone="error">{error}</Alert>}
+        </div>
       </div>
     </div>
   );
@@ -422,6 +413,7 @@ export function PluginsPane({ open }: { open: boolean }) {
      "the one that watches the cockpit" is as likely a thing to remember as
      its name — and with a catalogue attached this list is not always short. */
   const [q, setQ] = useState("");
+  const [installing, setInstalling] = useState(false);
   const ql = q.trim().toLowerCase();
   const shown = ql
     ? plugins.filter((p) => `${p.name} ${p.publisher} ${p.description}`.toLowerCase().includes(ql))
@@ -469,6 +461,14 @@ export function PluginsPane({ open }: { open: boolean }) {
             style={{ color: "var(--text2)", border: "1px solid var(--surface-line)" }}>
             Refresh
           </button>
+          {/* In the header, with the other things you do to this list. It was
+              a dashed half-width tile at the end of the grid, which on an
+              empty list was the only thing there and read as a stray box. */}
+          <button onClick={() => setInstalling(true)} disabled={installing}
+            className="text-[12px] px-2.5 py-1.5 rounded-lg whitespace-nowrap hover:opacity-80 disabled:opacity-50"
+            style={{ color: "var(--primary)", border: "1px solid color-mix(in srgb, var(--primary) 45%, transparent)" }}>
+            Install a plugin
+          </button>
         </div>
       </div>
 
@@ -478,14 +478,23 @@ export function PluginsPane({ open }: { open: boolean }) {
           open on a laptop. 360 is the floor a card of this density needs —
           below it the description wraps to five lines and the footer buttons
           stack, which is the letterbox again. */}
-      <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(360px, 1fr))" }}>
-        {shown.map((p) => <PluginCard key={p.name} plugin={p} masterOn={!!master} onChanged={load} />)}
-        <AddPluginCard onInstalled={load} />
-      </div>
+      <AddPluginCard onInstalled={load} open={installing} setOpen={setInstalling} />
+      {plugins.length === 0 ? (
+        <div className="rounded-xl px-4 py-5 text-[12px] t-dim" style={{ border: "1px dashed var(--surface-line)" }}>
+          Nothing installed yet. Install one from a folder or a git URL, or pick one from a catalogue below.
+        </div>
+      ) : (
+        <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(360px, 1fr))" }}>
+          {shown.map((p) => <PluginCard key={p.name} plugin={p} masterOn={!!master} onChanged={load} />)}
+        </div>
+      )}
       {plugins.length > 0 && shown.length === 0 && (
         <div className="pt-3 text-[12px] t-dim">Nothing installed matches “{q.trim()}”.</div>
       )}
 
+      {/* The same 24px every settings card keeps from the next one. The grid
+          sat directly on the Catalogues card, with nothing between them. */}
+      <div className="h-6" aria-hidden />
       <CataloguesSection plugins={plugins} onInstalled={load} />
     </div>
   );

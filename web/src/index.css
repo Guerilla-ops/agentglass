@@ -1556,6 +1556,22 @@ textarea.bg-transparent:focus-visible { outline: none !important; }
 }
 
 /*
+ * A box inside a card keeps the card's margin.
+ *
+ * The rule above gives a wrapper that contains rows no horizontal padding, so
+ * the rows can reach the card's edge. Anything with a border of its own that
+ * lives in such a wrapper - a checklist, a notice, a gate, a nested card -
+ * went edge to edge with it: its border drawn on top of the card's, two frames
+ * touching, which is what read as unfinished (measured on the Agents page:
+ * every inner box at x=131, the card itself at x=131). A bordered box says so
+ * with this class and is inset by the column's own 18px, and by the rhythm the
+ * rows use above and below.
+ */
+.agx-settings-col .agx-settings-rows .agx-inset {
+  margin: 10px 18px;
+}
+
+/*
  * A row's two halves may not grow past their tracks.
  *
  * Measured on the Rail page: the words track was 423px and the words box was
