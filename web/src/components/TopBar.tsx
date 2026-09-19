@@ -631,33 +631,23 @@ export function TopBar({
         <span className="text-[10px] shrink-0" style={{ color: "var(--text4)" }}>▾</span>
       </button>
 
-      {/* The live state belongs with what it is about — this project, these
-          shells — not adrift in the middle of the bar. */}
-      <Item cap="live" dim={quiet} title={`${shells} shell${shells === 1 ? "" : "s"} running`}>
-        <span className="rounded-full" style={{ width: 6, height: 6, background: shells ? "var(--success)" : "color-mix(in srgb, var(--text) 22%, transparent)" }} />
-        <b className="text-[10.5px] tabular-nums" style={{ color: "var(--text)" }}>{shells}</b>
-      </Item>
+      {/*
+        * NO LIVE COUNT, NO AHEAD, NO BEHIND.
+        *
+        * Three numbers that were read once and then never again. How many
+        * shells are running is answered by the terminal you are looking at; how
+        * many commits are unpushed is a fact about a branch, and the strip above
+        * that branch already carries it where you are deciding about it. Up here
+        * they were a permanent ticker on a bar whose middle is deliberately
+        * empty so that the ONE thing that wants you has somewhere to appear.
+        *
+        * `chats` stays: it is the only one of the four that is about something
+        * that happened while you were elsewhere, which is what a strip along the
+        * top is for.
+        */}
       {waiting > 0 && (
         <Item cap="chats" dim={quiet} title="Chats that replied while you were elsewhere">
           <b className="text-[10.5px] tabular-nums" style={{ color: "var(--success)" }}>{waiting}</b>
-        </Item>
-      )}
-      {/* Work that exists only here, and work that exists only there. The first
-          had no indicator anywhere: a branch you have committed to and not
-          pushed looked exactly like one with nothing outstanding, and that is
-          the state where losing a laptop costs you the work. Both leave entirely
-          at zero — an idle strip should not spend width saying nothing is
-          happening. */}
-      {ahead > 0 && (
-        <Item cap="to push" dim={quiet} hideUnder="md" title={`${ahead} commit${ahead === 1 ? "" : "s"} committed here and pushed nowhere`}>
-          <Arrow up />
-          <b className="text-[10.5px] tabular-nums" style={{ color: "var(--success)" }}>{ahead}</b>
-        </Item>
-      )}
-      {behind > 0 && (
-        <Item cap="to pull" dim={quiet} hideUnder="md" title={`${behind} commit${behind === 1 ? "" : "s"} on the upstream you have not pulled`}>
-          <Arrow />
-          <b className="text-[10.5px] tabular-nums" style={{ color: "var(--info)" }}>{behind}</b>
         </Item>
       )}
 

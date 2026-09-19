@@ -27,7 +27,10 @@
  * screen; the components below it are what connect.
  */
 
-export type BenchTabKind = "term" | "file" | "note" | "web" | "agent";
+/** `pr` and `tasks` are the two boards, which are not this checkout's — they
+ *  are the same board the view shows, moved here while this tab is on screen.
+ *  See boardHost.ts. They run nothing, so their slot is 0. */
+export type BenchTabKind = "term" | "file" | "note" | "web" | "agent" | "pr" | "tasks";
 
 /**
  * Every file of a checkout shares ONE editor, and this is its session.
@@ -147,7 +150,7 @@ function sane(byRoot: unknown): BenchState["byRoot"] {
   return out;
 }
 
-const KINDS: BenchTabKind[] = ["term", "file", "note", "web", "agent"];
+const KINDS: BenchTabKind[] = ["term", "file", "note", "web", "agent", "pr", "tasks"];
 function isTab(x: unknown): x is BenchTab {
   const t = x as BenchTab;
   return !!t && typeof t.id === "string" && typeof t.title === "string"
@@ -333,6 +336,37 @@ export function showFile(root: string, path: string, o: { line?: number; readonl
     title: o.title ?? path.split("/").pop() ?? "file",
     path, line: o.line, readonly: o.readonly, ref: o.ref,
   });
+}
+
+/**
+ * Show a board in the bench: the tab this checkout already has for it, or a new
+ * one. One per checkout — there is only one board to put in it.
+ */
+export function showBoard(root: string, kind: "pr" | "tasks"): BenchTab {
+  const held = state.byRoot[root];
+  const same = held?.tabs.find((t) => t.kind === kind);
+  if (same) {
+    commit({ ...state, root, open: true, byRoot: { ...state.byRoot, [root]: { ...held!, active: same.id } } });
+    return same;
+  }
+  return addTab(root, { kind, slot: 0, title: kind === "pr" ? "Pull requests" : "Tasks" });
+}
+
+/**
+ * A panel asked for a board — "open this pull request", "show me that card".
+ *
+ * When the bench is open on a board, that is where the person is working, and
+ * sending them to the view put the answer BEHIND the window they were looking
+ * at: measured, a card's "Open this pull request" pressed in the bench switched
+ * the view underneath and left the bench covering it. So the bench takes it —
+ * the board's tab here, which pulls the one board in (see boardHost.ts). True
+ * when it did; otherwise the caller goes to the view as it always has.
+ */
+export function benchTakesBoard(kind: "pr" | "tasks"): boolean {
+  const on = state.open && state.root ? activeTab(state.root) : null;
+  if (!on || (on.kind !== "pr" && on.kind !== "tasks")) return false;
+  showBoard(state.root, kind);
+  return true;
 }
 
 /** Test seam: forget everything, including what is in localStorage. */

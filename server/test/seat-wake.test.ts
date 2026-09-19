@@ -19,6 +19,7 @@ process.env.AGENTGLASS_DOCTRINE = join(dir, "data");
 
 const { fingerprint, wakeLine, wakeSeats, wakeForReport, __resetSeatWake } = await import("../src/seatwake.ts");
 const R = await import("../src/seatreport.ts");
+const Seat = await import("../src/seat.ts");
 
 const ROOT = "/home/a/code/orbit";
 /* Every finding carries the checkout it came from: a seat is per project and
@@ -74,22 +75,69 @@ describe("who gets woken", () => {
     expect(sent[0]).toContain("db-fix needs your permission");
   });
 
-  test("and when a finding clears, which is also news", async () => {
+  test("when the last finding clears, the app says so and nobody is woken", async () => {
+    /*
+     * A field going from one stopped agent to none HAS changed, so it used to
+     * come through as a wake — "the field is clear, report your line". True,
+     * and still a turn of the most expensive context on the machine spent on
+     * the one kind of news that asks nothing of anybody.
+     *
+     * The LINE is worth writing: without it the seat's last word on the screen
+     * stays "somebody is stopped on you" long after they stopped being
+     * stopped, which is the screen lying in the other direction.
+     */
+    /* `bun test` shares one process and one database, and this project's root
+       string is used by the tray's own suite: an unread report left by another
+       file would make this a wake rather than a line, and rightly so. */
+    __resetSeatWake();
+    Seat.setSeatSettings(ROOT, "", "speak");
+    R.drainReports(ROOT);
     const sent: string[] = [];
     const prompt = async (_n: string, t: string) => { sent.push(t); };
     await wakeSeats([waiting("db-fix")], { seats, prompt, now: 0 });
-    await wakeSeats([], { seats, prompt, now: 60_000 });
-    expect(sent[0]).toContain("The field is clear");
+    expect(await wakeSeats([], { seats, prompt, now: 60_000 })).toEqual([]);
+    expect(sent, "a turn was spent to be told the problem went away").toEqual([]);
+    expect(Seat.seatLines(ROOT).map((l) => l.line).join("\n")).toContain("the field cleared");
   });
 
-  test("a quiet day still gets a line once the floor passes", async () => {
+  test("but a tray with something in it is not a clear field", async () => {
+    /* However empty the board, a report asking for a decision is somebody
+       waiting — and that is worth the turn. */
+    __resetSeatWake();
+    Seat.setSeatSettings(ROOT, "", "speak");
+    R.drainReports(ROOT);
+    const sent: string[] = [];
+    const prompt = async (_n: string, t: string) => { sent.push(t); };
+    await wakeSeats([waiting("db-fix")], { seats, prompt, now: 0 });
+    R.addReport({ root: ROOT, agent: "asker", text: "STATE ready\nNEED a go on the push" });
+    expect(await wakeSeats([], { seats, prompt, now: 60_000 })).toEqual([ROOT]);
+    expect(sent[0]).toContain("report");
+  });
+
+  test("a quiet day still gets a line once the floor passes — WITHOUT waking anybody", async () => {
+    /*
+     * The floor exists so a quiet day gets a line rather than a silence that
+     * cannot be told from a dead agent. It used to buy that line by spending a
+     * turn of the most expensive context on the machine to have it write the
+     * one sentence this app already knew — one turn of the seat's own, each
+     * time, to say "no change".
+     *
+     * The line still appears. Nobody is woken to write it, and it is marked as
+     * the app's own observation rather than put in the seat's mouth.
+     */
+    /* A line is only kept for a project that HAS a seat row; this is the
+       cheapest public way to make one. */
+    Seat.setSeatSettings(ROOT, "", "speak");
     const sent: string[] = [];
     const prompt = async (_n: string, t: string) => { sent.push(t); };
     const f = [waiting("db-fix")];
     await wakeSeats(f, { seats, prompt, now: 0 });
     expect(await wakeSeats(f, { seats, prompt, now: 3 * 3_600_000 })).toEqual([]);
-    expect(await wakeSeats(f, { seats, prompt, now: 5 * 3_600_000 })).toEqual([ROOT]);
-    expect(sent[0]).toContain("Nothing has changed");
+    expect(await wakeSeats(f, { seats, prompt, now: 5 * 3_600_000 }), "the floor woke somebody to say nothing had changed").toEqual([]);
+    expect(sent, "a turn was spent on a round with nothing in it").toEqual([]);
+    const said = Seat.seatLines(ROOT).map((l) => l.line).join("\n");
+    expect(said, "the quiet day left no line at all").toContain("nothing had changed");
+    expect(said).toContain("nobody was woken");
   });
 
   test("an empty chair is not woken", async () => {
@@ -208,5 +256,53 @@ describe("a report wakes the seat now", () => {
     expect(sent).toHaveLength(1);
     await wakeSeats([], { seats, prompt, now: 20 });
     expect(sent, "the sweep repeated a report the seat had already been told about").toHaveLength(1);
+  });
+});
+
+/*
+ * FORGOTTEN WORK THE SEAT CANNOT REACH IS NOT WORTH ITS TURN.
+ *
+ * Measured: an agent finished, its owner closed the tmux window, and an hour
+ * later the seat was woken to ask after a pane that no longer exists. The
+ * seat's only move on a forgotten agent is to nudge it, and there is nothing
+ * there to nudge — whether it died or is alive on a second tmux server, this
+ * machine has no way to reach it.
+ *
+ * The finding is not dropped: the Lantern still shows the person that a claim
+ * went quiet. Whether it is worth waking the expensive model is a different
+ * question, and this is where that one is answered.
+ */
+describe("which findings are worth a turn", () => {
+  const forgotten = (name: string, pane?: string): Finding =>
+    ({ kind: "forgotten", name, since: 1_000, worktree: ROOT, pane, line: `${name} said it was on "x" and has been quiet for 1h — done, or stuck?` });
+
+  test("a forgotten agent with no pane does not wake the seat", async () => {
+    __resetSeatWake();
+    Seat.setSeatSettings(ROOT, "", "speak");
+    R.drainReports(ROOT);
+    const sent: string[] = [];
+    const prompt = async (_n: string, t: string) => { sent.push(t); };
+    await wakeSeats([], { seats, prompt, now: 0 });
+    expect(await wakeSeats([forgotten("push-round-6")], { seats, prompt, now: 60_000 })).toEqual([]);
+    expect(sent).toEqual([]);
+  });
+
+  test("the same one in a pane does, because there is something to nudge", async () => {
+    __resetSeatWake();
+    R.drainReports(ROOT);
+    const sent: string[] = [];
+    const prompt = async (_n: string, t: string) => { sent.push(t); };
+    await wakeSeats([], { seats, prompt, now: 0 });
+    expect(await wakeSeats([forgotten("push-round-6", "%7")], { seats, prompt, now: 60_000 })).toEqual([ROOT]);
+  });
+
+  test("and somebody stopped on a person is never filtered, pane or no pane", async () => {
+    /* That one is the person's to clear, and saying so is the whole job. */
+    __resetSeatWake();
+    R.drainReports(ROOT);
+    const sent: string[] = [];
+    const prompt = async (_n: string, t: string) => { sent.push(t); };
+    await wakeSeats([], { seats, prompt, now: 0 });
+    expect(await wakeSeats([waiting("db-fix")], { seats, prompt, now: 60_000 })).toEqual([ROOT]);
   });
 });

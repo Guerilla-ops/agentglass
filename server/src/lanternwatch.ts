@@ -79,6 +79,21 @@ export function findings(p: {
   const now = p.now ?? Date.now();
   const out: Finding[] = [];
   for (const r of p.rows) {
+    /*
+     * NEITHER READER OF THIS BOARD IS WORK ON IT.
+     *
+     * The Lantern's chat and the project's seat are marked with a `role` by
+     * `boardNow`, and every other reader sets them aside — the field readout
+     * does, the view does. This one did not, so the seat was reported as
+     * FORGOTTEN WORK about itself: "orchestrator said it was on … and has been
+     * quiet for 1d — done, or stuck?", which is a description of a chair
+     * waiting for its owner, delivered by waking the chair.
+     *
+     * Twice now the same shape: a rule was written, one reader learned it, and
+     * the others went on deciding for themselves. Both are gone from here in
+     * one line, by the mark the board already carries.
+     */
+    if ((r as { role?: string }).role) continue;
     if (r.needsYou) {
       /* A turn that ended is not urgent: the agent finished and is waiting
          for whatever you say next, which is most sessions most of the time.

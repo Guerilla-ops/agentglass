@@ -111,8 +111,14 @@ describe("the bar", () => {
   test("the card wears its priority as a colour", () => {
     const urgent = draw({ card: { label: "ORBIT-1049", prio: "urgent", inApp: true }, onCard: () => {} });
     expect(urgent).toContain("var(--error)");
+    /* And a card with no priority wears the ACCENT, not `--info`: that token is
+       the palette's word for a link, and a chip borrowing it says something it
+       does not mean. The strip's own chrome is one colour, the one the person
+       picked; the priority is the exception, because that is the tracker's fact
+       rather than a decoration. */
     const none = draw({ card: { label: "ORBIT-1049", prio: null, inApp: true }, onCard: () => {} });
-    expect(none).toContain("var(--info)");
+    expect(none).toContain("var(--accent, var(--primary))");
+    expect(none).not.toContain("var(--info)");
   });
 
   test("closed, it is under the pane's edge and takes no pointer events", () => {

@@ -44,6 +44,19 @@ describe("Escape belongs to what is in the tab", () => {
   });
 });
 
+describe("a grown bench", () => {
+  it("fills everything right of the rail and below the top bar", () => {
+    // A percentage inset from the whole app left ~80px a side on a wide screen,
+    // and one that covered the rail would hide how a board goes back to its view.
+    expect(bench).toContain("const GROWN_GAP = 8;");
+    expect(bench).toContain("left: st.grown ? RAIL_W + GROWN_GAP");
+    expect(bench).toContain("const GROWN_TOP = TOP_BAR_H + GROWN_GAP;");
+    expect(bench).toContain("top: st.grown ? GROWN_TOP");
+    expect(bench).toContain("width: st.grown ? `calc(100% - ${RAIL_W + 2 * GROWN_GAP}px)`");
+    expect(bench).toContain("height: st.grown ? `calc(100% - ${GROWN_TOP + GROWN_GAP}px)`");
+  });
+});
+
 describe("where the bench sits", () => {
   it("above the viewer it takes files from", () => {
     // The viewer sends a file here; a window that opened underneath the thing

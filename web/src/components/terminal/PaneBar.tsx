@@ -105,6 +105,18 @@ export interface PaneBarProps {
 }
 
 /** Priority → the colour the card wears, the same four the card panel uses. */
+/*
+ * ONE COLOUR FOR THIS STRIP, and it is the one the person picked.
+ *
+ * It read as a paint chart: a violet badge, a violet pull request, a blue card
+ * and a four-stop rainbow under all of it. None of those were saying anything —
+ * the palette's `--info`, `--success` and `--warning` are the words for a link,
+ * a pass and a caution, and spending them on chrome is how a warning stops
+ * being read as one. The tracker's own priority colour is the exception: that
+ * one is a fact about the card rather than a decoration.
+ */
+const ACCENT = "var(--accent, var(--primary))";
+
 const PRIO: Record<string, string> = {
   urgent: "var(--error)",
   high: "var(--warning)",
@@ -202,7 +214,12 @@ export function PaneBar(p: PaneBarProps) {
           height: SEAM_H,
           borderRadius: 3,
           zIndex: 11,
-          background: "linear-gradient(90deg, var(--success, #98c379), var(--info), var(--primary), var(--warning))",
+          /* The accent, fading out at both ends — one colour, the one the
+             person picked. It was a four-stop rainbow of green, blue, violet
+             and amber, which is the palette's whole signal vocabulary spent on
+             a decoration: nothing here is a success, a warning or a link, and
+             a strip that borrows those words says something it does not mean. */
+          background: "linear-gradient(90deg, transparent, var(--accent, var(--primary)), transparent)",
           opacity: on ? 0 : p.near ? 1 : 0.5,
           transition: "opacity .14s ease",
         }}
@@ -262,7 +279,7 @@ export function PaneBar(p: PaneBarProps) {
         ) : (<>
         <span
           className="shrink-0 text-[9px] leading-none px-1.5 py-1 rounded"
-          style={{ color: "var(--primary)", background: "color-mix(in srgb, var(--primary) 16%, transparent)", border: "1px solid color-mix(in srgb, var(--primary) 32%, transparent)" }}
+          style={{ color: ACCENT, background: `color-mix(in srgb, ${ACCENT} 16%, transparent)`, border: `1px solid color-mix(in srgb, ${ACCENT} 32%, transparent)` }}
         >WT</span>
         <button
           onClick={p.onGit}
@@ -315,7 +332,7 @@ export function PaneBar(p: PaneBarProps) {
             onClick={p.onPr}
             title={`#${p.pr.number} ${p.pr.title}\nOpen it in Pull requests`}
             className="agx-btn shrink-0 flex items-center gap-1.5 rounded px-2 text-[11px] tabular-nums"
-            style={{ height: 22, color: "var(--primary)", border: "1px solid color-mix(in srgb, var(--primary) 45%, transparent)" }}
+            style={{ height: 22, color: ACCENT, border: `1px solid color-mix(in srgb, ${ACCENT} 45%, transparent)` }}
           >
             <svg width={ICON.xs} height={ICON.xs} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
               <circle cx="4.2" cy="3.6" r="1.7" /><circle cx="4.2" cy="12.4" r="1.7" /><path d="M4.2 5.3v5.4" />
@@ -332,7 +349,7 @@ export function PaneBar(p: PaneBarProps) {
             onClick={p.onCard}
             title={`${p.card.label}${p.card.prio ? ` · ${p.card.prio}` : ""}\n${p.card.inApp ? "Open it in Tasks" : "Open it in the tracker"}`}
             className="agx-btn shrink-0 flex items-center gap-1.5 rounded px-2 text-[11px]"
-            style={{ height: 22, color: PRIO[p.card.prio ?? ""] ?? "var(--info)", border: `1px solid color-mix(in srgb, ${PRIO[p.card.prio ?? ""] ?? "var(--info)"} 45%, transparent)` }}
+            style={{ height: 22, color: PRIO[p.card.prio ?? ""] ?? ACCENT, border: `1px solid color-mix(in srgb, ${PRIO[p.card.prio ?? ""] ?? ACCENT} 45%, transparent)` }}
           >
             {/* The priority IS the icon: a flag in the colour the tracker gives
                 it, which is the one thing about a card you read at a glance. */}

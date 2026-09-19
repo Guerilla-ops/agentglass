@@ -22,7 +22,7 @@
 import * as AgentOps from "./agentops.ts";
 import { inScope, seatWakeHours } from "./config.ts";
 import type { Finding } from "./lanternwatch.ts";
-import { everySeat, seated } from "./seat.ts";
+import { everySeat, seatSays, seated } from "./seat.ts";
 import { releaseVanished } from "./seatqueue.ts";
 import { unreadWorthWaking } from "./seatreport.ts";
 import { noteWoken, wokenFor, __resetWoken } from "./seatwoken.ts";
@@ -88,7 +88,29 @@ export async function wakeSeats(f: Finding[], deps: WakeDeps = {}): Promise<stri
     /* Whose field this is. A seat for one repository woken because an agent in
        another one stopped would spend a turn reporting on work that is none of
        its business — and, with powers, offer to unstick it. */
-    const mine = f.filter((x) => x.worktree && inScope(x.worktree, s.root));
+    /*
+     * WHOSE FIELD THIS IS, AND WHICH OF IT IS WORTH A TURN.
+     *
+     * The project filter is the obvious half: a seat for one repository woken
+     * because an agent in another one stopped would spend a turn reporting on
+     * work that is none of its business.
+     *
+     * The other half is reachability, and it was measured the hard way. An
+     * agent finished its task, its owner closed the tmux window, and an hour
+     * later the seat was woken with "said it was on … and has been quiet for
+     * 1h — done, or stuck?" about a pane that no longer exists. The seat's
+     * only move on a forgotten agent is to nudge it, and there is nothing to
+     * nudge: an agent that has no pane on this machine cannot be reached,
+     * whether it died or is alive on another tmux server.
+     *
+     * The finding itself is NOT dropped — the Lantern still shows David that a
+     * claim went quiet, which is his to read and is a different question from
+     * whether it is worth waking the most expensive context on the machine.
+     * Somebody stopped ON A PERSON is never filtered: that one is the person's
+     * to clear, and the seat's job is to say so.
+     */
+    const mine = f.filter((x) => x.worktree && inScope(x.worktree, s.root))
+      .filter((x) => x.kind !== "forgotten" || !!x.pane);
     /*
      * A report waiting is part of what the field says, and the count is in the
      * fingerprint so a fifth report wakes the seat exactly as a fifth stopped
@@ -111,9 +133,48 @@ export async function wakeSeats(f: Finding[], deps: WakeDeps = {}): Promise<stri
        field in its opening prompt, and waking it to say so would be a turn
        spent repeating what it is already reading. */
     if (!last) continue;
-    const line = changed
-      ? (waiting ? `${waiting} report${waiting === 1 ? "" : "s"} waiting: run \`agentglass-agent inbox\`. ` : "") + wakeLine(mine, last.fingerprint.split("#")[0] ?? "")
-      : "Nothing has changed since your last round. Say so in one line, or say what you notice.";
+    /*
+     * A WAKE THAT SAYS "NOTHING CHANGED" IS NOT A WAKE.
+     *
+     * The floor exists so a quiet day still gets a line, rather than a silence
+     * that cannot be told from a dead agent. It used to buy that line by
+     * spending a turn of the most expensive context on the machine to have it
+     * write the one sentence this app already knew. The seat paying for it put
+     * the cost plainly: one turn of its own, each time, to say "no change".
+     *
+     * The app knows both halves: that nothing changed, and that the chair is
+     * alive, because its pane is there. So it writes the line itself, marked
+     * as its own observation and not as something the seat said, and the floor
+     * still does its job for nothing.
+     */
+    const at = () => new Date(now).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hour12: false });
+    if (!changed) {
+      seatSays(s.root, `(looked at ${at()} — nothing had changed, so nobody was woken)`, now);
+      continue;
+    }
+    /*
+     * AND NEITHER IS "THE LAST PROBLEM WENT AWAY".
+     *
+     * A field that goes from two stopped agents to none HAS changed, so the
+     * first guard lets it through — and the line it woke the seat with was
+     * "the field is clear, report your line". True, and still a turn of the
+     * most expensive context on the machine spent on the one kind of news that
+     * asks nothing of anybody.
+     *
+     * The line is worth writing: without it the seat's last word on the screen
+     * stays "two agents stopped on you" long after they stopped being stopped,
+     * which is the screen lying in the other direction. So the app writes that
+     * one too, and the turn is saved.
+     *
+     * Reports are the exception, and they have to be: a tray with something
+     * asking for a decision is not a clear field, however empty the board is.
+     */
+    if (mine.length === 0 && !waiting) {
+      seatSays(s.root, `(looked at ${at()} — the field cleared, so nobody was woken)`, now);
+      continue;
+    }
+    const line = (waiting ? `${waiting} report${waiting === 1 ? "" : "s"} waiting: run \`agentglass-agent inbox\`. ` : "")
+      + wakeLine(mine, last.fingerprint.split("#")[0] ?? "");
     await send(s.root, line);
     woken.push(s.root);
   }

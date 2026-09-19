@@ -20,7 +20,7 @@ import { MIN_BOX } from "../lib/iconSize.ts";
 import type { PrDetail } from "../../../shared/types.ts";
 import { railScan, checksAbout, threadsAbout, queuedOn, heldOn, railAge,  railPreview, type RailDraft, type RailHeld, type RailMention } from "../lib/fileRail.ts";
 import { openExternal } from "../lib/externalUrl.ts";
-import { mergeBlockedWhy, checksLine, checksStanding, standingLine, mergeVerdict } from "../../../shared/mergeReason.ts";
+import { mergeBlockedWhy, checksLine, checksStanding, standingLine, mergeVerdict, githubWillMerge } from "../../../shared/mergeReason.ts";
 import { ICON } from "../lib/iconSize.ts";
 
 /** How your own last verdict reads back, and in what colour. Its own map so the
@@ -208,7 +208,7 @@ export function FileRail({
   const queued = useMemo(() => queuedOn(drafts, path), [drafts, path]);
   const heldHere = useMemo(() => heldOn(held, path), [held, path]);
   const standing = checksStanding(d.checks, awaitingChecks);
-  const allClear = d.mergeState === "CLEAN" && standing === "green";
+  const allClear = githubWillMerge(d.mergeState) && standing === "green";
   /*
    * Whether GitHub will take it, which is a different question from whether the
    * checks are green — and asking only the second one is how this box said
@@ -228,7 +228,7 @@ export function FileRail({
    * behind its base is still worth a press with a warning. Behind is a reason,
    * so it must not read as "nothing is blocking it".
    */
-  const willTake = d.mergeState === "CLEAN";
+  const willTake = githubWillMerge(d.mergeState);
   /* Not `verdict` — that name is already the review's, three lines up in the
      props, and this is the merge's. */
   const { line: mergeLine } = mergeVerdict(d.mergeState, d.checks, awaitingChecks);

@@ -21,6 +21,8 @@
 //    server has one thread; every read is a cached answer with its age shown.
 import { createContext, Fragment, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from "react";
 import { handoffTo } from "../lib/handoffTo.ts";
+import { isBackButton } from "../lib/mouseBack.ts";
+import { onAppBack } from "../lib/desktop.ts";
 import { requestTermIssue } from "../lib/termIssue.ts";
 import { diffSplit, diffWrap, diffNoWhitespace, setDiffNoWhitespace } from "../lib/diffPrefs.ts";
 import { Portal } from "./Portal.tsx";
@@ -77,7 +79,7 @@ import { EMPTY as EMPTY_RULES, applyWith, type FilterSet } from "./tasks/filters
 import { Avatar } from "./Avatar.tsx";
 import { StatusPill } from "./StatusPill.tsx";
 import { PeekFile, type Peek } from "./PeekFile.tsx";
-import { MERGE_WHY, mergeBlockedWhy, checksLine, checksStanding, standingLine, checksShort, mergeVerdict } from "../../../shared/mergeReason.ts";
+import { MERGE_WHY, mergeBlockedWhy, checksLine, checksStanding, standingLine, checksShort, mergeVerdict, githubWillMerge } from "../../../shared/mergeReason.ts";
 import { parseQuery, applyFilters, peopleMatched, buildFacets, activeCount, readPrField, builderFields, queryToRules, type RepoFacets } from "../lib/prFilter.ts";
 import { CodeBlock as MdCodeBlock } from "../lib/mdCode.tsx";
 import { externalUrl, openExternal } from "../lib/externalUrl.ts";
@@ -1941,6 +1943,48 @@ export function PrView({ active, onOpenChatWith, onReviewInTerminal, jumpTo }: {
   const openPr = useCallback((n: number) => { setRowCursor(n); setSelected(n); setTab("overview"); setEditingBody(false); }, []);
   const backToList = useCallback(() => { setSelected(null); setDetailErr(""); setEditingBody(false); }, []);
 
+  /*
+   * AND THE MOUSE'S BACK BUTTON DOES IT TOO.
+   *
+   * The thumb button means "back to where I was" everywhere else on the
+   * machine, and here it meant nothing: the app is one page, so there is no
+   * history entry for Chromium to pop and the press fell on the floor. Getting
+   * out of a pull request was a trip to a breadcrumb at the far corner of the
+   * window.
+   *
+   * TWO DOORS, because the press comes in by one of them depending on who is
+   * hosting the page. In the desktop shell Chromium routes the thumb buttons to
+   * the EMBEDDER as an app command and never dispatches a DOM event at all —
+   * the first version of this listened for `auxclick` and waited for something
+   * that is never sent. In a plain browser tab the opposite is true, and there
+   * `auxclick` is what arrives.
+   *
+   * Bound only while a pull request is open, so nothing else on the screen has
+   * to wonder whether the gesture was meant for it, and not while the caret is
+   * in a field: a half-written comment lost to a thumb is worse than a gesture
+   * that did nothing.
+   */
+  useEffect(() => {
+    if (selected == null) return;
+    const typing = () => /input|textarea/i.test(document.activeElement?.tagName ?? "")
+      || (document.activeElement as HTMLElement | null)?.isContentEditable === true;
+    const back = () => { if (!typing()) backToList(); };
+    const stop = (e: MouseEvent) => { if (isBackButton(e)) e.preventDefault(); };
+    const go = (e: MouseEvent) => {
+      if (!isBackButton(e)) return;
+      e.preventDefault();
+      back();
+    };
+    window.addEventListener("mousedown", stop);
+    window.addEventListener("auxclick", go);
+    const off = onAppBack(({ back: isBack }) => { if (isBack) back(); });
+    return () => {
+      window.removeEventListener("mousedown", stop);
+      window.removeEventListener("auxclick", go);
+      off();
+    };
+  }, [selected, backToList]);
+
   /* Only this repository's: the panel shows one at a time, so a chip opening
      something the list cannot show would be a dead end. */
   /* The third argument is the server snapshot, and without it this component
@@ -1965,8 +2009,24 @@ export function PrView({ active, onOpenChatWith, onReviewInTerminal, jumpTo }: {
   const pinState = useMemo(() => {
     const by = new Map<number, PrSummary>();
     for (const p of prs) by.set(p.number, p);
+    /*
+     * And the one you have OPEN answers for itself.
+     *
+     * The list is polled; a detail is fetched when you open it and again when
+     * you refresh it, so it is by definition the newer reading of that one pull
+     * request. Without this the chip kept whatever the last poll had said: a red
+     * dot and "2 failing" over a page whose own header read 58 passed, 12
+     * skipped, nothing failing. Two numbers about one thing, on screen at once.
+     *
+     * Only the rollup is taken. The rest of the row — its title, its author, the
+     * scope it came from — is the list's and has not changed.
+     */
+    if (detail?.number != null) {
+      const had = by.get(detail.number);
+      if (had) by.set(detail.number, { ...had, checks: detail.checks, checksLoaded: true });
+    }
     return by;
-  }, [prs]);
+  }, [prs, detail]);
 
   /**
    * "Open this pull request", asked from somewhere that cannot reach this panel.
@@ -4787,7 +4847,7 @@ export function PrView({ active, onOpenChatWith, onReviewInTerminal, jumpTo }: {
                     } : undefined}
                     onMerge={() => doMerge(mergeMethod)}
                     awaitingChecks={awaitingChecks}
-                    canMerge={d.mergeState === "CLEAN" || d.mergeState === "BEHIND"} />
+                    canMerge={githubWillMerge(d.mergeState) || d.mergeState === "BEHIND"} />
                   </div>
                 )}
 
@@ -4968,7 +5028,9 @@ function Overview({ d, root, busy, busyWhat, mergeWork, openThreads, conversatio
 }) {
   const c = d.checks;
   const [allFiles, setAllFiles] = useState(false);
-  const canMerge = d.mergeState === "CLEAN";
+  /* GitHub's own "mergeable" — see githubWillMerge for why that is not only
+     CLEAN. */
+  const canMerge = githubWillMerge(d.mergeState);
   /*
    * Behind the base branch is a state GitHub lets you merge from, and we did
    * not.

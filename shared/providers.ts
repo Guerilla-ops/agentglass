@@ -232,6 +232,18 @@ export interface ProviderTask {
   /** Whether YOU are on it — resolved server-side against the connected
    *  account, because the client has no business knowing your user id. */
   mine?: boolean;
+  /**
+   * WHERE THE CARD SITS IN ITS COLUMN, in the tracker's own hand.
+   *
+   * A decimal so wide it cannot be a number here: `10001789361656.577303` and
+   * `10001789361656.574855` are two neighbours on a real board, and a double
+   * cannot hold the difference — parsed, they are the same value and the two
+   * cards swap at random. Kept as the string it arrived as and compared as one.
+   *
+   * The API hands a list back in DESCENDING order and the tracker's own page
+   * draws it ASCENDING, which is why a column read upside down here.
+   */
+  order?: string;
   /** Sprint points, ClickUp's own numeric field. Null when unset. */
   points?: number | null;
   /** Estimate, in hours. The API answers milliseconds; nobody plans in those. */
