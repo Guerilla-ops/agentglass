@@ -780,11 +780,22 @@ svg.ci{width:16px;height:16px;display:block;flex:none}
  text-overflow:ellipsis;white-space:nowrap}
 .files .sz{font:11px var(--mono);color:var(--dim2);font-variant-numeric:tabular-nums}
 .files .nt{font:10.5px var(--mono)}
-.files .nt:empty{display:none}
 .files .nt.warn{color:var(--wait)}
 .files .nt.ok{color:var(--run)}
-.files .get2{font:11.5px var(--mono);color:var(--vio);text-align:right;white-space:nowrap}
-.files .get2:hover{color:var(--txt)}
+/* A row with no note used to drop its cell (`.nt:empty{display:none}`), and the
+   grid closed the gap: the download moved a column left and sat under NOTE on
+   half the rows. The cell stays; only the words are missing. */
+.files .get2{justify-self:end;display:inline-flex;align-items:center;gap:7px;
+ font:11px var(--mono);color:var(--vio);white-space:nowrap;padding:6px 12px;
+ border:1px solid rgba(167,139,250,.26);border-radius:999px;
+ background:rgba(167,139,250,.07);
+ transition:background .15s ease,border-color .15s ease,color .15s ease}
+/* The arrow is drawn, not typed: `&darr;` sat on the text's baseline, a few
+   pixels below the middle of the pill it lives in. */
+.files .get2 .dla{display:block;flex:none;transition:transform .15s ease}
+.files .fr:hover .get2{background:rgba(167,139,250,.2);border-color:rgba(167,139,250,.6);
+ color:#fff}
+.files .fr:hover .get2 .dla{transform:translateY(2px)}
 .files .fr.me{background:rgba(167,139,250,.06)}
 
 .verify{margin-top:16px;border:1px solid var(--line);border-radius:12px;padding:18px 20px}
@@ -801,6 +812,8 @@ svg.ci{width:16px;height:16px;display:block;flex:none}
  .files .get2{grid-column:2;grid-row:1/span 2;align-self:center}
  .files .fn{grid-column:1;grid-row:2}
  .files .sz,.files .nt{grid-column:1;font-size:10px}
+ /* Narrow: the note is its own row, so an empty one is an empty line. */
+ .files .nt:empty{display:none}
  .files .sz{grid-row:3}.files .nt{grid-row:4}
  #get{padding-block:76px 56px}
 }
@@ -1211,12 +1224,12 @@ body:not([data-route="home"]) .page{padding-top:calc(118px + var(--safe))}
  </div>
  <div class="files">
    <div class="fr th"><span>Platform</span><span>File</span><span>Size</span><span>Note</span><span></span></div>
-   <a class="fr" data-dl="mac-arm" target="_blank" rel="noopener" href="https://github.com/SirAllap/agentglass/releases/latest"><span class="os">macOS<i>Apple silicon</i></span><span class="fn">.dmg</span><span class="sz" data-size="mac-arm">&mdash;</span><span class="nt warn">unsigned</span><span class="get2">Download &darr;</span></a>
-   <a class="fr" data-dl="mac-x64" target="_blank" rel="noopener" href="https://github.com/SirAllap/agentglass/releases/latest"><span class="os">macOS<i>Intel</i></span><span class="fn">.dmg</span><span class="sz" data-size="mac-x64">&mdash;</span><span class="nt warn">unsigned</span><span class="get2">Download &darr;</span></a>
-   <a class="fr" data-dl="win-exe" target="_blank" rel="noopener" href="https://github.com/SirAllap/agentglass/releases/latest"><span class="os">Windows<i>x64</i></span><span class="fn">.exe</span><span class="sz" data-size="win-exe">&mdash;</span><span class="nt warn">unverified on metal</span><span class="get2">Download &darr;</span></a>
-   <a class="fr" data-dl="linux-appimage" target="_blank" rel="noopener" href="https://github.com/SirAllap/agentglass/releases/latest"><span class="os">Linux<i>AppImage · x86_64</i></span><span class="fn">.AppImage</span><span class="sz" data-size="linux-appimage">&mdash;</span><span class="nt"></span><span class="get2">Download &darr;</span></a>
-   <a class="fr" data-dl="linux-deb" target="_blank" rel="noopener" href="https://github.com/SirAllap/agentglass/releases/latest"><span class="os">Linux<i>deb · amd64</i></span><span class="fn">.deb</span><span class="sz" data-size="linux-deb">&mdash;</span><span class="nt"></span><span class="get2">Download &darr;</span></a>
-   <a class="fr" data-dl="android" target="_blank" rel="noopener" href="https://github.com/SirAllap/agentglass/releases/latest"><span class="os">Android<i>companion</i></span><span class="fn">.apk</span><span class="sz" data-size="android">&mdash;</span><span class="nt ok">signed</span><span class="get2">Download &darr;</span></a>
+   <a class="fr" data-dl="mac-arm" target="_blank" rel="noopener" href="https://github.com/SirAllap/agentglass/releases/latest"><span class="os">macOS<i>Apple silicon</i></span><span class="fn">.dmg</span><span class="sz" data-size="mac-arm">&mdash;</span><span class="nt warn">unsigned</span><span class="get2">Download<svg class="dla" viewBox="0 0 14 14" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 2.4v8.2"/><path d="M3.5 7.2 7 10.7l3.5-3.5"/></svg></span></a>
+   <a class="fr" data-dl="mac-x64" target="_blank" rel="noopener" href="https://github.com/SirAllap/agentglass/releases/latest"><span class="os">macOS<i>Intel</i></span><span class="fn">.dmg</span><span class="sz" data-size="mac-x64">&mdash;</span><span class="nt warn">unsigned</span><span class="get2">Download<svg class="dla" viewBox="0 0 14 14" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 2.4v8.2"/><path d="M3.5 7.2 7 10.7l3.5-3.5"/></svg></span></a>
+   <a class="fr" data-dl="win-exe" target="_blank" rel="noopener" href="https://github.com/SirAllap/agentglass/releases/latest"><span class="os">Windows<i>x64</i></span><span class="fn">.exe</span><span class="sz" data-size="win-exe">&mdash;</span><span class="nt warn">unverified on metal</span><span class="get2">Download<svg class="dla" viewBox="0 0 14 14" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 2.4v8.2"/><path d="M3.5 7.2 7 10.7l3.5-3.5"/></svg></span></a>
+   <a class="fr" data-dl="linux-appimage" target="_blank" rel="noopener" href="https://github.com/SirAllap/agentglass/releases/latest"><span class="os">Linux<i>AppImage · x86_64</i></span><span class="fn">.AppImage</span><span class="sz" data-size="linux-appimage">&mdash;</span><span class="nt"></span><span class="get2">Download<svg class="dla" viewBox="0 0 14 14" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 2.4v8.2"/><path d="M3.5 7.2 7 10.7l3.5-3.5"/></svg></span></a>
+   <a class="fr" data-dl="linux-deb" target="_blank" rel="noopener" href="https://github.com/SirAllap/agentglass/releases/latest"><span class="os">Linux<i>deb · amd64</i></span><span class="fn">.deb</span><span class="sz" data-size="linux-deb">&mdash;</span><span class="nt"></span><span class="get2">Download<svg class="dla" viewBox="0 0 14 14" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 2.4v8.2"/><path d="M3.5 7.2 7 10.7l3.5-3.5"/></svg></span></a>
+   <a class="fr" data-dl="android" target="_blank" rel="noopener" href="https://github.com/SirAllap/agentglass/releases/latest"><span class="os">Android<i>companion</i></span><span class="fn">.apk</span><span class="sz" data-size="android">&mdash;</span><span class="nt ok">signed</span><span class="get2">Download<svg class="dla" viewBox="0 0 14 14" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 2.4v8.2"/><path d="M3.5 7.2 7 10.7l3.5-3.5"/></svg></span></a>
   </div>
   <!-- The deploy un-hides one of these when a platform has no build in this
        release, and writes the sentence itself — it is the only thing that
