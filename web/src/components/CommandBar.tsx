@@ -17,7 +17,7 @@
 // cap — enough for a day's work, few enough that the row can never grow into
 // the second scrolling strip this was meant to replace.
 
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { ContextMenu } from "./ContextMenu.tsx";
 import { RunDialog, runRecipeSteps } from "./RecipesPane.tsx";
 import type { GitRepoRef } from "../../../shared/types.ts";
@@ -260,6 +260,18 @@ function CommandRow({ c, font, on, full, onRun, onPin }: {
  * `font` is the terminal's own face: a command is a thing you type, and it
  * reads as one when it is set in the face it will be typed in.
  */
+const MENU_W = 460;
+
+/**
+ * Hang the menu from the button's left edge when it fits there, from its right
+ * edge otherwise — the same flip a native menu does at the screen's edge.
+ * `left`/`right` are the button's edges and `viewport` the window width, in px.
+ */
+export function menuSide(left: number, right: number, viewport: number, width = MENU_W): "left" | "right" {
+  if (left + width <= viewport - 8) return "left";
+  return right - width >= 8 ? "right" : "left";
+}
+
 export function CommandBar({ root, disabled, font, onRun, runTargetInTmux, onClose, dropUp, quiet }: {
   root: string;
   disabled: boolean;
@@ -298,6 +310,20 @@ export function CommandBar({ root, disabled, font, onRun, runTargetInTmux, onClo
   const [customCmd, setCustomCmd] = useState("");
   const [customError, setCustomError] = useState("");
   const wrap = useRef<HTMLDivElement>(null);
+  /* Which edge of the button the menu hangs from, measured when it opens. The
+     button lives at the right end of the terminal's strip, and a menu hung
+     from its left edge ran past the window's right side on a narrower window. */
+  const [side, setSide] = useState<"left" | "right">("left");
+  useLayoutEffect(() => {
+    if (!open || !wrap.current) return;
+    const place = () => {
+      const r = wrap.current?.getBoundingClientRect();
+      if (r) setSide(menuSide(r.left, r.right, window.innerWidth));
+    };
+    place();
+    window.addEventListener("resize", place);
+    return () => window.removeEventListener("resize", place);
+  }, [open]);
   const cmds = useCommands(root);
   /* Your own, alongside the ones we found. Fetched here rather than threaded in
      because this menu is where "what can I run here" is answered, and a saved
@@ -491,8 +517,8 @@ export function CommandBar({ root, disabled, font, onRun, runTargetInTmux, onClo
           // border, or a command row must not blur the filter input (it stays
           // yours to type in while the menu is open). The input itself is
           // excluded by the handler, so it can still be clicked into.
-          <div onMouseDown={keepTermFocus} className="absolute left-0 rounded-lg text-[11px] shadow-2xl flex flex-col"
-            style={{ zIndex: 40, background: "var(--bg2)", border: "1px solid color-mix(in srgb, var(--border) 55%, transparent)", width: 460, maxHeight: 420, overflow: "hidden", ...(dropUp ? { bottom: "calc(100% + 4px)" } : { top: "calc(100% + 4px)" }) }}>
+          <div onMouseDown={keepTermFocus} className="absolute rounded-lg text-[11px] shadow-2xl flex flex-col"
+            style={{ zIndex: 40, background: "var(--bg2)", border: "1px solid color-mix(in srgb, var(--border) 55%, transparent)", width: MENU_W, maxHeight: 420, overflow: "hidden", ...(side === "right" ? { right: 0 } : { left: 0 }), ...(dropUp ? { bottom: "calc(100% + 4px)" } : { top: "calc(100% + 4px)" }) }}>
             {/* A real project has more targets than fit on a screen — the repo
                 this was built against has 316 — so scrolling to find `migrate`
                 was the only way to run it. Matches the name and what the target
