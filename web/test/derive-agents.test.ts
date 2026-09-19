@@ -348,3 +348,26 @@ test("and an error does not silence the question underneath it", () => {
   ]);
   expect(deriveAlerts([card]).filter((a) => a.id.startsWith("wait:")).length).toBe(1);
 });
+
+test("a question nobody answered stops interrupting after half an hour", () => {
+  /*
+   * The bug this closes. A permission prompt arrives in the middle of a tool
+   * call, so the pair stays open — and the open call is what spares a card from
+   * the idle clock, because a long build is silent while it works. The card sat
+   * on the amber strip for 22 hours: "esta notificación es infinita".
+   *
+   * Fresh, it still interrupts. Stale, it is idle and `unanswered`, which is
+   * the accurate word for it, and the Lantern still lists the session.
+   */
+  const open = ev({ hook_event_type: "PreToolUse", tool_name: "Bash", timestamp: now - 40 * 60_000 });
+  const asked = ev({ hook_event_type: "Notification", tool_name: null, timestamp: now - 35 * 60_000 });
+  const stale = only([open, asked]);
+  expect(stale.status).toBe("idle");
+  expect(stale.outcome).toBe("unanswered");
+
+  const fresh = only([
+    ev({ hook_event_type: "PreToolUse", tool_name: "Bash", timestamp: now - 9 * 60_000 }),
+    ev({ hook_event_type: "Notification", tool_name: null, timestamp: now - 8 * 60_000 }),
+  ]);
+  expect(fresh.status).toBe("waiting");
+});

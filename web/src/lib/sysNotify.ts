@@ -560,8 +560,8 @@ export function fireDesktopAlert(a: { title: string; body: string; urgency?: 0 |
      * Every popup closes itself.
      *
      * The notification daemon decides how long a popup lives, and the one on
-     * this desk (quickshell) keeps ours until somebody dismisses them by hand:
-     * "estas notificaciones son infinitas… nunca se van". A blocking one stays
+     * this desk (quickshell) keeps ours until somebody dismisses them by hand,
+     * so a week of them piled up on screen. A blocking one stays
      * long enough to be found on the way back from coffee; the rest go in
      * seconds. Nothing is lost either way — recordNote above already kept the
      * durable copy, which is what the bell reads.
