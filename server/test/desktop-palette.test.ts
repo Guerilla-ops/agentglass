@@ -131,3 +131,33 @@ describe("where the desktop keeps it", () => {
     rmSync(root, { recursive: true, force: true });
   });
 });
+
+import { rebuildMark } from "../src/desktopPalette.ts";
+
+describe("the desktop's mark, rebuilt from geometry", () => {
+  const MARK = `<svg fill="none" height="10" viewBox="0 0 40 10" width="40" xmlns="http://www.w3.org/2000/svg"><g fill="#000"><path clip-rule="evenodd" d="m0 0h10v10h-10z" fill-rule="evenodd"/><path d="m20 0h10v10h-10z"/></g></svg>`;
+
+  test("keeps the view box and every outline, filled with the text colour", () => {
+    const out = rebuildMark(MARK)!;
+    expect(out).toContain('viewBox="0 0 40 10"');
+    expect(out).toContain('fill="currentColor"');
+    expect(out.match(/<path /g)?.length).toBe(2);
+    expect(out).toContain('fill-rule="evenodd"');
+  });
+
+  test("nothing but geometry reaches the page", () => {
+    const hostile = MARK
+      .replace("<g ", '<script>alert(1)</script><g onload="alert(2)" ')
+      .replace('d="m20 0h10v10h-10z"', 'd="m20 0h10v10h-10z" onclick="alert(3)"')
+      + '<foreignObject><iframe src="x"/></foreignObject>';
+    const out = rebuildMark(hostile)!;
+    expect(out).not.toMatch(/script|onload|onclick|alert|iframe|foreignObject/i);
+    /* A path whose outline is not an outline is dropped, not escaped. */
+    expect(rebuildMark(MARK.replace('d="m0 0h10v10h-10z"', 'd="m0 0" /><script>x</script><path d="z"'))).not.toContain("script");
+  });
+
+  test("a file with no geometry is no mark", () => {
+    expect(rebuildMark('<svg viewBox="0 0 1 1"></svg>')).toBeNull();
+    expect(rebuildMark("<svg><path d=\"m0 0\"/></svg>")).toBeNull();
+  });
+});
