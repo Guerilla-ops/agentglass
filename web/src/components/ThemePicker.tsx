@@ -1,11 +1,12 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { SettingRow } from "./SettingRow.tsx";
 import {
   THEMES, pickTheme, applyTheme, isDarkTheme, EXPERIMENTAL_THEME_IDS,
-  themeMode, applyThemeMode, persistThemeMode, SERIOUS_DARK, SERIOUS_LIGHT,
+  themeMode, applyThemeMode, persistThemeMode, SERIOUS_DARK, SERIOUS_LIGHT, desktopPaletteName, onDesktopPalette,
   type Theme, type ThemeMode,
 } from "../lib/themes.ts";
 import { ACCENTS, currentAccent, setAccentPref } from "../lib/accent.ts";
+import { SERVER, authHeaders } from "../lib/api.ts";
 
 /* Settings → Appearance.
  *
@@ -102,7 +103,9 @@ export function ThemePicker({ current, onChange }: { current: string; onChange: 
   const rest = THEMES.filter((t) => !featured.some((f) => f.id === t.id));
 
   return (
-    <div>
+    /* Bottom padding of its own: this is the last thing in the card, and without
+       it the "N more" row sat directly on the card's bottom border. */
+    <div className="pb-3">
       <Grid items={featured} current={current} onPick={onChange} />
 
       <button
@@ -134,12 +137,45 @@ const MODES: { m: ThemeMode; label: string }[] = [
   { m: "light", label: "Light" },
 ];
 
+/**
+ * The desktop's own mark, as the label of its segment.
+ *
+ * Inlined, so it takes the segment's text colour — dim at rest, bright when on
+ * — like the words beside it. The first version drew it as a CSS mask and it
+ * drew nothing. What comes back is safe to inline because the server rebuilds
+ * it from geometry alone (see rebuildMark); if it cannot be had the button says
+ * the name instead, because a blank button is worse than a word.
+ */
+function DesktopMark({ source }: { source: string }) {
+  const name = source === "omarchy" ? "Omarchy" : source;
+  const [svg, setSvg] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    fetch(`${SERVER}/desktop/logo`, { headers: authHeaders() })
+      .then((r) => (r.ok ? r.text() : ""))
+      .then((t) => { if (live && t.startsWith("<svg")) setSvg(t); })
+      .catch(() => {});
+    return () => { live = false; };
+  }, []);
+  if (!svg) return <>{name}</>;
+  return (
+    <span role="img" aria-label={name} className="inline-flex items-center align-middle"
+      style={{ height: 12 }}
+      /* Sized by height; the view box gives the width. */
+      dangerouslySetInnerHTML={{ __html: svg.replace("<svg ", '<svg height="12" style="display:block" ') }} />
+  );
+}
+
 /** The whole Appearance page: mode segment on top, palette grid below. Owns the
  *  one decision — a mode click applies the matching serious theme, a grid click
  *  applies that palette and re-labels the segment — and keeps app state in step
  *  through `onChange`. */
 export function AppearancePane({ current, onChange }: { current: string; onChange: (id: string) => void }) {
   const [mode, setMode] = useState<ThemeMode>(() => themeMode());
+  /* Which desktop palette is on offer, if any — re-read when it moves, so the
+     line under the switch names the theme that is actually on. */
+  const [desk, setDesk] = useState(() => desktopPaletteName());
+  useEffect(() => onDesktopPalette(() => { setDesk(desktopPaletteName()); setMode(themeMode()); }), []);
 
   const chooseMode = (m: ThemeMode) => {
     const id = applyThemeMode(m);
@@ -169,17 +205,22 @@ export function AppearancePane({ current, onChange }: { current: string; onChang
     <>
       <SettingRow
         label="Mode"
-        hint={<>A serious neutral pair. <b style={{ color: "var(--text3)" }}>System</b> follows your OS.</>}
+        hint={desk && mode === "desktop"
+          ? <>Wearing <b style={{ color: "var(--text3)" }}>{desk.name}</b>, your desktop's theme — it follows when you switch there.</>
+          : desk
+            ? <>Your desktop's theme is {desk.name}, one click away. <b style={{ color: "var(--text3)" }}>System</b> follows your OS's dark or light.</>
+            : <>A serious neutral pair. <b style={{ color: "var(--text3)" }}>System</b> follows your OS.</>}
         control={<span className="flex p-0.5 rounded-lg" style={{ background: "color-mix(in srgb, var(--bg3) 40%, transparent)", border: "1px solid color-mix(in srgb, var(--border) 45%, transparent)" }}>
-          {MODES.map(({ m, label }) => {
+          {[...(desk ? [{ m: "desktop" as ThemeMode, label: "" }] : []), ...MODES].map(({ m, label }) => {
             const on = mode === m;
             return (
               <button key={m} onClick={() => chooseMode(m)}
+                title={m === "desktop" && desk ? `Wear ${desk.name}, your desktop's theme, and follow it when you switch` : undefined}
                 className="px-3 py-1 rounded-md text-[12px] transition-colors"
                 style={on
                   ? { background: "var(--bg2)", color: "var(--text)", boxShadow: "0 1px 2px rgba(0,0,0,0.25)" }
                   : { color: "var(--text3)" }}>
-                {label}
+                {m === "desktop" && desk ? <DesktopMark source={desk.source} /> : label}
               </button>
             );
           })}

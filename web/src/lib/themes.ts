@@ -13,6 +13,7 @@ import { SERVER, authHeaders, whenServerUp } from "./api.ts";
 import type { AnsiPalette } from "./termPalette.ts";
 import { applyAccent } from "./accent.ts";
 import { BASE, cssVars } from "../../../shared/palettes.ts";
+import type { DesktopTheme } from "../../../shared/desktopPalette.ts";
 
 export interface Theme {
   id: string;
@@ -119,6 +120,25 @@ export function isDarkTheme(t: Theme): boolean {
  * per-browser. Only a deliberate pick may broadcast — see `pickTheme`.
  */
 export function applyTheme(id: string, { sync = false } = {}) {
+  /* The desktop's palette is a live source, not an entry in the list: painted
+     like any theme and never written to storage — the next switch on the
+     desktop would make that copy stale.
+
+     It IS carried out to this app's tmux, which is what a pane here is drawn
+     in. Held back at first, to leave the desktop's own terminal and editor
+     alone, and the result was a window whose chrome followed the desktop while
+     every pane inside it kept the last theme's background: tmux paints its own
+     colours over the terminal's. The palette sent is the desktop's own, so
+     there is nothing to fight — it is the same colours arriving by a second
+     road. */
+  if (id === DESKTOP_ID && desktop) {
+    const root = document.documentElement;
+    for (const [k, v] of Object.entries(floorTiers(desktop.vars))) root.style.setProperty(k, v);
+    root.setAttribute("data-theme", DESKTOP_ID);
+    applyAccent();
+    if (sync) syncTheme(desktop as unknown as Theme);
+    return;
+  }
   const known = THEMES.find((x) => x.id === id);
   const t = known || THEMES[0];
   const root = document.documentElement;
@@ -178,13 +198,14 @@ function syncTheme(t: Theme) {
  * the mode to "custom". The chosen theme id is still what gets persisted and
  * applied — the mode is a thin layer over it, remembered so a system-mode user
  * boots into the palette the OS is on right now, not the one it was on last. */
-export type ThemeMode = "system" | "dark" | "light" | "custom";
+/** `desktop` exists only where the desktop publishes a palette — see watchDesktopPalette. */
+export type ThemeMode = "desktop" | "system" | "dark" | "light" | "custom";
 export const SERIOUS_DARK = "graphite";
 export const SERIOUS_LIGHT = "porcelain";
 const MODE_KEY = "agentglass-theme-mode";
 
 export function themeMode(): ThemeMode {
-  try { const m = localStorage.getItem(MODE_KEY); if (m === "system" || m === "dark" || m === "light") return m; } catch {}
+  try { const m = localStorage.getItem(MODE_KEY); if (m === "desktop" || m === "system" || m === "dark" || m === "light") return m; } catch {}
   return "custom";
 }
 
@@ -197,6 +218,10 @@ export function resolveThemeMode(mode: ThemeMode): string | null {
   if (mode === "dark") return SERIOUS_DARK;
   if (mode === "light") return SERIOUS_LIGHT;
   if (mode === "system") return systemIsDark() ? SERIOUS_DARK : SERIOUS_LIGHT;
+  /* Chosen while the desktop's palette was there; if it has gone (a different
+     session, the desktop uninstalled) the OS's dark or light is the honest
+     second answer, not whatever palette was last painted. */
+  if (mode === "desktop") return desktop ? DESKTOP_ID : systemIsDark() ? SERIOUS_DARK : SERIOUS_LIGHT;
   return null;
 }
 
@@ -231,6 +256,7 @@ export function initialTheme(): string {
   // System mode resolves live off the OS; pinned modes and custom picks are
   // whatever was last written to the theme key (applyThemeMode/pickTheme wrote it).
   if (themeMode() === "system") return resolveThemeMode("system") ?? DEFAULT_THEME;
+  if (themeMode() === "desktop") return resolveThemeMode("desktop") ?? DEFAULT_THEME;
   try { return localStorage.getItem("agentglass-theme") || DEFAULT_THEME; } catch { return DEFAULT_THEME; }
 }
 
@@ -257,4 +283,113 @@ export function watchThemeStorage() {
     if (document.documentElement.getAttribute("data-theme") === e.newValue) return;
     applyTheme(e.newValue);
   });
+}
+
+/*
+ * THE DESKTOP'S PALETTE, FOLLOWED LIVE.
+ *
+ * On a desktop that themes every app together, "System" wears that desktop's
+ * own colours rather than one of the two neutral themes — so switching theme
+ * there repaints this window along with the terminal, the bar and the editor.
+ * On any other desktop the server answers null and none of this does anything:
+ * "System" is dark or light off the OS, exactly as before.
+ *
+ * Polled, and cheap on both sides: the server re-reads the palette file only
+ * when its mtime moves, and the answer is a few hundred bytes. A few seconds is
+ * how long a switch takes to arrive, which is about how long the desktop's own
+ * apps take to follow.
+ */
+export const DESKTOP_ID = "desktop";
+const LAST_KEY = "agentglass-desktop-last";
+/* The last palette worn, painted at boot until the server answers. Without it
+   a desktop-mode window opened in the OS's neutral pair and turned into the
+   desktop's colours a second later, every launch. It is only ever a stand-in:
+   the first answer replaces it, whatever it says. */
+let desktop: DesktopTheme | null = (() => {
+  try { const j = localStorage.getItem(LAST_KEY); return j ? (JSON.parse(j) as DesktopTheme) : null; } catch { return null; }
+})();
+let desktopSource: { source: string; name: string } | null = null;
+const desktopListeners = new Set<() => void>();
+
+/** The desktop palette being followed, for the label under the switch. */
+export function desktopPaletteName(): { source: string; name: string } | null { return desktopSource; }
+export function onDesktopPalette(fn: () => void): () => void {
+  desktopListeners.add(fn);
+  return () => { desktopListeners.delete(fn); };
+}
+
+/** The terminal's sixteen for a theme id, the desktop's included. */
+export function themeAnsi(id: string): AnsiPalette | undefined {
+  if (id === DESKTOP_ID) return desktop?.ansi;
+  return THEMES.find((t) => t.id === id)?.ansi;
+}
+
+const POLL_MS = 3000;
+/** The desktop palette last carried out to tmux — see the tick below. */
+const SYNCED_KEY = "agentglass-desktop-synced";
+const MOVED_KEY = "agentglass-desktop-mode-moved";
+
+/** Call once at boot. */
+export function watchDesktopPalette(): void {
+  let stamp = "";
+  let first = true;
+  type Answer = { stamp: string; source: string; name: string; theme: DesktopTheme };
+  const tick = async () => {
+    let next: Answer | null = null;
+    try {
+      const r = await fetch(`${SERVER}/desktop/palette`, { headers: authHeaders() });
+      if (r.ok) next = ((await r.json()) as { palette: Answer | null }).palette;
+    } catch { /* no server yet, or none at all (the static demo) */ }
+    const changed = (next?.stamp ?? "") !== stamp;
+    stamp = next?.stamp ?? "";
+    desktop = next?.theme ?? null;
+    try { if (desktop) localStorage.setItem(LAST_KEY, JSON.stringify(desktop)); else localStorage.removeItem(LAST_KEY); } catch {}
+    desktopSource = next ? { source: next.source, name: next.name } : null;
+    if (first) {
+      first = false;
+      /* A first run on such a desktop, with nothing ever picked, starts in
+         System — the point of a desktop that themes everything is that a new
+         app joins in. Anybody who has picked a theme keeps it. */
+      if (desktop) {
+        let untouched = false;
+        let wasSystem = false;
+        let moved = true;
+        try {
+          untouched = localStorage.getItem(MODE_KEY) === null && localStorage.getItem("agentglass-theme") === null;
+          wasSystem = localStorage.getItem(MODE_KEY) === "system";
+          moved = localStorage.getItem(MOVED_KEY) === "1";
+        } catch {}
+        /* For one release "System" WAS the desktop's palette, before it had a
+           segment of its own. Whoever picked System then picked this; move them
+           across once, and never again, so choosing System later sticks. */
+        if (untouched || (wasSystem && !moved)) persistThemeMode("desktop");
+        try { localStorage.setItem(MOVED_KEY, "1"); } catch {}
+      }
+    }
+    /*
+     * ON A NEW STAMP ONLY.
+     *
+     * This compared the objects as well, and every answer is a new object — so
+     * it repainted on every poll. A repaint rewrites the root's style, every
+     * terminal watches that and swaps its whole theme on it, and the panes
+     * blinked every three seconds whether anything had changed or not.
+     */
+    if (changed) {
+      if (themeMode() === "desktop") {
+        const id = resolveThemeMode("desktop") ?? DEFAULT_THEME;
+        /* Out to tmux once per palette, not once per document: a reload with
+           the desktop unchanged must not repaint running panes for nothing. */
+        let sent = "";
+        try { sent = localStorage.getItem(SYNCED_KEY) ?? ""; } catch {}
+        const send = !!desktop && stamp !== sent;
+        applyTheme(id, { sync: send });
+        if (send) { try { localStorage.setItem(SYNCED_KEY, stamp); } catch {} }
+      }
+      for (const fn of desktopListeners) fn();
+    }
+  };
+  void whenServerUp().then(() => {
+    void tick();
+    setInterval(() => { void tick(); }, POLL_MS);
+  }).catch(() => {});
 }

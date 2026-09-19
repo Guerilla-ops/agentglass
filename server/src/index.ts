@@ -88,6 +88,7 @@ import { spawnPoolStats } from "./spawnpool.ts";
 import { singleFlight, inflightCount } from "./singleflight.ts";
 import { openInEditor, editorTarget, editorCapability, HAS_NVIM } from "./editor.ts";
 import { syncTheme, snippetStatus, SNIPPETS, tmuxThemePath, repairTmuxTheme, currentTheme, automatedThemeClient } from "./themesync.ts";
+import { desktopPalette, desktopLogo } from "./desktopPalette.ts";
 import { existsSync as fsExists, readFileSync as fsRead, writeFileSync as fsWrite, mkdtempSync } from "node:fs";
 import { completePath, FS_BROWSE_ENABLED } from "./fsbrowse.ts";
 import { listPorts, listResources, spaceFor, killPort } from "./machine.ts";
@@ -5086,6 +5087,15 @@ const server = Bun.serve<WsData>({
      * is a different answer from a palette and has to stay distinguishable.
      */
     if (pathname === "/theme/current") return json({ theme: currentTheme() });
+    /* The desktop's own palette, for "System" to wear — null on a desktop that
+       publishes none. Read-only and cheap: see desktopPalette.ts. */
+    if (pathname === "/desktop/palette" && req.method === "GET") return json({ palette: desktopPalette() });
+    if (pathname === "/desktop/logo" && req.method === "GET") {
+      const svg = desktopLogo();
+      return svg
+        ? new Response(svg, { headers: { "content-type": "image/svg+xml", "cache-control": "private, max-age=3600" } })
+        : new Response("no mark", { status: 404 });
+    }
     if (pathname === "/theme/sync" && req.method === "POST") {
       if (!trustedCaller(req, from)) return csrfBlocked();
       /* This route writes files a person's tmux and nvim read, so an automated
