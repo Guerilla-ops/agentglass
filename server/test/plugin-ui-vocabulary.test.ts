@@ -157,3 +157,12 @@ describe("a plugin's own face", () => {
     for (const color of ["red", "#fff", "#12345g", "url(x)"]) expect(validateManifest({ ...base, color })).toContain("color");
   });
 });
+
+describe("several picked from a list", () => {
+  test("a multi field keeps a list of strings and takes its options at run time", () => {
+    const f = { key: "repos", type: "multi" as const, label: "Repositories" };
+    expect(coerceValue(f, ["acme/orbit", " acme/v2 ", "", 7])).toEqual(["acme/orbit", "acme/v2"]);
+    expect(resolveSettings([f], {})).toEqual({ repos: [] });
+    expect(validateContributes({ settings: [f] }).ok).toBe(true);
+  });
+});

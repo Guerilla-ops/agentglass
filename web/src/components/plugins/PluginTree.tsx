@@ -8,6 +8,9 @@ import { Switch } from "../SettingRow.tsx";
 import { Spinner } from "../Spinner.tsx";
 import { useDialogs, type ConfirmSpec } from "../ConfirmDialog.tsx";
 import { Row, Chip, type Tone as RowTone } from "../git/ui.tsx";
+import { DoneIcon } from "../../lib/glyphIcons.tsx";
+import { CloseIcon } from "../CloseButton.tsx";
+import { ICON } from "../../lib/iconSize.ts";
 
 /**
  * A plugin's screen, drawn with this app's own parts.
@@ -368,9 +371,15 @@ export function FieldRow({ field, value, onChange, onCommit }: {
     );
   }
   let control: ReactNode;
-  if (field.type === "select") {
+  if (field.type === "multi") {
+    control = <MultiPick field={field} value={Array.isArray(value) ? (value as string[]) : []}
+      onChange={(v) => { onChange(v); onCommit?.(v); }} />;
+  } else if (field.type === "select") {
+    // In the input's box, full width, like every other field on the page: on
+    // its own the trigger is a bare word and did not read as a control.
     control = (
       <Select value={typeof value === "string" ? value : ""} placeholder="Choose…"
+        className="agx-input w-full justify-between"
         options={(field.options ?? []).map((o) => ({ value: o.value, label: o.label }))}
         onChange={(v) => { onChange(v); onCommit?.(v); }} />
     );
@@ -416,5 +425,75 @@ function NumberInput({ field, value, onChange, onCommit, style }: {
       value={raw}
       onChange={(e) => { setRaw(e.target.value); const n = parse(e.target.value); if (n !== undefined) onChange(n); }}
       onBlur={() => { const n = parse(raw); if (n === undefined) setRaw(shown); else onCommit?.(n); }} />
+  );
+}
+
+/**
+ * Several picked from a list the plugin supplies — the repositories the person
+ * can reach, say, which can be hundreds. Inline rather than a floating menu:
+ * what is chosen stays in view as chips, the search narrows the list under it,
+ * and nothing has to be drawn over the dialog it sits in.
+ *
+ * A value that is not among the options (typed before the options arrived, or
+ * a repository access was since lost to) is kept and shown, marked, so it can
+ * be taken off rather than silently disappearing.
+ */
+function MultiPick({ field, value, onChange }: { field: Field; value: string[]; onChange: (v: string[]) => void }) {
+  const [q, setQ] = useState("");
+  const options = field.options ?? [];
+  const known = new Set(options.map((o) => o.value));
+  const chosen = new Set(value);
+  const needle = q.trim().toLowerCase();
+  const shown = (needle ? options.filter((o) => o.label.toLowerCase().includes(needle) || o.value.toLowerCase().includes(needle)) : options).slice(0, 200);
+  const toggle = (v: string) => onChange(chosen.has(v) ? value.filter((x) => x !== v) : [...value, v]);
+  return (
+    <div className="flex flex-col gap-2 min-w-0">
+      {value.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {value.map((v) => (
+            <span key={v} className="inline-flex items-center gap-1.5 text-[11.5px] pl-2 pr-1 py-0.5 rounded-md"
+              style={{
+                color: known.has(v) || options.length === 0 ? "var(--text)" : "var(--warning)",
+                background: "color-mix(in srgb, var(--primary) 12%, transparent)",
+                border: "1px solid color-mix(in srgb, var(--primary) 35%, transparent)",
+              }}
+              title={known.has(v) || options.length === 0 ? v : `${v} — not in the list any more`}>
+              <span className="t-mono">{options.find((o) => o.value === v)?.label ?? v}</span>
+              <button type="button" onClick={() => toggle(v)} aria-label={`Remove ${v}`}
+                className="agx-btn rounded grid place-items-center" style={{ color: "var(--text3)", width: ICON.md, height: ICON.md }}><CloseIcon size={ICON.xs} /></button>
+            </span>
+          ))}
+        </div>
+      )}
+      {options.length === 0 ? (
+        <div className="text-[11.5px] t-dim">{field.placeholder ? `Loading… (for example ${field.placeholder})` : "Loading the list…"}</div>
+      ) : (
+        <div className="rounded-lg overflow-hidden" style={{ border: "1px solid color-mix(in srgb, var(--border) 45%, transparent)" }}>
+          <input className="agx-input t-mono w-full" style={{ border: 0, borderRadius: 0, borderBottom: "1px solid color-mix(in srgb, var(--border) 35%, transparent)" }}
+            placeholder={`Search ${options.length} …`} value={q} onChange={(e) => setQ(e.target.value)} />
+          <div className="max-h-[220px] overflow-y-auto py-1">
+            {shown.length === 0 && <div className="px-3 py-2 text-[11.5px] t-dim">Nothing matches “{q.trim()}”.</div>}
+            {shown.map((o) => {
+              const on = chosen.has(o.value);
+              return (
+                <button key={o.value} type="button" onClick={() => toggle(o.value)} role="checkbox" aria-checked={on}
+                  className="agx-rowhit w-full flex items-center gap-2.5 px-3 py-1.5 text-left text-[12px] t-mono"
+                  style={{ color: on ? "var(--text)" : "var(--text2)", background: on ? "color-mix(in srgb, var(--primary) 10%, transparent)" : "transparent" }}>
+                  <span className="shrink-0 grid place-items-center rounded" style={{
+                    width: 16, height: 16,
+                    border: `1px solid ${on ? "var(--primary)" : "color-mix(in srgb, var(--border) 70%, transparent)"}`,
+                    background: on ? "var(--primary)" : "transparent", color: "var(--bg)",
+                  }}>{on && <DoneIcon size={ICON.xs} />}</span>
+                  <span className="truncate">{o.label}</span>
+                </button>
+              );
+            })}
+            {!needle && options.length > shown.length && (
+              <div className="px-3 py-1.5 text-[10.5px] t-dim">{options.length - shown.length} more — search to find them</div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

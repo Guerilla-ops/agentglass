@@ -73,10 +73,10 @@ const options = new Map<string, Map<string, FieldOption[]>>();
 export function setOptions(plugin: string, c: Contributes, key: string, raw: unknown): { ok: true } | { ok: false; error: string } {
   const f = c.settings?.find((x) => x.key === key);
   if (!f) return { ok: false, error: `setting "${key}" is not declared in this plugin's manifest` };
-  if (f.type !== "select") return { ok: false, error: `setting "${key}" is not a select` };
+  if (f.type !== "select" && f.type !== "multi") return { ok: false, error: `setting "${key}" has no options to set` };
   if (!Array.isArray(raw)) return { ok: false, error: "options must be a list" };
   const out: FieldOption[] = [];
-  for (const o of raw.slice(0, 200)) {
+  for (const o of raw.slice(0, f.type === "multi" ? 2000 : 200)) {
     if (typeof o === "string" && o.length <= 200) out.push({ value: o, label: o });
     else if (o && typeof o === "object" && typeof (o as FieldOption).value === "string") {
       const r = o as FieldOption;
@@ -93,7 +93,7 @@ export function setOptions(plugin: string, c: Contributes, key: string, raw: unk
 /** The manifest's fields with any run-time options folded in. */
 export function fieldsWithOptions(plugin: string, fields: Field[] | undefined): Field[] {
   const m = options.get(plugin);
-  return (fields ?? []).map((f) => (f.type === "select" && m?.has(f.key) ? { ...f, options: m.get(f.key) } : f));
+  return (fields ?? []).map((f) => ((f.type === "select" || f.type === "multi") && m?.has(f.key) ? { ...f, options: m.get(f.key) } : f));
 }
 
 export function coerceSettings(fields: Field[] | undefined, raw: unknown): Record<string, unknown> {

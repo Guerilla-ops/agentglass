@@ -53,14 +53,16 @@ export interface UiTimelineItem {
   action?: UiAction;
 }
 
-export type FieldType = "string" | "text" | "number" | "boolean" | "select" | "list";
+export type FieldType = "string" | "text" | "number" | "boolean" | "select" | "list" | "multi";
 
 export interface FieldOption { value: string; label: string }
 
 /**
  * One input, in a plugin's settings page or in a form it draws. The same
  * shape serves both so a plugin author learns one vocabulary. `list` is a list
- * of short strings, one per row: repositories, labels, paths.
+ * of short strings typed one per row; `multi` is several picked from
+ * `options` — which a plugin can fill at run time, like the repositories the
+ * person can reach — with a search when there are many.
  */
 export interface Field {
   key: string;
@@ -186,7 +188,7 @@ export function validateField(raw: unknown, w: Walk): Field | null {
   const key = str(f.key, 60, w, "field.key");
   if (typeof key !== "string") return null;
   if (!/^[A-Za-z][A-Za-z0-9_.-]*$/.test(key)) return w.fail(`field key "${key}" must start with a letter and hold only letters, digits, . _ -`);
-  const type = oneOf(f.type, ["string", "text", "number", "boolean", "select", "list"] as const);
+  const type = oneOf(f.type, ["string", "text", "number", "boolean", "select", "list", "multi"] as const);
   if (!type) return w.fail(`field "${key}" has an unknown type`);
   const label = str(f.label, 120, w, `field "${key}" label`);
   if (typeof label !== "string") return null;
@@ -243,14 +245,15 @@ export function coerceValue(f: Field, v: unknown): unknown {
       // has looked around), so an unknown value is kept rather than dropped.
       return v.slice(0, 200);
     }
-    case "list": {
+    case "list":
+    case "multi": {
       const items = Array.isArray(v) ? v : typeof v === "string" ? v.split("\n") : null;
       if (!items) return undefined;
       return items
         .filter((x): x is string => typeof x === "string")
         .map((x) => x.trim())
         .filter(Boolean)
-        .slice(0, 200)
+        .slice(0, f.type === "multi" ? 500 : 200)
         .map((x) => x.slice(0, 300));
     }
   }
@@ -647,7 +650,7 @@ export function resolveSettings(fields: Field[] | undefined, stored: Record<stri
   const out: Record<string, unknown> = {};
   for (const f of fields ?? []) {
     const v = stored && Object.prototype.hasOwnProperty.call(stored, f.key) ? coerceValue(f, stored[f.key]) : undefined;
-    out[f.key] = v !== undefined ? v : f.default !== undefined ? f.default : f.type === "list" ? [] : f.type === "boolean" ? false : null;
+    out[f.key] = v !== undefined ? v : f.default !== undefined ? f.default : f.type === "list" || f.type === "multi" ? [] : f.type === "boolean" ? false : null;
   }
   return out;
 }
