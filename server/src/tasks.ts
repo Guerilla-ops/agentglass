@@ -391,11 +391,23 @@ export function stopTaskSweep(): void { if (sweeper) clearInterval(sweeper); swe
  */
 export const TASK_WRITE_ENABLED = process.env.AGENTGLASS_TASK_WRITE_DISABLED !== "1";
 
-/** Taskwarrior 3 replaced the flat files with TaskChampion. `rc.gc=0` is a
- *  flat-file concept and its multi-process write safety is undocumented, so
- *  this reads a 3.x store and refuses to write to one — out loud, rather than
- *  by failing oddly later. */
-const writableVersion = (v?: string) => !!v && /^2\./.test(v);
+/**
+ * The Taskwarrior majors this writes to: 2 and 3.
+ *
+ * 3.x replaced the flat files with TaskChampion's SQLite store, and for a while
+ * this read one and refused to write, on two doubts: whether `rc.gc=0` still
+ * meant anything, and whether the store survived more than one writer. Neither
+ * held up when measured against 3.5 in an isolated store: add, modify (a tag
+ * and a due date) and done all landed with `rc.gc=0` passed, and twenty adds
+ * started at once landed all twenty — SQLite serialises its writers. The
+ * precondition this code relies on was never about the files anyway: it is a
+ * fingerprint of `task export`, which reads the same on both.
+ *
+ * Refusing it cost every Arch-based desktop — whose Taskwarrior is 3.x — a task
+ * list it could read and never change. An unknown major is still refused: a
+ * store format that moves again should be measured before it is written to.
+ */
+export const writableVersion = (v?: string) => !!v && /^[23]\./.test(v);
 
 export type WriteResult = {
   ok: boolean; error?: string; conflict?: boolean;
@@ -411,7 +423,7 @@ async function writeGuard(): Promise<string | null> {
   if (!cap.available) return cap.reason ?? "Taskwarrior is not installed";
   if (!cap.configured) return cap.reason ?? "Taskwarrior is not set up";
   if (!writableVersion(cap.version)) {
-    return `agentglass reads Taskwarrior ${cap.version ?? "3.x"} but will not write to it — the 3.x store has different concurrency rules`;
+    return `agentglass reads Taskwarrior ${cap.version ?? "this version"} but will not write to it — only the 2.x and 3.x stores have been measured`;
   }
   return null;
 }
