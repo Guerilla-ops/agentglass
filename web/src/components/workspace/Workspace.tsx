@@ -33,7 +33,7 @@ import { GitView } from "../GitPanel.tsx";
 import { DiffPage } from "../diff/DiffPage.tsx";
 import { PrView } from "../PrPanel.tsx";
 import { DockerView } from "../DockerPanel.tsx";
-import { TermView, subscribeSessions, liveSessionCount } from "../TerminalPanel.tsx";
+import { TermView } from "../TerminalPanel.tsx";
 import { ChatView } from "../ChatPanel.tsx";
 import { BrowserView } from "../BrowserPanel.tsx";
 import { LanternView } from "../LanternView.tsx";
@@ -131,7 +131,6 @@ export function Workspace({
 
   const frameRef = useRef<HTMLDivElement>(null);
   const chatWaiting = useSyncExternalStore(subscribeChats, attentionCount, attentionCount);
-  const shells = useSyncExternalStore(subscribeSessions, liveSessionCount, liveSessionCount);
   const firedReminders = useSyncExternalStore(subscribeReminders, firedCount, firedCount);
   const lanternWaiting = useSyncExternalStore(subscribeLantern, lanternNeed, lanternNeed);
 
@@ -140,7 +139,8 @@ export function Workspace({
     // The lantern lights: how many agents are stopped on a person right now.
     // Not how many agents there are — twenty working is a normal afternoon.
     lantern: lanternWaiting > 0 ? { count: lanternWaiting } : {},
-    term: shells > 0 ? { dot: true } : {},
+    // No dot on the terminal. It lit whenever any shell was open, which is
+    // always, so it said nothing — and it sat off-centre on the icon.
     // The count of things shouting at you, not the size of your backlog: a
     // hundred open tasks is a normal Tuesday, and a badge that said so would
     // be ignored within a day.

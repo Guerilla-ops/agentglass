@@ -17,7 +17,7 @@ const BY_ID = new Map(VIEWS.map((v) => [v.id, v] as const));
  *  list with the dragged view taken out. */
 type Slot = { place: RailPlace; index: number };
 
-export type RailPip = { dot?: boolean; count?: number };
+export type RailPip = { count?: number };
 
 /** Icon-only switcher down the side of the workspace.
  *
@@ -243,9 +243,6 @@ export function ViewRail({
         {pip?.count ? (
           <span className="absolute top-[5px] right-[6px] min-w-[14px] h-[14px] px-1 grid place-items-center rounded-full text-[10px] font-bold tabular-nums"
             style={{ background: "var(--success)", color: "#06281c" }}>{pip.count}</span>
-        ) : pip?.dot ? (
-          <span className="absolute top-[7px] right-[9px] w-[6px] h-[6px] rounded-full"
-            style={{ background: "var(--success)", boxShadow: "0 0 0 3px color-mix(in srgb, var(--success) 22%, transparent)" }} />
         ) : null}
       </button>
     );
