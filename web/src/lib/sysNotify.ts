@@ -514,6 +514,10 @@ export function setAlertGoto(fn: typeof goto) { goto = fn; }
  * for a person should still be on screen when the person comes back; a tool
  * error should not have to be dismissed.
  */
+/** How long a popup stays on screen before it closes itself, in ms. */
+export const POPUP_MS = 8_000;
+export const BLOCKING_POPUP_MS = 60_000;
+
 export function fireDesktopAlert(a: { title: string; body: string; urgency?: 0 | 1 | 2; pane?: string }) {
   /*
    * The bell FIRST, above both guards.
@@ -552,6 +556,18 @@ export function fireDesktopAlert(a: { title: string; body: string; urgency?: 0 |
     if (typeof Notification === "undefined") return;
     if (Notification.permission !== "granted") return;
     const n = new Notification(a.title, { body: a.body, requireInteraction: a.urgency === 2 });
+    /*
+     * Every popup closes itself.
+     *
+     * The notification daemon decides how long a popup lives, and the one on
+     * this desk (quickshell) keeps ours until somebody dismisses them by hand:
+     * "estas notificaciones son infinitas… nunca se van". A blocking one stays
+     * long enough to be found on the way back from coffee; the rest go in
+     * seconds. Nothing is lost either way — recordNote above already kept the
+     * durable copy, which is what the bell reads.
+     */
+    setTimeout(() => { try { n.close(); } catch { /* already gone */ } },
+      a.urgency === 2 ? BLOCKING_POPUP_MS : POPUP_MS);
     if (a.pane) {
       const pane = a.pane;
       n.onclick = () => {

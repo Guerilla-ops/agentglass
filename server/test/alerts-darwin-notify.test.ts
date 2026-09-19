@@ -54,9 +54,11 @@ describe("desktopNotifyArgv", () => {
     expect(argv[2]).toContain('with title "a \\"quoted\\" title"');
   });
 
-  test("linux: notify-send exactly as it was, urgency mapped, -- before the text", () => {
-    expect(desktopNotifyArgv("t", "b", 2, "linux")).toEqual(["notify-send", "-a", "agentglass", "-u", "critical", "--", "t", "b"]);
-    expect(desktopNotifyArgv("t", "b", 1, "linux")).toEqual(["notify-send", "-a", "agentglass", "-u", "normal", "--", "t", "b"]);
+  test("linux: urgency mapped, a lifetime asked for, -- before the text", () => {
+    // `-t`, because the daemon's default is its own: the one on this desk keeps
+    // a popup until somebody dismisses it, so a week of them stacked up.
+    expect(desktopNotifyArgv("t", "b", 2, "linux")).toEqual(["notify-send", "-a", "agentglass", "-u", "critical", "-t", "60000", "--", "t", "b"]);
+    expect(desktopNotifyArgv("t", "b", 1, "linux")).toEqual(["notify-send", "-a", "agentglass", "-u", "normal", "-t", "8000", "--", "t", "b"]);
   });
 
   test("anything that is not a Mac gets the notify-send spelling", () => {
