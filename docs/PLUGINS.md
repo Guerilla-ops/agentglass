@@ -11,6 +11,7 @@ the worked example, is [§6 of EXTENDING.md](EXTENDING.md#6-publish-a-plugin).
 - [Scopes, in reviewer language](#scopes-in-reviewer-language)
 - [Install, review, enable](#install-review-enable)
 - [Catalogues](#catalogues)
+- [Drawing in the app](#drawing-in-the-app)
 - [What a plugin cannot do](#what-a-plugin-cannot-do)
 - [Publishing one](#publishing-one)
 - [A worked example](#a-worked-example)
@@ -159,25 +160,93 @@ is capped at 5 MB and the whole fetch at 15 seconds.
 
 Catalogues are optional. A plugin is installable from its git URL alone.
 
+## Drawing in the app
+
+A plugin declares where it draws, in its manifest, next to its scope:
+
+```json
+{
+  "name": "orbit-reviewer",
+  "publisher": "acme",
+  "description": "Reviews pull requests and keeps the findings local.",
+  "entrypoint": "python3 -u reviewer.py",
+  "scope": "read",
+  "contributes": {
+    "panels": [{ "id": "main", "title": "Reviews", "icon": "review" }],
+    "prNotes": true,
+    "settings": [
+      { "key": "repos", "type": "list", "label": "Repositories" },
+      { "key": "model", "type": "select", "label": "Model", "options": ["opus", "sonnet"] }
+    ]
+  }
+}
+```
+
+The declaration is part of what the person approves. The review screen lists it
+in plain words ("adds a panel, Reviews, to the Plugins view"), and it is folded
+into the manifest hash, so a plugin that starts drawing somewhere new is asked
+about again. A manifest with no `contributes` hashes exactly as it did before
+drawing existed, so upgrading the app clears no approval.
+
+Three places a plugin can appear:
+
+| Contribution | Where it shows | What the plugin sends |
+|---|---|---|
+| `panels` | A tab in the **Plugins** view, in the rail's bottom drawer | A tree of nodes (below), redrawn whenever it likes |
+| `settings` | A page of its own in **Settings**, under Connections | Nothing: the app draws the fields and stores the values |
+| `prNotes` | Inside a pull request: one entry per pass in the conversation's **Local** lane, and each note under its line in the Files tab | Runs and notes, with a severity, a path and a line |
+
+Everything goes through the plugin's own channel, `/plugin/self/…`, over its own
+token. That channel is open at any scope, because drawing is not a power over
+anything else. The name comes from the token, never from the request, so one
+plugin cannot draw into another's panel.
+
+| Route | What it does |
+|---|---|
+| `GET /plugin/self` | Its name, its declared contributions and its settings |
+| `GET /plugin/self/events?wait=25000` | Long poll: clicks, submitted forms, settings changes, a note marked resolved, a pull request opened |
+| `POST /plugin/self/panel` `{id, tree}` | Draw a declared panel |
+| `POST /plugin/self/options` `{key, options}` | Choices for a `select` it could only find at run time |
+| `POST /plugin/self/pr/run` | Start or finish a pass over a pull request |
+| `POST /plugin/self/pr/notes` `{notes}` | Add or update notes |
+
+**The vocabulary** ([shared/pluginUi.ts](../shared/pluginUi.ts)) is a closed set
+of nodes the app draws with its own parts:
+
+- layout: `stack`, `row`, `section`, `split`, `tabs`;
+- content: `heading`, `text`, `markdown`, `code`, `badge`, `stat`, `keyValue`, `list`, `timeline`, `progress`, `empty`, `link`, `divider`;
+- controls: `button`, `form`.
+
+There is no HTML, no style, no colour and no image by URL. A tone is a word
+(`accent`, `success`, `warning`, `danger`, `muted`) that the app maps onto the
+current theme. A link is `https` or nothing. A tree is checked before it is kept,
+with limits on depth, node count and string length, and an unknown node is
+refused rather than skipped. A click comes back as the action id and payload the
+plugin put on the control, and nothing else.
+
+**Notes on a pull request** are never sent anywhere. Each one is marked *local*,
+has no Reply, and offers Resolve, Dismiss, Reopen and Copy. The person's choice
+outranks the plugin's: a note they resolved stays resolved when the plugin sends
+it again, and the plugin hears the change as an event, so its next pass can take
+it into account. Removing a plugin removes its notes; disabling it keeps them
+readable.
+
+A worked plugin that uses all three is
+[local-review](https://github.com/SirAllap/agentglass-local-review): it reviews
+your labelled pull requests with the agent you choose, inside a sandbox, and
+keeps the findings in the pull request view.
+
 ## What a plugin cannot do
 
-**Render into the window.** A plugin has no view, no panel, no widget. The rail
-is a compiled list (`ViewId` in `shared/types.ts`, `VIEWS` in
-`web/src/components/workspace/views.ts`, and the server's own copy in
-`control.ts`), and adding to it is source edits in four files and a rebuild —
-see [EXTENDING.md §4](EXTENDING.md#4-make-it-yours). The reason is not a missing
-feature but a boundary: the desktop window is the privileged surface, the one
-that holds the API token and can open a shell, and anything drawn inside it —
-an iframe tile included — lives inside that trust. A sandboxed rendering
-surface with its own capability grants is a real design problem that the plugin
-mechanism does not solve and does not pretend to. What it solves is *can the
-community ship code the maintainer did not write, safely*; *can that code put
-pixels in the window* is a different question with no answer yet.
-
-A plugin that needs a screen can open its own: it is a separate process and may
-start a window, a terminal UI or a web page of its own, talking to agentglass
-over the same HTTP it already uses. That window is the plugin's, outside the
-app's trust boundary, which is the point.
+**Run code in the window.** A plugin draws in the app ([Drawing in the
+app](#drawing-in-the-app)), but only as data: it sends what to show, and the app
+draws it with its own components. Not a line of the plugin's code runs in the
+desktop window, which is the privileged surface: it holds the API token and can
+open a shell, and anything executing inside it, an iframe tile included, would
+live inside that trust. A screen the vocabulary cannot express can still be the
+plugin's own window, a terminal UI or a web page it serves, talking to agentglass
+over the same HTTP. That window is outside the app's trust boundary, which is the
+point.
 
 **Answer a gate.** See above. **Read the machine token.** The plugin gets its own
 token at its own scope; the machine's is never in its environment. **Run before
@@ -239,14 +308,19 @@ plugin's own code changes that.
 
 ## Where this stops being small
 
-The install / review / enable mechanism is small: it is the paired-device
-credential model wearing an install button, and it is useful the day it exists
-for anything that only needs to *call* the server — a notifier that posts held
-gates somewhere, a spend report, a relay that starts a named agent when a CI job
-fails. Those are the plugins this design serves.
+The install / review / enable mechanism is the paired-device credential model
+wearing an install button. Drawing is the same model with a screen: the plugin
+still holds only its own token, and all it can add is data the app chooses how to
+show.
 
-What it does not serve is a plugin that wants to *appear* — a board from an
-outside tracker rendered as a view, a chart in the dashboard. That needs the
-sandboxed surface described above, which is a larger and undesigned piece of
-work. It is deliberately not built under cover of "plugins", and the right time
-to size it is when a concrete plugin needs it rather than before.
+What it does not do yet, and is the next thing after this:
+
+- **A sandboxed frame** for a screen the vocabulary cannot express, such as a
+  chart library or a canvas. It would be an iframe with no same-origin, a strict
+  CSP and a message bridge that forwards only to the plugin's own actions. Until a
+  real plugin needs it, the vocabulary grows instead.
+- **A rail entry per plugin.** Every panel lives in one Plugins view, so the
+  rail's hotkeys never move.
+- **Drawing in other places than a pull request.** Notes attach to a pull
+  request because that is where review happens; a card, a commit or a file would
+  each be one more declared contribution of the same shape.
