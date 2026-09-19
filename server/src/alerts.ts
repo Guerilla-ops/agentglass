@@ -245,7 +245,17 @@ export function desktopNotifyArgv(title: string, body: string, urgency: number, 
     return ["osascript", "-e", `display notification ${appleScriptString(body)} with title ${appleScriptString(title)}`];
   }
   const level = urgency === 2 ? "critical" : "normal";
-  return ["notify-send", "-a", "agentglass", "-u", level, "--", title, body];
+  /*
+   * `-t`, because "normal" is not a lifetime.
+   *
+   * The daemon picks how long a popup lives when nobody says, and the one on
+   * this desk keeps them until they are dismissed by hand — so a week of
+   * "waiting for your input" stacked up on screen. Eight seconds for news, a
+   * minute for something that is actually blocking. The durable copy is the
+   * bell, not the popup.
+   */
+  const ms = urgency === 2 ? 60_000 : 8_000;
+  return ["notify-send", "-a", "agentglass", "-u", level, "-t", String(ms), "--", title, body];
 }
 
 /**
