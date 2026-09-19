@@ -6,6 +6,7 @@
  * one more file next to it.
  */
 import { catalogueUrlError, pluginGitUrlError, pluginRefError } from "./plugin-sources.ts";
+import { failed } from "./refused.ts";
 import { guardedFetch, type GuardedFetchOptions } from "./net.ts";
 
 export interface CataloguePlugin {
@@ -120,7 +121,7 @@ export async function fetchCatalogue(url: string, guard: GuardedFetchOptions = {
     if (typeof catalogue === "string") return { ok: false, error: catalogue };
     return { ok: true, catalogue };
   } catch (e) {
-    return { ok: false, error: e instanceof Error && e.name === "AbortError" ? "catalogue fetch timed out" : (e instanceof Error ? e.message : String(e)) };
+    return { ok: false, error: e instanceof Error && e.name === "AbortError" ? "catalogue fetch timed out" : failed("plugins/catalogue", e, "the plugin catalogue could not be fetched") };
   } finally {
     clearTimeout(timer);
   }
