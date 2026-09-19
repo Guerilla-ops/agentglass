@@ -136,6 +136,25 @@ export interface AgentCard {
 
 const STALL_MS = 20_000;
 const IDLE_MS = 5 * 60_000;
+/**
+ * How long a question to a human keeps interrupting.
+ *
+ * `waiting` is the one state the idle clock could not retire, because the rule
+ * above spares a card with an open tool call — a long build emits nothing while
+ * it runs, and reading that silence as idle is the false positive this file
+ * exists to avoid. But a permission prompt arrives in the MIDDLE of a call:
+ * the pair stays open, the question becomes the last event, and the card was
+ * then pinned to `waiting` for as long as the app was up. Measured on this
+ * machine: three sessions on the amber strip, the oldest asked 22 hours
+ * earlier, none of them still worth an interrupt, and no way to clear one.
+ *
+ * Half an hour, not five minutes: a question asked while you fetch a coffee is
+ * still the thing you came back to answer. Past it the card goes idle with the
+ * outcome `unanswered`, which is the accurate word, and the Lantern still lists
+ * it — the strip at the top of the window is for interrupting, and a question
+ * nobody has answered in half an hour has stopped being one.
+ */
+const WAIT_STALE_MS = 30 * 60_000;
 // The backstop for an open call nothing can vouch for. It used to be the whole
 // answer — "open for thirty minutes, therefore lost" — which dropped genuinely
 // long jobs off the fleet while they were still working. Now it only applies
@@ -472,8 +491,10 @@ export function deriveAgents(events: WatchEvent[], openTools: OpenToolCall[] = [
     // keeps re-triggering its alert. An open tool call is the one exception:
     // a long build emits no events while it runs, and reading that silence as
     // idle is exactly the slow-vs-hung false positive to avoid.
-    if ((since >= IDLE_MS && !running) || a.lastType === "Stop" || a.lastType === "SessionEnd") a.status = "idle";
-    else if (a.lastType === "PermissionRequest" || a.lastType === "Notification") a.status = "waiting";
+    const asked = a.lastType === "PermissionRequest" || a.lastType === "Notification";
+    if ((since >= IDLE_MS && !running) || (asked && since >= WAIT_STALE_MS)
+      || a.lastType === "Stop" || a.lastType === "SessionEnd") a.status = "idle";
+    else if (asked) a.status = "waiting";
     // Errored only on a RECENT error, not a lifetime count — one transient
     // failure early shouldn't paint a now-healthy agent red for its whole run.
     else if (now - a.lastErrorTs < STALL_MS) a.status = "errored";
