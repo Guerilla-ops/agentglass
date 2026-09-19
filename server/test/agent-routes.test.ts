@@ -11,7 +11,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { freePort } from "./freePort.ts";
 import { TMUX_TEST_TMPDIR } from "./tmuxTmp.ts";
 import { SERVER_BOOT_MS } from "./serverBoot.ts";
@@ -27,7 +27,14 @@ beforeAll(async () => {
     // scratch directory, so nothing here can write a developer's real
     // ~/.gemini or ~/.codex.
     env: {
-      PATH: process.env.PATH ?? "",
+      /* The system's directories and bun's own, not the developer's PATH. The
+         tests below reason about which agent CLIs this machine has — "Codex has
+         neither a binary on PATH nor a config directory here" — and that was
+         true of whoever wrote it and false on any machine that installs codex
+         through a version manager, where the refusal test went green→red for
+         no change of code. An agent CLI is never a system package, so these
+         directories are the machine as a fresh user would find it. */
+      PATH: [dirname(process.execPath), "/usr/local/bin", "/usr/bin", "/bin"].join(":"),
       // The server sweeps tmux window sizes at boot; without this it sweeps the
       // developer's own socket directory. See tmuxTmp.ts.
       TMUX_TMPDIR: TMUX_TEST_TMPDIR,
