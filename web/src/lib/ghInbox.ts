@@ -101,17 +101,16 @@ export interface InboxFacet {
   label: string;
   /** Drawn beside the label. Emoji on purpose: these are GitHub's own marks and
    *  the row is read at a glance, not at 16px of stroke. */
-  mark: string;
   reasons: string[];
   hint: string;
 }
 
 export const FACETS: InboxFacet[] = [
-  { id: "assigned", label: "Assigned", mark: "◎", reasons: ["assign"], hint: "Put on you by somebody" },
-  { id: "participating", label: "Participating", mark: "❞", reasons: ["author", "comment", "mention", "team_mention", "assign", "review_requested", "manual"], hint: "Threads you are in, not merely watching" },
-  { id: "mentioned", label: "Mentioned", mark: "✋", reasons: ["mention"], hint: "Somebody wrote your name" },
-  { id: "team", label: "Team mentioned", mark: "❊", reasons: ["team_mention"], hint: "Somebody wrote your team's name" },
-  { id: "review", label: "Review requested", mark: "◉", reasons: ["review_requested"], hint: "Somebody asked you to look" },
+  { id: "assigned", label: "Assigned", reasons: ["assign"], hint: "Put on you by somebody" },
+  { id: "participating", label: "Participating", reasons: ["author", "comment", "mention", "team_mention", "assign", "review_requested", "manual"], hint: "Threads you are in, not merely watching" },
+  { id: "mentioned", label: "Mentioned", reasons: ["mention"], hint: "Somebody wrote your name" },
+  { id: "team", label: "Team mentioned", reasons: ["team_mention"], hint: "Somebody wrote your team's name" },
+  { id: "review", label: "Review requested", reasons: ["review_requested"], hint: "Somebody asked you to look" },
 ];
 
 export const facetById = (id: string): InboxFacet | undefined => FACETS.find((f) => f.id === id);

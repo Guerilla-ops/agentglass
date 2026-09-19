@@ -22,6 +22,7 @@ import { railScan, checksAbout, threadsAbout, queuedOn, heldOn, railAge,  railPr
 import { openExternal } from "../lib/externalUrl.ts";
 import { mergeBlockedWhy, checksLine, checksStanding, standingLine, mergeVerdict, githubWillMerge } from "../../../shared/mergeReason.ts";
 import { ICON } from "../lib/iconSize.ts";
+import { CircleIcon, CommentIcon, CrossIcon, DoneIcon, IconLabel } from "../lib/glyphIcons.tsx";
 
 /** How your own last verdict reads back, and in what colour. Its own map so the
  *  three states are spelled once — the buttons above already spell them as
@@ -245,9 +246,9 @@ export function FileRail({
   /* Only the verdicts the caller actually wired, in the Review tab's own
      spelling and order so the two surfaces are one control in two places. */
   const verdicts = [
-    { id: "approve" as const, label: "✓ Approve", tint: "var(--success)", on: onApprove },
-    { id: "request_changes" as const, label: "✕ Request changes", tint: "var(--error)", on: onRequestChanges },
-    { id: "comment" as const, label: "💬 Comment", tint: "var(--text)", on: onComment },
+    { id: "approve" as const, label: <IconLabel icon={<DoneIcon size={ICON.xs} />}>Approve</IconLabel>, tint: "var(--success)", on: onApprove },
+    { id: "request_changes" as const, label: <IconLabel icon={<CrossIcon size={ICON.xs} />}>Request changes</IconLabel>, tint: "var(--error)", on: onRequestChanges },
+    { id: "comment" as const, label: <IconLabel icon={<CommentIcon size={ICON.xs} />}>Comment</IconLabel>, tint: "var(--text)", on: onComment },
   ].filter((v) => !!v.on);
   const armed = verdicts.length > 0 || !!onSubmit;
   /* Your own last review on this pull request, newest first. GitHub keeps every
@@ -440,7 +441,7 @@ export function FileRail({
                      second place to read the same output. */
                   <button key={check.name} onClick={onGoChecks} title="Open the log"
                     className="flex w-full items-baseline gap-1.5 text-left text-[11px] mb-1 last:mb-0">
-                    <span style={{ color: "var(--error)" }}>✕</span>
+                    <span className="flex" style={{ color: "var(--error)" }}><CrossIcon size={ICON.xs} /></span>
                     <span className="min-w-0 truncate" style={{ color: "var(--text2)" }}>{check.name}</span>
                     {/* Said only when it is true. A check carries a name and no
                         log, so most of the time we cannot know which file broke
@@ -623,7 +624,7 @@ export function FileRail({
           that there are more of them and where. */}
       <Sec title="Merge">
         <div className="text-[11px]" style={{ color: allClear ? "var(--success)" : "var(--warning)" }}>
-          {allClear ? `✓ ${mergeLine}` : `◯ ${mergeLine}`}
+          <IconLabel icon={allClear ? <DoneIcon size={ICON.xs} /> : <CircleIcon size={ICON.xs} />}>{mergeLine}</IconLabel>
         </div>
         {/* What the checks add up to, the mockup's "44 of 45 in". `standingLine`
             speaks when nothing has reported; the count only when the line above

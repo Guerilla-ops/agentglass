@@ -14,6 +14,7 @@ import { EMPTY, OPS, fieldsOf, liveCount, takesValues, type FieldSpec, type Filt
 import type { ProviderTask } from "../../../../shared/providers.ts";
 
 import { StatusPill } from "../StatusPill.tsx";
+import { DoneIcon } from "../../lib/glyphIcons.tsx";
 
 /** The panel's narrowest, shared by the box and by the clamp that keeps it on
  *  screen — two places that must not drift apart. */
@@ -138,7 +139,7 @@ function Menu({ items, onPick, selected, current }: {
                   border: on ? "1px solid var(--primary)" : edge(45),
                   background: on ? "var(--primary)" : "transparent",
                   color: "var(--bg)", fontSize: 9, lineHeight: "13px",
-                }}>{on ? "✓" : ""}</span>
+                }}>{on ? <DoneIcon size={ICON.xs} /> : null}</span>
               )}
               {/* AS THE CHIP IT STANDS FOR, not a dot beside a word.
                   A tracker status is a coloured pill everywhere else in this

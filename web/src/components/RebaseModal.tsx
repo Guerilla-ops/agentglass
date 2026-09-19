@@ -11,11 +11,12 @@
  * modal closes on start; the conflict screen owns the rest.
  */
 import { useEffect, useState } from "react";
-import { CaretIcon } from "../lib/glyphIcons.tsx";
+import { BranchIcon, CaretIcon, IconLabel } from "../lib/glyphIcons.tsx";
 import { motion, AnimatePresence } from "motion/react";
 import { Portal } from "./Portal.tsx";
 import { CloseButton } from "./CloseButton.tsx";
 import { api } from "../lib/api.ts";
+import { ICON } from "../lib/iconSize.ts";
 
 export type RebaseStep = { action: "pick" | "squash" | "fixup" | "drop" | "reword" | "edit"; hash: string; subject: string; newMessage?: string };
 
@@ -95,7 +96,7 @@ export function RebaseModal({ root, base, branch, onClose, onDone }: {
           >
             <div className="flex items-center gap-2.5 px-5 py-3 border-b shrink-0" style={{ borderColor: "color-mix(in srgb, var(--border) 40%, transparent)" }}>
               <span className="text-[15px] font-semibold" style={{ color: "var(--text)" }}>Rebase</span>
-              <span className="chip text-[10px]" style={{ color: "var(--warning)", background: "color-mix(in srgb, var(--warning) 14%, transparent)" }}>⎇ {branch}</span>
+              <span className="chip text-[10px]" style={{ color: "var(--warning)", background: "color-mix(in srgb, var(--warning) 14%, transparent)" }}><IconLabel icon={<BranchIcon size={ICON.xs} />}>{branch}</IconLabel></span>
               <span className="min-w-0 truncate text-[10.5px] t-dim2 font-mono" title={base}>{base.slice(0, 7)}…</span>
               <CloseButton onClick={onClose} className="ml-auto" />
             </div>

@@ -270,7 +270,7 @@ function ContainerRow({ c, stat, active, writeEnabled, busy, dense, onSelect, on
               <DockerAction onClick={() => onAction("stop")} disabled={busy} tint="var(--error)" title="Stop">■</DockerAction>
             </>
           : <>
-              <DockerAction onClick={() => onAction("start")} disabled={busy} tint="var(--success)" title="Start">▶</DockerAction>
+              <DockerAction onClick={() => onAction("start")} disabled={busy} tint="var(--success)" title="Start"><PlayIcon size={ICON.xs} /></DockerAction>
               <DockerAction onClick={() => onAction("rm")} disabled={busy} tint="var(--error)" title="Remove this container"><CloseIcon size={ICON.sm} /></DockerAction>
             </>)}
       </div>
@@ -726,7 +726,7 @@ export function DockerView({ active, onOpenBrowser }: {
                                 )}
                                 {cs.some((c) => c.state === "running") && (
                                   <>
-                                    <DockerAction onClick={() => doGroupAction(cs, "restart")} disabled={busy} tint="var(--warning)" title={`Restart every running container in ${st.project}`}>⟳</DockerAction>
+                                    <DockerAction onClick={() => doGroupAction(cs, "restart")} disabled={busy} tint="var(--warning)" title={`Restart every running container in ${st.project}`}><RefreshIcon size={ICON.xs} /></DockerAction>
                                     <DockerAction onClick={() => doGroupAction(cs, "stop")} disabled={busy} tint="var(--error)" title={`Stop every running container in ${st.project}`}>■</DockerAction>
                                   </>
                                 )}

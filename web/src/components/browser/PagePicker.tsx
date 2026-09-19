@@ -17,6 +17,8 @@ import { seedChat } from "../../lib/chatStore.ts";
 import { api } from "../../lib/api.ts";
 import type { GitRepoRef } from "../../../../shared/types.ts";
 import { CheckoutPicker } from "../CheckoutPicker.tsx";
+import { EditIcon, IconLabel } from "../../lib/glyphIcons.tsx";
+import { ICON } from "../../lib/iconSize.ts";
 
 type Guest = {
   executeJavaScript(code: string): Promise<unknown>;
@@ -219,7 +221,7 @@ export function PagePicker({ view, url, title, mode, onNote, onDone }: {
                 color: intent === k ? "var(--text)" : "var(--text3)",
                 background: intent === k ? "color-mix(in srgb, var(--primary) 16%, transparent)" : "transparent",
                 border: `1px solid color-mix(in srgb, var(--border) ${intent === k ? 55 : 30}%, transparent)`,
-              }}>{k === "change" ? "✎ Change it" : "? Just asking"}</button>
+              }}>{k === "change" ? <IconLabel icon={<EditIcon size={ICON.xs} />}>Change it</IconLabel> : "? Just asking"}</button>
           ))}
         </div>
 

@@ -1,3 +1,5 @@
+import { RefreshIcon } from "../lib/glyphIcons.tsx";
+import { ICON } from "../lib/iconSize.ts";
 /**
  * Something is happening.
  *
@@ -15,7 +17,7 @@ export function Spinner({ label, className }: { label?: string; className?: stri
   return (
     <span className={`inline-flex items-center gap-2 text-[10.5px] ${className ?? "px-2.5 py-1.5"}`}
       style={{ color: "var(--text3)" }} role="status">
-      <span aria-hidden className="inline-block animate-spin shrink-0">⟳</span>
+      <RefreshIcon size={ICON.xs} className="animate-spin shrink-0" />
       {label}
     </span>
   );

@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { ICON } from "../lib/iconSize.ts";
+import { BoltIcon, ClockIcon, CrossIcon, DiskIcon, DoneIcon, FireIcon, HandIcon, IconLabel, InfoIcon, RefreshIcon } from "../lib/glyphIcons.tsx";
 import { motion, AnimatePresence } from "motion/react";
 import type { Alert, AgentCard } from "../lib/derive.ts";
 import { collectAttention } from "../lib/attention.ts";
@@ -10,13 +12,13 @@ import { api } from "../lib/api.ts";
 import { usePoll } from "../lib/usePoll.ts";
 import { fmtAgo } from "../lib/format.ts";
 
-const LEVEL: Record<Alert["level"], { color: string; icon: string }> = {
-  error: { color: "var(--error)", icon: "✕" },
-  warn: { color: "var(--warning)", icon: "⏳" },
-  info: { color: "var(--info)", icon: "ℹ" },
+const LEVEL: Record<Alert["level"], { color: string; icon: ReactNode }> = {
+  error: { color: "var(--error)", icon: <CrossIcon size={ICON.xs} /> },
+  warn: { color: "var(--warning)", icon: <ClockIcon size={ICON.xs} /> },
+  info: { color: "var(--info)", icon: <InfoIcon size={ICON.xs} /> },
 };
 const SEV: Record<Insight["severity"], string> = { bad: "var(--error)", warn: "var(--warning)", info: "var(--info)" };
-const KIND_ICON: Record<Insight["kind"], string> = { loop: "↻", spend: "🔥", errors: "✕", burn: "⚡", cache: "↥" };
+const KIND_ICON: Record<Insight["kind"], ReactNode> = { loop: <RefreshIcon size={ICON.xs} />, spend: <FireIcon size={ICON.xs} />, errors: <CrossIcon size={ICON.xs} />, burn: <BoltIcon size={ICON.xs} />, cache: <DiskIcon size={ICON.xs} /> };
 
 export function Alerts({ alerts, agents = [], onSelectApp, bump, active = true }: { alerts: Alert[]; agents?: AgentCard[]; onSelectApp?: (app: string) => void; bump?: number; active?: boolean }) {
   const [insights, setInsights] = useState<Insight[]>([]);
@@ -149,7 +151,7 @@ export function Alerts({ alerts, agents = [], onSelectApp, bump, active = true }
               style={{ background: "color-mix(in srgb, var(--warning) 14%, transparent)", border: "1px solid color-mix(in srgb, var(--warning) 50%, transparent)" }}
             >
               <div className="flex items-center gap-2">
-                <span style={{ color: "var(--warning)" }}>✋</span>
+                <span className="flex" style={{ color: "var(--warning)" }}><HandIcon size={ICON.xs} /></span>
                 <span className="text-[11.5px] font-semibold" style={{ color: "var(--text)" }}>Approve {g.tool_name}?</span>
                 <span className="ml-auto text-[9.5px] t-dim2">{g.source_app}:{g.session_id.slice(0, 8)}</span>
               </div>
@@ -163,7 +165,7 @@ export function Alerts({ alerts, agents = [], onSelectApp, bump, active = true }
                   className="flex-1 rounded-lg py-1.5 text-[11px] font-semibold cursor-pointer"
                   style={{ color: "var(--bg2)", background: "var(--success)" }}
                 >
-                  ✓ Approve
+                  <IconLabel icon={<DoneIcon size={ICON.xs} />}>Approve</IconLabel>
                 </button>
                 <button
                   onClick={() => decide(g, "deny")}
@@ -171,7 +173,7 @@ export function Alerts({ alerts, agents = [], onSelectApp, bump, active = true }
                   className="flex-1 rounded-lg py-1.5 text-[11px] font-semibold cursor-pointer"
                   style={{ color: "var(--error)", background: "color-mix(in srgb, var(--error) 16%, transparent)", border: "1px solid color-mix(in srgb, var(--error) 45%, transparent)" }}
                 >
-                  ✕ Deny
+                  <IconLabel icon={<CrossIcon size={ICON.xs} />}>Deny</IconLabel>
                 </button>
               </div>
             </motion.div>
@@ -187,7 +189,7 @@ export function Alerts({ alerts, agents = [], onSelectApp, bump, active = true }
                 style={{ background: "color-mix(in srgb, var(--text4) 10%, transparent)", border: "1px dashed color-mix(in srgb, var(--text4) 45%, transparent)" }}
                 title={g.summary}
               >
-                <span className="shrink-0 t-dim2">{g.decision === "deny" ? "✕" : "✓"}</span>
+                <span className="shrink-0 t-dim2 flex">{g.decision === "deny" ? <CrossIcon size={ICON.xs} /> : <DoneIcon size={ICON.xs} />}</span>
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-[11px]" style={{ color: "var(--text2)" }}>
                     {g.tool_name} {g.decision === "deny" ? "denied" : "allowed"} without you
@@ -216,7 +218,7 @@ export function Alerts({ alerts, agents = [], onSelectApp, bump, active = true }
                 className="flex items-start gap-2 rounded-xl px-2.5 py-2 mb-1.5 cursor-pointer"
                 style={{ background: `color-mix(in srgb, ${l.color} 12%, transparent)`, border: `1px solid color-mix(in srgb, ${l.color} 35%, transparent)` }}
               >
-                <span style={{ color: l.color }}>{l.icon}</span>
+                <span className="flex" style={{ color: l.color }}>{l.icon}</span>
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-[12px]" style={{ color: "var(--text2)" }}>{a.agent}</div>
                   {/* Who it is and what happened are two different things, so
@@ -250,7 +252,7 @@ export function Alerts({ alerts, agents = [], onSelectApp, bump, active = true }
                       cursor: i.session ? "pointer" : "default",
                     }}
                   >
-                    <span className="shrink-0" style={{ color }}>{KIND_ICON[i.kind]}</span>
+                    <span className="shrink-0 flex" style={{ color }}>{KIND_ICON[i.kind]}</span>
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-[11.5px] font-medium" style={{ color: "var(--text2)" }}>{i.title}</div>
                       <div className="text-[10px] truncate mt-1" style={{ color: "var(--text2)" }} title={i.detail}>{i.detail}</div>

@@ -10,6 +10,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { THEMES } from "../../lib/highlight.ts";
 import { ICON } from "../../lib/iconSize.ts";
+import { WarningIcon } from "../../lib/glyphIcons.tsx";
 
 /**
  * The syntax theme, as a dropdown. "auto" follows the app's own light/dark; the
@@ -64,7 +65,7 @@ export function ThemePicker({ value, onChange, error }: { value: string; onChang
         {/* The label names the theme that was CHOSEN, so when it could not be
             loaded the button has to say so — otherwise it vouches for colours
             that are not on screen. */}
-        {error && <span aria-hidden>⚠</span>}
+        {error && <span aria-hidden className="flex"><WarningIcon size={ICON.xs} /></span>}
         <span className="truncate" style={{ maxWidth: 92 }}>{label}</span>
         <svg width={ICON.xs} height={ICON.xs} viewBox="0 0 12 12" fill="none" aria-hidden style={{ opacity: 0.7 }}>
           <path d="M3 5l3 3 3-3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />

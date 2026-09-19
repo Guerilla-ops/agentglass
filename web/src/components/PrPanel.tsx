@@ -99,6 +99,8 @@ import { useClickupSetup } from "../lib/clickupSetup.ts";
 import type { ListStatus as CuStatus, ListMember as CuMember, ProviderTask } from "../../../shared/providers.ts";
 import { CloseButton } from "./CloseButton.tsx";
 import { ICON } from "../lib/iconSize.ts";
+import { AgentIcon, AttachIcon, BlockedIcon, BoltIcon, BranchIcon, CaretIcon, CheckboxIcon, CircleIcon, ClockIcon, CommentIcon, CopyIcon, CrossIcon, DoneIcon, DraftIcon, EditIcon, EyeIcon, FileIcon, FlagIcon, IconLabel, LinkIcon, MergeIcon, MoreIcon, PlusIcon, RefreshIcon, SearchIcon, SparkleIcon, StarIcon, TagIcon, UndoIcon, UserIcon } from "../lib/glyphIcons.tsx";
+import { PrIcon } from "./workspace/icons.tsx";
 import { CardChip } from "../lib/priority.tsx";
 import { ColumnsIcon, InboxIcon, QuoteIcon } from "./settingsNavIcons.tsx";
 import { pins, isPinned, togglePin, subscribePins, type Pin } from "../lib/prPins.ts";
@@ -381,7 +383,7 @@ function PrCardChip({ pr, card }: {
  * nothing.
  */
 function p2Verdict(hv: PrSummary["humanReview"], rows: ReviewerRow[]): {
-  tint: string; glyph: string; head: string; who?: string; note?: string; url?: string;
+  tint: string; glyph: React.ReactNode; head: string; who?: string; note?: string; url?: string;
 } | null {
   const named = (list: string[]) =>
     list.slice(0, 2).join(" and ") + (list.length > 2 ? ` +${list.length - 2}` : "");
@@ -397,19 +399,19 @@ function p2Verdict(hv: PrSummary["humanReview"], rows: ReviewerRow[]): {
 
   if (v.kind === "approved") {
     if (v.stale) {
-      return { tint: "var(--warning)", glyph: "↻", url: v.url,
+      return { tint: "var(--warning)", glyph: <RefreshIcon size={ICON.xs} />, url: v.url,
         head: v.mine ? "You approved, but it has moved since" : "Approved, but it has moved since",
         who: v.mine ? undefined : who,
         note: "Commits landed after that review — it does not cover what is here now." };
     }
-    return { tint: "var(--success)", glyph: "✓", url: v.url,
+    return { tint: "var(--success)", glyph: <DoneIcon size={ICON.xs} />, url: v.url,
       head: v.mine ? "You approved" : "Approved", who: v.mine ? undefined : who,
       note: "Whatever is listed below, the review is done" };
   }
   if (v.kind === "changes") {
     /* A band, not a line among the obstacles. It is the same kind of fact as an
        approval — a person decided — and it was drawn as neither. */
-    return { tint: "var(--error)", glyph: "✕", url: v.url,
+    return { tint: "var(--error)", glyph: <CrossIcon size={ICON.xs} />, url: v.url,
       head: v.mine ? "You asked for changes" : "Changes requested",
       who: v.mine ? undefined : who,
       /*
@@ -425,11 +427,11 @@ function p2Verdict(hv: PrSummary["humanReview"], rows: ReviewerRow[]): {
         : "Their threads are the ones to answer." };
   }
   if (v.kind === "awaiting") {
-    return { tint: "var(--warning)", glyph: "◯",
+    return { tint: "var(--warning)", glyph: <CircleIcon size={ICON.xs} />,
       head: v.mine ? "Waiting on you" : "Waiting on review", who: v.mine ? undefined : who,
       note: "Asked for, and not answered yet." };
   }
-  return { tint: "var(--text3)", glyph: "💬", url: v.url,
+  return { tint: "var(--text3)", glyph: <CommentIcon size={ICON.xs} />, url: v.url,
     head: "Reviewed, no verdict", who,
     note: "Somebody wrote, without approving or asking for changes." };
 }
@@ -515,7 +517,7 @@ function Btn({ children, onClick, disabled, danger, primary, ok, warn, title, sm
        * + an explicit height means a row of these is the same row whatever is
        * written on them, and the padding only decides the width.
        */
-      className={`agx-btn rounded inline-flex items-center justify-center whitespace-nowrap leading-none disabled:opacity-40 ${small ? "text-[10px] px-2 h-[24px]" : "text-[10.5px] px-2.5 h-[28px]"}`}
+      className={`agx-btn rounded inline-flex items-center justify-center gap-1 whitespace-nowrap leading-none disabled:opacity-40 ${small ? "text-[10px] px-2 h-[24px]" : "text-[10.5px] px-2.5 h-[28px]"}`}
       style={{
         // A plain button's label was --text2, a tier meant for labels beside
         // things — so "Comment" sat at the contrast of a caption next to the
@@ -786,10 +788,10 @@ function MdList({ items, ordered, wiring }: { items: MdListItem[]; ordered: bool
               role="checkbox" aria-checked={it.checked}
               title={it.checked ? "Uncheck" : "Check"}
               onClick={() => wiring.onToggle(taskIndex)}>
-              {it.checked ? "✓" : ""}
+              {it.checked ? <DoneIcon size={ICON.xs} /> : null}
             </button>
           ) : (
-            <span className="agx-box" data-on={it.checked ? "1" : "0"}>{it.checked ? "✓" : ""}</span>
+            <span className="agx-box" data-on={it.checked ? "1" : "0"}>{it.checked ? <DoneIcon size={ICON.xs} /> : null}</span>
           )
         )}
         <span dangerouslySetInnerHTML={{ __html: it.html }} />
@@ -1273,18 +1275,18 @@ function ReviewerFace({ r, size }: { r: PrReviewer; size: number }) {
  *  asked; it does not say what any of them decided, and that is the half people
  *  came for. */
 function ReviewerMark({ state, again }: { state: ReviewerState; again?: boolean }) {
-  const spec = state === "approved" ? { g: "✓", c: "var(--success)" }
-    : state === "changes" ? { g: "✕", c: "var(--error)" }
-    : state === "commented" ? { g: "💬", c: "var(--text3)" }
-    : state === "dismissed" ? { g: "⊘", c: "var(--text4)" }
-    : { g: "◯", c: "var(--warning)" };
+  const spec = state === "approved" ? { g: <DoneIcon size={ICON.sm} />, c: "var(--success)" }
+    : state === "changes" ? { g: <CrossIcon size={ICON.sm} />, c: "var(--error)" }
+    : state === "commented" ? { g: <CommentIcon size={ICON.sm} />, c: "var(--text3)" }
+    : state === "dismissed" ? { g: <BlockedIcon size={ICON.sm} />, c: "var(--text4)" }
+    : { g: <CircleIcon size={ICON.sm} />, c: "var(--warning)" };
   return (
     <span className="inline-flex items-center gap-0.5">
       {/* Asked again after answering — GitHub's ↻, same as the sidebar's own
           reviewer list draws it, and the same reason a lone tick or cross is
           not the whole story once a follow-up round has been asked for. */}
-      {again && <span aria-hidden style={{ color: "var(--text4)", fontSize: 14 }} title="Asked to look again">↻</span>}
-      <span aria-hidden style={{ color: spec.c, fontSize: 14 }}>{spec.g}</span>
+      {again && <span aria-hidden className="flex" style={{ color: "var(--text4)" }} title="Asked to look again"><RefreshIcon size={ICON.sm} /></span>}
+      <span aria-hidden className="flex" style={{ color: spec.c }}>{spec.g}</span>
     </span>
   );
 }
@@ -1402,7 +1404,7 @@ function PinnedCapsule({ pinned, pinState, selected, current, onOpen }: {
           border: "1px solid color-mix(in srgb, var(--border) 55%, transparent)",
         }}>
         {pinned.length === 0
-          ? <span className="text-[10px] shrink-0" style={{ color: "var(--text4)" }}>☆ nothing pinned</span>
+          ? <span className="text-[10px] shrink-0 inline-flex items-center gap-1" style={{ color: "var(--text4)" }}><StarIcon size={ICON.xs} />nothing pinned</span>
           : (
             <span className="text-[10px] uppercase tracking-wider shrink-0" style={{ color: "var(--text4)" }}>Pinned</span>
           )}
@@ -1460,11 +1462,11 @@ function PinnedCapsule({ pinned, pinState, selected, current, onOpen }: {
             title={currentPinned
               ? `#${current.number} is on the bar — click to take it off`
               : `Keep #${current.number} on this bar, one click away from anywhere in this panel`}
-            className="text-[10px] px-2 py-px rounded-full shrink-0"
+            className="text-[10px] px-2 py-px rounded-full shrink-0 inline-flex items-center gap-1"
             style={currentPinned
               ? { color: "var(--primary-hover)", border: "1px solid color-mix(in srgb, var(--primary) 45%, transparent)" }
               : { color: "var(--warning)", border: "1px solid color-mix(in srgb, var(--warning) 32%, transparent)", background: "color-mix(in srgb, var(--warning) 8%, transparent)" }}>
-            {currentPinned ? "★ Pinned" : `☆ Pin #${current.number}`}
+            <StarIcon size={ICON.xs} filled={currentPinned} />{currentPinned ? "Pinned" : `Pin #${current.number}`}
           </button>
         )}
       </div>
@@ -1650,7 +1652,7 @@ function PrRow({ p, active, onSelect, onReview, pinned, onTogglePin, q, unread, 
               color: pinned ? "var(--primary-hover)" : "var(--text3)",
               fontSize: 15, width: 22, height: 22,
             }}>
-            {pinned ? "★" : "☆"}
+            <StarIcon size={ICON.sm} filled={pinned} />
           </button>
         )}
         <span title={st.title} style={{ color: st.tint }}>⇅</span>#{p.number}
@@ -4100,9 +4102,9 @@ export function PrView({ active, onOpenChatWith, onReviewInTerminal, jumpTo }: {
             {prs.length === 0
               ? (listState.loading ? "Loading pull requests…"
                 : listState.checksPending ? "Loading check states…"
-                : listState.fetchedAt ? `⟳ ${ago(new Date(listState.fetchedAt).toISOString())}` : "")
+                : listState.fetchedAt ? <span className="inline-flex items-center gap-1"><RefreshIcon size={ICON.xs} />{ago(new Date(listState.fetchedAt).toISOString())}</span> : "")
               : (listState.fetchedAt
-                ? `⟳ ${ago(new Date(listState.fetchedAt).toISOString())}${listState.loading || listState.checksPending ? " · updating" : ""}`
+                ? <span className="inline-flex items-center gap-1"><RefreshIcon size={ICON.xs} />{ago(new Date(listState.fetchedAt).toISOString())}{listState.loading || listState.checksPending ? " · updating" : ""}</span>
                 : "")}
           </span>
           {/*
@@ -4721,9 +4723,9 @@ export function PrView({ active, onOpenChatWith, onReviewInTerminal, jumpTo }: {
                                 {c.isMerge && <Chip text="merge" tint="var(--text3)" title="Trunk catch-up, not work to review" />}
                                 {c.verified && <Chip text="verified" tint="var(--success)" title="Signature verified by GitHub" />}
                                 {c.checks && (
-                                  <span className="shrink-0 text-[11px]" title={`Checks on this commit: ${c.checks.toLowerCase()}`}
+                                  <span className="shrink-0 text-[11px] flex" title={`Checks on this commit: ${c.checks.toLowerCase()}`}
                                     style={{ color: c.checks === "SUCCESS" ? "var(--success)" : c.checks === "FAILURE" || c.checks === "ERROR" ? "var(--error)" : "var(--warning)" }}>
-                                    {c.checks === "SUCCESS" ? "✓" : c.checks === "FAILURE" || c.checks === "ERROR" ? "✕" : "•"}
+                                    {c.checks === "SUCCESS" ? <DoneIcon size={ICON.xs} /> : c.checks === "FAILURE" || c.checks === "ERROR" ? <CrossIcon size={ICON.xs} /> : <CircleIcon size={ICON.xs} />}
                                   </span>
                                 )}
                                 <span className="tabular-nums shrink-0 px-1.5 py-0.5 rounded" style={{ ...CODE_FONT_STYLE, fontSize: "10px", color: "var(--primary)", background: "color-mix(in srgb, var(--primary) 12%, transparent)" }}>{c.short}</span>
@@ -4941,7 +4943,7 @@ function ConflictActions({ root, number, branch, base, disabled }: {
           requestWorktreeJump({ view: "git", root: p.root });
         }} disabled={disabled || !!busy} warn
         title={`Merge ${base} into ${branch} in a worktree of its own, and open it here. Your checkout is not touched.`}>
-        {busy === "open" ? "Preparing…" : "⚡ Resolve conflicts"}
+        {busy === "open" ? "Preparing…" : <><BoltIcon size={ICON.xs} />Resolve conflicts</>}
       </Btn>
       <Btn onClick={async () => {
           setBusy("claude");
@@ -4972,7 +4974,7 @@ function ConflictActions({ root, number, branch, base, disabled }: {
           setNote(`Claude is on it in a tmux window — "conflict-${number}", in ${p.root.split("/").pop()}`);
         }} disabled={disabled || !!busy}
         title={`Open a tmux window in that worktree with Claude, told which side is which and which files are in conflict.`}>
-        {busy === "claude" ? "Preparing…" : "✦ Hand to Claude in a terminal"}
+        {busy === "claude" ? "Preparing…" : <><SparkleIcon size={ICON.xs} />Hand to Claude in a terminal</>}
       </Btn>
       {/* On its own line, full width. Squeezed between the buttons it pushed
           them apart and ran off the row — and the sentences that matter here
@@ -5140,7 +5142,7 @@ function Overview({ d, root, busy, busyWhat, mergeWork, openThreads, conversatio
         * the whole errand.
         */}
       {movedSince > 0 && (
-        <Reason tint="var(--warning)" glyph="↻"
+        <Reason tint="var(--warning)" glyph={<RefreshIcon size={ICON.xs} />}
           action={<button onClick={onGoMoved} style={{ color: "var(--primary)" }}>Show them</button>}>
           <b style={{ color: "var(--warning)" }}>{movedSince}</b>
           {movedSince === 1 ? " file has" : " files have"} changed since your review
@@ -5163,7 +5165,7 @@ function Overview({ d, root, busy, busyWhat, mergeWork, openThreads, conversatio
           <div className="flex gap-2.5 items-start p-3">
             <span className="shrink-0 rounded-full flex items-center justify-center text-[13px]"
               style={{ width: 26, height: 26, background: d.state === "MERGED" ? "var(--primary)" : "color-mix(in srgb, var(--text3) 60%, transparent)", color: "var(--bg)" }}>
-              {d.state === "MERGED" ? "⏣" : "⊘"}
+              {d.state === "MERGED" ? <MergeIcon size={ICON.sm} /> : <BlockedIcon size={ICON.sm} />}
             </span>
             <span className="min-w-0">
               <span className="block text-[13px] font-semibold leading-tight" style={{ color: "var(--text)" }}>
@@ -5178,7 +5180,7 @@ function Overview({ d, root, busy, busyWhat, mergeWork, openThreads, conversatio
           </div>
           <div className="flex items-center gap-1.5 flex-wrap px-3 py-2.5"
             style={{ borderTop: "1px solid color-mix(in srgb, var(--text) 11%, transparent)", background: "color-mix(in srgb, var(--border) 12%, transparent)" }}>
-            {d.state === "CLOSED" && <Btn onClick={onClose} disabled={busy} pending={busyWhat === "Reopen"} title="Put it back to open, with its comments and reviews intact">↺ Reopen</Btn>}
+            {d.state === "CLOSED" && <Btn onClick={onClose} disabled={busy} pending={busyWhat === "Reopen"} title="Put it back to open, with its comments and reviews intact"><UndoIcon size={ICON.xs} />Reopen</Btn>}
             <a href={externalUrl(d.url)} target="_blank" rel="noreferrer noopener" className="text-[10.5px] px-2.5 py-1 rounded"
               style={{ color: "var(--text2)", border: "1px solid color-mix(in srgb, var(--text) 24%, transparent)" }}>Open on GitHub ↗</a>
           </div>
@@ -5193,7 +5195,7 @@ function Overview({ d, root, busy, busyWhat, mergeWork, openThreads, conversatio
                 : canMerge ? "var(--text3)"
                 : isBehind ? "var(--warning)" : "var(--error)",
               color: "var(--bg)" }}>
-            {allClear ? "✓" : canMerge && standing === "awaiting" ? "◯" : canMerge ? "·" : "!"}
+            {allClear ? <DoneIcon size={ICON.xs} /> : canMerge && standing === "awaiting" ? <CircleIcon size={ICON.xs} /> : canMerge ? "·" : "!"}
           </span>
           <span className="min-w-0">
             <span className="block text-[13px] font-semibold leading-tight" style={{ color: "var(--text)" }}>
@@ -5297,12 +5299,12 @@ function Overview({ d, root, busy, busyWhat, mergeWork, openThreads, conversatio
             );
           })()}
           {openThreads > 0 && (
-            <Reason tint="var(--warning)" glyph="◯" action={<button onClick={onGoThreads} style={{ color: "var(--primary)" }}>Go to thread</button>}>
+            <Reason tint="var(--warning)" glyph={<CircleIcon size={ICON.xs} />} action={<button onClick={onGoThreads} style={{ color: "var(--primary)" }}>Go to thread</button>}>
               {openThreads} review thread{openThreads === 1 ? "" : "s"} still open — <span style={{ color: "var(--text3)" }}>a reply is not a resolve</span>
             </Reason>
           )}
           {c.failure > 0 && (
-            <Reason tint="var(--error)" glyph="✕">{c.failing.slice(0, 2).map((f) => f.name).join(", ")}{c.failing.length > 2 ? ` +${c.failing.length - 2} more` : ""} failing</Reason>
+            <Reason tint="var(--error)" glyph={<CrossIcon size={ICON.xs} />}>{c.failing.slice(0, 2).map((f) => f.name).join(", ")}{c.failing.length > 2 ? ` +${c.failing.length - 2} more` : ""} failing</Reason>
           )}
           {/* Not "N checks passed" while some are still going. That line sat
               directly under a header saying merging was blocked, and the two
@@ -5320,7 +5322,7 @@ function Overview({ d, root, busy, busyWhat, mergeWork, openThreads, conversatio
             </Reason>
           )}
           {checksLine(c, d.mergeable === "MERGEABLE" ? d.baseRefName : undefined) && (
-            <Reason tint={c.pending > 0 ? "var(--warning)" : "var(--success)"} glyph={c.pending > 0 ? "◯" : "✓"}>
+            <Reason tint={c.pending > 0 ? "var(--warning)" : "var(--success)"} glyph={c.pending > 0 ? <CircleIcon size={ICON.xs} /> : <DoneIcon size={ICON.xs} />}>
               {checksLine(c, d.mergeable === "MERGEABLE" ? d.baseRefName : undefined)}
             </Reason>
           )}
@@ -5341,7 +5343,7 @@ function Overview({ d, root, busy, busyWhat, mergeWork, openThreads, conversatio
             * you, and the difference is one push.
             */}
           {conflictFiles?.resolvedLocally && conflictFiles.resolvedLocally.ahead > 0 && (
-            <Reason tint="var(--success)" glyph="✓">
+            <Reason tint="var(--success)" glyph={<DoneIcon size={ICON.xs} />}>
               <b style={{ color: "var(--text)", fontWeight: 500 }}>Resolved here, not pushed</b>
               {" — "}
               <span className="font-mono">{conflictFiles.resolvedLocally.branch}</span> already has
@@ -5359,7 +5361,7 @@ function Overview({ d, root, busy, busyWhat, mergeWork, openThreads, conversatio
               do here but wait, and a warning you cannot act on is one you learn
               to scroll past. */}
           {d.mergeable === "CONFLICTING" && gitSaysClean && (
-            <Reason tint="var(--success)" glyph="✓">
+            <Reason tint="var(--success)" glyph={<DoneIcon size={ICON.xs} />}>
               <b style={{ color: "var(--text)", fontWeight: 500 }}>Already resolved</b> — git merged
               {" "}{d.headRefName} into {d.baseRefName} just now and found nothing to settle.
               <span className="block mt-1" style={{ color: "var(--text3)" }}>
@@ -5556,7 +5558,7 @@ function Overview({ d, root, busy, busyWhat, mergeWork, openThreads, conversatio
               title={awaitingChecks
                 ? "The branch was just updated — waiting for the checks to start. Pushing again would restart them."
                 : updateMove.title}>
-              {updateMove.label}</Btn>
+              <RefreshIcon size={ICON.xs} />{updateMove.label}</Btn>
           )}
           {/* Only with something to re-run. `failure > 0` already implies the
               rollup is populated, so this cannot appear over an empty one. */}
@@ -5641,7 +5643,7 @@ function Description({ d, busy, onEdit, onToggleTask }: {
         <span className="text-[9.5px] uppercase tracking-wider" style={{ color: "var(--text3)" }}>description</span>
         {/* Opening the editor is the shell's to do — it takes the whole column,
             so the click has to leave this box entirely. */}
-        <span className="ml-auto"><Btn onClick={onEdit} disabled={busy} small>✎ Edit</Btn></span>
+        <span className="ml-auto"><Btn onClick={onEdit} disabled={busy} small><EditIcon size={ICON.xs} />Edit</Btn></span>
       </div>
       <div className="p-3">
         {/* No checklist meter. The boxes are right there, ticked or not, three
@@ -5798,13 +5800,13 @@ function BodyEditor({ prNumber, initial, busy, onSave, onCancel, onOpenGithub }:
           <TBSep />
           <TB title="Quote" onClick={() => prefixLines(() => "> ")}>&ldquo;</TB>
           <TB title="Code" onClick={code}>&lt;/&gt;</TB>
-          <TB title="Link" onClick={link}>🔗</TB>
+          <TB title="Link" onClick={link}><LinkIcon size={ICON.sm} /></TB>
           <TBSep />
           <TB title="Numbered list" onClick={() => prefixLines((i) => `${i + 1}. `)}>1.</TB>
           <TB title="Bulleted list" onClick={() => prefixLines(() => "- ")}>•</TB>
-          <TB title="Task list" onClick={() => prefixLines(() => "- [ ] ")}>☑</TB>
+          <TB title="Task list" onClick={() => prefixLines(() => "- [ ] ")}><CheckboxIcon size={ICON.sm} checked /></TB>
           <TBSep />
-          <TB title="Attach an image" onClick={() => setAttachNote("An image")}>📎</TB>
+          <TB title="Attach an image" onClick={() => setAttachNote("An image")}><AttachIcon size={ICON.sm} /></TB>
           <TB title="Mention" onClick={mention}>@</TB>
         </div>
       )}
@@ -5891,12 +5893,15 @@ function Menu({ label, title, children, align = "right", primary }: {
   );
 }
 
-function MenuItem({ children, onClick, danger, kbd }: {
+function MenuItem({ children, onClick, danger, kbd, icon }: {
   children: React.ReactNode; onClick: () => void; danger?: boolean; kbd?: string;
+  /** Drawn before the words, in the words' own colour. */
+  icon?: React.ReactNode;
 }) {
   return (
     <button onClick={onClick} className="agx-mi w-full text-left flex items-center gap-2 px-3 py-1.5 text-[11px]"
       style={{ color: danger ? "var(--error)" : "var(--text2)" }}>
+      {icon && <span className="shrink-0 flex">{icon}</span>}
       <span className="min-w-0 truncate">{children}</span>
       {kbd && <span className="ml-auto text-[9.5px] shrink-0" style={{ color: "var(--text3)" }}>{kbd}</span>}
     </button>
@@ -6038,7 +6043,7 @@ function ReviewMenu({ d, onPick, canTerm, primary = true }: {
   const groups: ReviewRecipeGroup[] = ["reviewing", "focused", "mine"];
 
   return (
-    <Menu label="✦ Review with Claude ▾" title="Review this pull request" primary={primary}>
+    <Menu label={<><SparkleIcon size={ICON.xs} />Review with Claude<CaretIcon /></>} title="Review this pull request" primary={primary}>
       {(close) => (
         <div style={{ maxHeight: "min(62vh, 520px)", overflowY: "auto" }}>
           {/* The suggestion keeps the shape the button had before: a named
@@ -6156,7 +6161,7 @@ function SidebarSection({ title, onEdit, children }: { title: string; onEdit?: (
         {onEdit && (
           <button onClick={onEdit} title={`Edit ${title.toLowerCase()}`} aria-label={`Edit ${title.toLowerCase()}`}
             className="agx-btn ml-auto rounded hover:bg-white/5 inline-flex items-center justify-center"
-            style={{ color: "var(--text3)", fontSize: 14, width: 20, height: 20 }}>✎</button>
+            style={{ color: "var(--text3)", width: 20, height: 20 }}><EditIcon size={ICON.sm} /></button>
         )}
       </div>
       {children}
@@ -6191,8 +6196,8 @@ function ReviewerList({ rows }: { rows: ReviewerRow[] }) {
             <span className="flex-1" />
             {/* Asked again after answering — GitHub's ↻, and the reason a green
                 tick beside it is not the whole story. */}
-            {r.again && <span aria-hidden className="text-[14px] shrink-0" style={{ color: "var(--text4)" }} title="Asked to look again">↻</span>}
-            <span aria-hidden className="text-[14px] shrink-0" style={{ color: mark.tint }}>{mark.glyph}</span>
+            {r.again && <span aria-hidden className="shrink-0 flex" style={{ color: "var(--text4)" }} title="Asked to look again"><RefreshIcon size={ICON.sm} /></span>}
+            <span aria-hidden className="shrink-0 flex" style={{ color: mark.tint }}>{mark.glyph}</span>
           </span>
         );
       })}
@@ -6202,12 +6207,12 @@ function ReviewerList({ rows }: { rows: ReviewerRow[] }) {
 
 /** One glyph and one word per verdict. The word is in the tooltip, because the
  *  column is 248px wide and three of these read as a paragraph. */
-const REVIEW_MARK: Record<ReviewerState, { glyph: string; tint: string; said: string }> = {
-  changes: { glyph: "✕", tint: "var(--error)", said: "asked for changes" },
-  awaiting: { glyph: "◯", tint: "var(--text4)", said: "has not answered yet" },
-  approved: { glyph: "✓", tint: "var(--success, #98c379)", said: "approved" },
-  commented: { glyph: "💬", tint: "var(--text3)", said: "commented" },
-  dismissed: { glyph: "⊘", tint: "var(--text4)", said: "review dismissed" },
+const REVIEW_MARK: Record<ReviewerState, { glyph: React.ReactNode; tint: string; said: string }> = {
+  changes: { glyph: <CrossIcon size={ICON.sm} />, tint: "var(--error)", said: "asked for changes" },
+  awaiting: { glyph: <CircleIcon size={ICON.sm} />, tint: "var(--text4)", said: "has not answered yet" },
+  approved: { glyph: <DoneIcon size={ICON.sm} />, tint: "var(--success, #98c379)", said: "approved" },
+  commented: { glyph: <CommentIcon size={ICON.sm} />, tint: "var(--text3)", said: "commented" },
+  dismissed: { glyph: <BlockedIcon size={ICON.sm} />, tint: "var(--text4)", said: "review dismissed" },
 };
 
 function SidebarPeople({ people, empty }: { people: PrReviewer[]; empty: string }) {
@@ -6388,7 +6393,7 @@ function FieldPicker({ anchor, title, hint, multi, loading, options, selected, o
               <button key={o.value || "∅"} onClick={() => toggle(o.value)}
                 className="agx-mi w-full text-left flex items-center gap-2 px-2.5 py-1.5 text-[11px]"
                 style={{ color: "var(--text2)" }}>
-                <span className="w-3.5 shrink-0 text-center" style={{ color: on ? "var(--primary)" : "transparent" }}>✓</span>
+                <span className="w-3.5 shrink-0 text-center" style={{ color: on ? "var(--primary)" : "transparent" }}><DoneIcon size={ICON.xs} /></span>
                 {o.color != null && <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: `#${o.color}` }} />}
                 {o.avatar != null && <Avatar login={o.avatar} size={16} />}
                 <span className="truncate">{o.label}</span>
@@ -6761,7 +6766,7 @@ function ClickUpSide({ d, folded, onFold, onPlan, note }: {
                 <span className="truncate" style={{ color: on.has(m.id) ? "var(--success)" : "var(--text2)" }}>
                   {m.name}{m.me ? " · you" : ""}
                 </span>
-                {on.has(m.id) && <span className="ml-auto text-[10px]" style={{ color: "var(--success)" }}>✓</span>}
+                {on.has(m.id) && <span className="ml-auto flex" style={{ color: "var(--success)" }}><DoneIcon size={ICON.xs} /></span>}
               </button>
             ))}
           </div>
@@ -7310,13 +7315,13 @@ function PrSidebar({ d, root, spend, onEditField }: {
           const tint = v.kind === "approved" ? "var(--success)"
             : v.kind === "changes" ? "var(--error)"
             : v.kind === "awaiting" ? "var(--warning)" : "var(--text3)";
-          const mark = v.kind === "approved" ? "✓" : v.kind === "changes" ? "✕"
-            : v.kind === "commented" ? "💬" : "◯";
+          const mark = v.kind === "approved" ? <DoneIcon size={ICON.sm} /> : v.kind === "changes" ? <CrossIcon size={ICON.sm} />
+            : v.kind === "commented" ? <CommentIcon size={ICON.sm} /> : <CircleIcon size={ICON.sm} />;
           return (
             <>
               {v.kind !== "none" && (
                 <div className="flex items-center gap-1.5 text-[11px] mb-1.5" style={{ color: tint }} title={verdictLine(v)}>
-                  <span aria-hidden style={{ fontSize: 14 }}>{mark}</span>
+                  <span aria-hidden className="flex">{mark}</span>
                   <b style={{ fontWeight: 500 }}>
                     {v.kind === "approved" ? "Approved" : v.kind === "changes" ? "Changes requested"
                       : v.kind === "commented" ? "Commented" : "Awaiting"}
@@ -7408,11 +7413,11 @@ function PrSidebar({ d, root, spend, onEditField }: {
  * green of a passing build (which is what tinting by check verdict did) says
  * exactly the wrong thing.
  */
-function prStateBadge(d: { state: PrSummary["state"]; isDraft: boolean }): { tint: string; state: string; glyph: string } {
-  if (d.state === "MERGED") return { tint: "var(--primary)", state: "Merged", glyph: "⏣" };
-  if (d.state === "CLOSED") return { tint: "var(--text3)", state: "Closed", glyph: "⊘" };
-  if (d.isDraft) return { tint: "var(--text3)", state: "Draft", glyph: "◌" };
-  return { tint: "var(--success)", state: "Open", glyph: "◉" };
+function prStateBadge(d: { state: PrSummary["state"]; isDraft: boolean }): { tint: string; state: string; glyph: React.ReactNode } {
+  if (d.state === "MERGED") return { tint: "var(--primary)", state: "Merged", glyph: <MergeIcon size={ICON.xs} /> };
+  if (d.state === "CLOSED") return { tint: "var(--text3)", state: "Closed", glyph: <BlockedIcon size={ICON.xs} /> };
+  if (d.isDraft) return { tint: "var(--text3)", state: "Draft", glyph: <DraftIcon size={ICON.xs} /> };
+  return { tint: "var(--success)", state: "Open", glyph: <PrIcon size={ICON.xs} /> };
 }
 
 function Masthead({ d, busy, onEditTitle, onDraft, onClose, onLocalReview, onReviewInTerminal, onLabels, onReviewers, onCopyLink, onNudge, onEditField, condensed, viewed, threads, queued, awaitingChecks, localHead }: {
@@ -7539,7 +7544,7 @@ function Masthead({ d, busy, onEditTitle, onDraft, onClose, onLocalReview, onRev
               className="agx-btn tabular-nums align-middle inline-flex items-center gap-1 mr-1.5 px-1.5 py-0.5 rounded-md text-[12px]"
               style={{ color: copied ? "var(--success)" : "var(--text2)", border: `1px solid color-mix(in srgb, ${copied ? "var(--success) 50%" : "var(--border) 55%"}, transparent)`, background: "color-mix(in srgb, var(--border) 14%, transparent)" }}>
               #{d.number}
-              <span aria-hidden style={{ fontSize: 10, opacity: 0.7 }}>{copied ? "✓" : "⧉"}</span>
+              <span aria-hidden className="flex" style={{ opacity: 0.7 }}>{copied ? <DoneIcon size={ICON.xs} /> : <CopyIcon size={ICON.xs} />}</span>
             </button>
             {/* Beside the number, not down in the fields: this is the pull
                 request's OTHER identity — the one the rest of the company files
@@ -7577,7 +7582,7 @@ function Masthead({ d, busy, onEditTitle, onDraft, onClose, onLocalReview, onRev
             controls in a row came out three different heights — which is the
             only reason the group looked wrong. */}
         <Btn small onClick={() => openExternal(d.url)} title="Open on GitHub">GitHub ↗</Btn>
-        <Menu label="⋯" title="More actions">
+        <Menu label={<MoreIcon size={ICON.sm} />} title="More actions">
           {(close) => (
             <>
               {/* One family of glyphs, all thin outlines on the same optical
@@ -7591,9 +7596,9 @@ function Masthead({ d, busy, onEditTitle, onDraft, onClose, onLocalReview, onRev
                   does not offer them either. */}
               {d.state === "OPEN" && <>
                 <MenuItem onClick={() => { close(); onReviewers(); }}>&#9673; Request a review</MenuItem>
-                <MenuItem onClick={() => { close(); onDraft(); }}>◌ {d.isDraft ? "Mark ready for review" : "Convert to draft"}</MenuItem>
+                <MenuItem icon={<DraftIcon size={ICON.xs} />} onClick={() => { close(); onDraft(); }}>{d.isDraft ? "Mark ready for review" : "Convert to draft"}</MenuItem>
               </>}
-              <MenuItem onClick={() => { close(); onLabels(); }}>⌗ Edit labels</MenuItem>
+              <MenuItem icon={<TagIcon size={ICON.xs} />} onClick={() => { close(); onLabels(); }}>Edit labels</MenuItem>
               <MenuSep />
               <MenuItem onClick={() => { close(); onCopyLink(); }}>&#9033; Copy link</MenuItem>
               {onNudge && d.state === "OPEN" && (
@@ -7601,8 +7606,8 @@ function Masthead({ d, busy, onEditTitle, onDraft, onClose, onLocalReview, onRev
               )}
               {d.state !== "MERGED" && <>
                 <MenuSep />
-                <MenuItem onClick={() => { close(); onClose(); }} danger={d.state !== "CLOSED"}>
-                  {d.state === "CLOSED" ? "↺ Reopen pull request" : "✕ Close pull request"}
+                <MenuItem icon={d.state === "CLOSED" ? <UndoIcon size={ICON.xs} /> : <CrossIcon size={ICON.xs} />} onClick={() => { close(); onClose(); }} danger={d.state !== "CLOSED"}>
+                  {d.state === "CLOSED" ? "Reopen pull request" : "Close pull request"}
                 </MenuItem>
               </>}
             </>
@@ -7763,11 +7768,11 @@ function Masthead({ d, busy, onEditTitle, onDraft, onClose, onLocalReview, onRev
   );
 }
 
-function Reason({ tint, glyph, children, action }: { tint: string; glyph: string; children: React.ReactNode; action?: React.ReactNode }) {
+function Reason({ tint, glyph, children, action }: { tint: string; glyph: React.ReactNode; children: React.ReactNode; action?: React.ReactNode }) {
   return (
     <div className="flex items-center gap-2 px-3 py-1.5 text-[11.5px]"
       style={{ color: "var(--text)", borderBottom: "1px solid color-mix(in srgb, var(--text) 11%, transparent)" }}>
-      <span className="shrink-0 w-3.5 text-center" style={{ color: tint }}>{glyph}</span>
+      <span className="shrink-0 w-3.5 flex justify-center" style={{ color: tint }}>{glyph}</span>
       <span className="min-w-0">{children}</span>
       {action && <span className="ml-auto shrink-0 text-[10px]">{action}</span>}
     </div>
@@ -7952,7 +7957,7 @@ function PeekButton({ path, onPeek }: { path: string; onPeek: (p: string) => voi
       title={busy ? "Fetching this file from GitHub at the pull request's head commit…" : "Open the whole file in an editor"}
       className="agx-btn shrink-0 flex items-center gap-1.5 text-[10px] px-1.5 py-0.5 rounded"
       style={{ color: "var(--text2)", border: "1px solid color-mix(in srgb, var(--text) 18%, transparent)" }}>
-      {busy ? <><span className="agx-spin" style={{ width: 9, height: 9 }} />Opening…</> : "⧉ Open"}
+      {busy ? <><span className="agx-spin" style={{ width: 9, height: 9 }} />Opening…</> : <><FileIcon size={ICON.xs} />Open</>}
     </button>
   );
 }
@@ -8032,7 +8037,7 @@ function FileTree({ node, sel, onPick, onPeek, seen, drafts, pending, moved, dep
             )}
             {n > 0 && <span className="ml-auto text-[10px] shrink-0" style={{ color: "var(--warning)" }}>{n}</span>}
             {f.comments > 0 && <span className="ml-auto text-[10px] shrink-0" style={{ color: "var(--primary)" }}>{f.comments}</span>}
-            {seen(f.path) && <span className="ml-auto text-[10px] shrink-0" style={{ color: "var(--success)" }}>✓</span>}
+            {seen(f.path) && <span className="ml-auto shrink-0 flex" style={{ color: "var(--success)" }}><DoneIcon size={ICON.xs} /></span>}
           </button>
         );
       })}
@@ -8090,7 +8095,7 @@ function FilesFilterMenu({ facets, hiddenExts, onToggleExt, onClearExts, showVie
                 return (
                   <button key={f.ext} role="menuitemcheckbox" aria-checked={on} onClick={() => onToggleExt(f.ext)}
                     className="px-2 py-1.5 rounded-lg text-left flex items-center gap-2 hover:bg-white/5">
-                    <span aria-hidden className="shrink-0 grid place-items-center text-[10px]" style={box(on)}>{on ? "✓" : ""}</span>
+                    <span aria-hidden className="shrink-0 grid place-items-center text-[10px]" style={box(on)}>{on ? <DoneIcon size={ICON.xs} /> : null}</span>
                     <span className="flex-1 truncate" style={{ ...CODE_FONT_STYLE, color: on ? "var(--text)" : "var(--text3)" }}>{f.ext}</span>
                     <span className="tabular-nums shrink-0 text-[10px]" style={{ color: "var(--text3)" }}>{f.count}</span>
                   </button>
@@ -8100,7 +8105,7 @@ function FilesFilterMenu({ facets, hiddenExts, onToggleExt, onClearExts, showVie
             <button role="menuitemcheckbox" aria-checked={showViewed} onClick={onToggleViewed}
               className="mt-1 px-2 py-1.5 rounded-lg text-left flex items-center gap-2 hover:bg-white/5"
               style={{ borderTop: "1px solid color-mix(in srgb, var(--text) 16%, transparent)" }}>
-              <span aria-hidden className="shrink-0 grid place-items-center text-[10px]" style={box(showViewed)}>{showViewed ? "✓" : ""}</span>
+              <span aria-hidden className="shrink-0 grid place-items-center text-[10px]" style={box(showViewed)}>{showViewed ? <DoneIcon size={ICON.xs} /> : null}</span>
               <span className="flex-1" style={{ color: "var(--text2)" }}>Viewed files</span>
               <span className="tabular-nums shrink-0 text-[10px]" style={{ color: "var(--text3)" }}>{viewedCount}</span>
             </button>
@@ -8124,13 +8129,13 @@ function FilesFilterMenu({ facets, hiddenExts, onToggleExt, onClearExts, showVie
                   title={`Tick the ${shownCount} file${shownCount === 1 ? "" : "s"} this filter is showing${unseenCount === 0 ? " — they are all ticked already" : ""}`}
                   className="px-2 py-1 rounded-lg text-left text-[10.5px] hover:bg-white/5 disabled:opacity-40"
                   style={{ color: "var(--text2)" }}>
-                  ✓ Mark {shownCount} shown as viewed
+                  <IconLabel icon={<DoneIcon size={ICON.xs} />}>Mark {shownCount} shown as viewed</IconLabel>
                 </button>
                 <button onClick={() => { onSeenAll(false); setOpen(false); }} disabled={viewedCount === 0}
                   title="Un-tick every file this filter is showing"
                   className="px-2 py-1 rounded-lg text-left text-[10.5px] hover:bg-white/5 disabled:opacity-40"
                   style={{ color: "var(--text3)" }}>
-                  ↺ Un-tick them
+                  <UndoIcon size={ICON.xs} />Un-tick them
                 </button>
               </>
             )}
@@ -8169,7 +8174,7 @@ function FindBar({ value, onChange, inputRef, listRef, hits, groups, at, onGo, o
     <div className="flex flex-col gap-1.5">
       <div className="flex items-center gap-2 px-2 py-1.5 rounded-md"
         style={{ background: "var(--bg)", border: edge }}>
-        <span className="shrink-0" style={{ color: "var(--primary)" }}>⌕</span>
+        <span className="shrink-0 flex" style={{ color: "var(--primary)" }}><SearchIcon size={ICON.xs} /></span>
         <input
           ref={inputRef} value={value} onChange={(e) => onChange(e.target.value)}
           placeholder={`Search the code of ${fileCount} file${fileCount === 1 ? "" : "s"}…`}
@@ -9124,7 +9129,7 @@ function FilesTab({ d, root, byPath, loaded, diffErr, seenFiles, onSeen, onSeenM
       <div className="flex items-center gap-2 flex-wrap">
         <span className="flex items-center gap-1.5 px-2 py-1 rounded shrink-0"
           style={{ border: "1px solid color-mix(in srgb, var(--text) 16%, transparent)" }}>
-          <span style={{ color: "var(--text3)" }}>⌕</span>
+          <span className="flex" style={{ color: "var(--text3)" }}><SearchIcon size={ICON.xs} /></span>
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filter files…"
             className="bg-transparent outline-none text-[10.5px] w-28" style={{ color: "var(--text)" }} />
           {q && <button onClick={() => setQ("")} title="Clear" style={{ color: "var(--text3)" }}>×</button>}
@@ -9148,7 +9153,7 @@ function FilesTab({ d, root, byPath, loaded, diffErr, seenFiles, onSeen, onSeenM
             if (find !== null) { setFind(null); return; }
             setFind("");
             requestAnimationFrame(() => findRef.current?.focus());
-          }}>⌕ Search code</Btn>
+          }}><SearchIcon size={ICON.xs} />Search code</Btn>
         {/*
           * "Since your review", where the filters are.
           *
@@ -9587,7 +9592,7 @@ function FilesTab({ d, root, byPath, loaded, diffErr, seenFiles, onSeen, onSeenM
                                       <button onClick={() => { if (repoName && headSha) void navigator.clipboard?.writeText(`https://github.com/${repoName}/blob/${headSha}/${f.path}#L${composing.line}`); }}
                                         disabled={!repoName || !headSha}
                                         title="Copy a link to this line on GitHub"
-                                        className="agx-btn px-1.5 py-0.5 rounded text-[10px]" style={{ color: "var(--text2)", border: "1px solid color-mix(in srgb, var(--text) 16%, transparent)" }}>🔗</button>
+                                        className="agx-btn px-1.5 py-0.5 rounded text-[10px]" style={{ color: "var(--text2)", border: "1px solid color-mix(in srgb, var(--text) 16%, transparent)" }}><LinkIcon size={ICON.xs} /></button>
                                     </span>
                                   </div>
                                   <div className="p-2.5 flex flex-col gap-2">
@@ -9959,7 +9964,7 @@ function Card({ who, chip, when, tone, url, edited, assoc, nodeId, reactions, on
             * refuses what it refuses and the refusal is shown as it comes.
             */}
           {(url || body || onHide) && (
-            <Menu label="⋯" title="More actions">
+            <Menu label={<MoreIcon size={ICON.sm} />} title="More actions">
               {(close) => (
                 <>
                   {url && (
@@ -9978,7 +9983,7 @@ function Card({ who, chip, when, tone, url, edited, assoc, nodeId, reactions, on
                   {mine && onEdit && <><MenuSep /><MenuItem onClick={() => { close(); onEdit(); }}>&#9998; Edit</MenuItem></>}
                   {onHide && (
                     <MenuItem onClick={() => { close(); onHide(!minimized); }}>
-                      {minimized ? "◈ Unhide" : "◇ Hide"}
+                      <EyeIcon size={ICON.xs} />{minimized ? "Unhide" : "Hide"}
                     </MenuItem>
                   )}
                 </>
@@ -10296,12 +10301,12 @@ function groupCommitsByDay(commits: PrCommit[]): [string, PrCommit[]][] {
   return out;
 }
 
-const EVENT_GLYPH: Record<string, string> = {
-  "force-push": "↻", renamed: "✎", labeled: "🏷", unlabeled: "🏷",
-  assigned: "👤", unassigned: "👤", "review-requested": "👁", "review-request-removed": "👁",
-  "ready-for-review": "◉", "convert-to-draft": "◌", merged: "⏣", closed: "✕", reopened: "↺",
-  "cross-referenced": "🔗", milestoned: "◈", demilestoned: "◈", "head-ref-deleted": "⌫",
-  "auto-merge-enabled": "⏱", "auto-merge-disabled": "⏱",
+const EVENT_GLYPH: Record<string, React.ReactNode> = {
+  "force-push": <RefreshIcon size={ICON.xs} />, renamed: <EditIcon size={ICON.xs} />, labeled: <TagIcon size={ICON.xs} />, unlabeled: <TagIcon size={ICON.xs} />,
+  assigned: <UserIcon size={ICON.xs} />, unassigned: <UserIcon size={ICON.xs} />, "review-requested": <EyeIcon size={ICON.xs} />, "review-request-removed": <EyeIcon size={ICON.xs} />,
+  "ready-for-review": <PrIcon size={ICON.xs} />, "convert-to-draft": <DraftIcon size={ICON.xs} />, merged: <MergeIcon size={ICON.xs} />, closed: <CrossIcon size={ICON.xs} />, reopened: <UndoIcon size={ICON.xs} />,
+  "cross-referenced": <LinkIcon size={ICON.xs} />, milestoned: <FlagIcon size={ICON.xs} />, demilestoned: <FlagIcon size={ICON.xs} />, "head-ref-deleted": <BranchIcon size={ICON.xs} />,
+  "auto-merge-enabled": <ClockIcon size={ICON.xs} />, "auto-merge-disabled": <ClockIcon size={ICON.xs} />,
 };
 const EVENT_TINT: Record<string, string> = {
   "force-push": "var(--warning)", merged: "var(--primary)", closed: "var(--error)",
@@ -10613,7 +10618,7 @@ function Conversation({ d, lanes, raw, onRaw, onResolve, onReply, onComment, onR
       at: r.submittedAt, ms: ms(r.submittedAt), key: `r${i}`, lane: "human", author: r.author,
       hot: hotOf([`r${r.author}-${r.submittedAt}`]) + mine.reduce((n, t) => n + threadHot(t), 0),
       node: <span style={{ color: tone === "chg" ? "var(--error)" : tone === "appr" ? "var(--success)" : "var(--text3)" }}>
-        {r.state === "CHANGES_REQUESTED" ? "✕" : r.state === "APPROVED" ? "✓" : "💬"}</span>,
+        {r.state === "CHANGES_REQUESTED" ? <CrossIcon size={ICON.xs} /> : r.state === "APPROVED" ? <DoneIcon size={ICON.xs} /> : <CommentIcon size={ICON.xs} />}</span>,
       body: (
         <>
           <span id={anchorId(`r${r.author}-${r.submittedAt}`)} />
@@ -10638,7 +10643,7 @@ function Conversation({ d, lanes, raw, onRaw, onResolve, onReply, onComment, onR
   for (const c of lanes.humanComments) {
     entries.push({
       at: c.createdAt, ms: ms(c.createdAt), key: `c${c.id}`, lane: "human", author: c.author, hot: hotOf([`c${c.id}`]),
-      node: <span style={{ color: "var(--text3)" }}>💬</span>,
+      node: <span style={{ color: "var(--text3)" }}><CommentIcon size={ICON.xs} /></span>,
       body: <><span id={anchorId(`c${c.id}`)} />
         <Card who={c.author} when={ago(c.createdAt)} url={c.url} fresh={newSet.has(`c${c.id}`)}
           edited={c.editedAt} assoc={c.association} nodeId={c.nodeId} reactions={c.reactions} onReact={onReact}
@@ -10668,14 +10673,14 @@ function Conversation({ d, lanes, raw, onRaw, onResolve, onReply, onComment, onR
       // exactly where it always did; one that has just been answered arrives
       // where the answer belongs.
       at: t.comments[0]?.createdAt ?? "", ms: threadLastAt(t), key: `t${t.id}`, lane, author: t.comments[0]?.author, hot: threadHot(t),
-      node: <span style={{ color: t.isResolved ? "var(--success)" : "var(--warning)" }}>{t.isResolved ? "✓" : "○"}</span>,
+      node: <span style={{ color: t.isResolved ? "var(--success)" : "var(--warning)" }}>{t.isResolved ? <DoneIcon size={ICON.xs} /> : <CircleIcon size={ICON.xs} />}</span>,
       body: <Thread t={t} onResolve={onResolve} onReply={onReply} onApply={onApply} busy={busy}
         newSet={newSet} cameFrom={cameFrom.get(t.id)} />,
     });
   }
   for (const [i, r] of lanes.botReviews.entries()) {
     entries.push({
-      at: r.submittedAt, ms: ms(r.submittedAt), key: `br${i}`, lane: "bot", node: <span style={{ color: "var(--info)" }}>⌬</span>,
+      at: r.submittedAt, ms: ms(r.submittedAt), key: `br${i}`, lane: "bot", node: <span style={{ color: "var(--info)" }}><AgentIcon size={ICON.xs} /></span>,
       body: <Card who={r.author} when={ago(r.submittedAt)} url={r.url} tone="bot"
         nodeId={r.nodeId} reactions={r.reactions} onReact={onReact}
         chip={<Chip text="automation" tint="var(--info)" />}><Md body={r.body} /></Card>,
@@ -10684,7 +10689,7 @@ function Conversation({ d, lanes, raw, onRaw, onResolve, onReply, onComment, onR
   for (const c of lanes.bots) {
     entries.push({
       at: c.createdAt, ms: ms(c.createdAt), key: `b${c.id}`, lane: "bot", hot: hotOf([`c${c.id}`]),
-      node: <span style={{ color: "var(--info)" }}>⌬</span>,
+      node: <span style={{ color: "var(--info)" }}><AgentIcon size={ICON.xs} /></span>,
       body: (
         <Card who={c.author} when={ago(c.createdAt)} url={c.url} tone="bot" chip={<Chip text="automation" tint="var(--info)" />}
           nodeId={c.nodeId} reactions={c.reactions} onReact={onReact}>
@@ -10779,7 +10784,7 @@ function Conversation({ d, lanes, raw, onRaw, onResolve, onReply, onComment, onR
      they would be making up. */
   const opened = (
     <div key="opened" className="agx-tiny">
-      <span className="agx-node">＋</span>
+      <span className="agx-node"><PlusIcon size={ICON.xs} /></span>
       <span><b>{d.author}</b> opened this pull request from <code style={{ ...CODE_FONT_STYLE, color: "var(--primary)" }}>{d.headRefName}</code> into <code style={{ ...CODE_FONT_STYLE, color: "var(--text2)" }}>{d.baseRefName}</code></span>
     </div>
   );
@@ -10788,7 +10793,7 @@ function Conversation({ d, lanes, raw, onRaw, onResolve, onReply, onComment, onR
      review — a judgement the raw event cannot make. */
   const forced = d.forcePushedSinceReview ? (
     <div key="forced" className="agx-tiny">
-      <span className="agx-node" style={{ color: "var(--warning)" }}>↻</span>
+      <span className="agx-node" style={{ color: "var(--warning)" }}><RefreshIcon size={ICON.xs} /></span>
       <span style={{ color: "var(--warning)" }}>The last review was for code that is no longer here — it was force-pushed over</span>
     </div>
   ) : null;
@@ -11281,8 +11286,8 @@ const CHECK_TINT: Record<PrCheck["state"], string> = {
   success: "var(--success)", failure: "var(--error)", pending: "var(--warning)",
   skipped: "var(--text3)", neutral: "var(--text3)",
 };
-const CHECK_GLYPH: Record<PrCheck["state"], string> = {
-  success: "✓", failure: "✕", pending: "•", skipped: "⊘", neutral: "⊘",
+const CHECK_GLYPH: Record<PrCheck["state"], React.ReactNode> = {
+  success: <DoneIcon size={ICON.xs} />, failure: <CrossIcon size={ICON.xs} />, pending: <CircleIcon size={ICON.xs} />, skipped: <BlockedIcon size={ICON.xs} />, neutral: <BlockedIcon size={ICON.xs} />,
 };
 
 /** "CI / Tests / django-tests" — the workflow is the prefix, and grouping by
@@ -11414,7 +11419,7 @@ function Checks({ d, root, jobs, onRerun, onRerunJobs, onAsk, busy, busyWhat }: 
       <div className="flex items-center gap-3 p-3 rounded-lg" style={{ border: "1px solid color-mix(in srgb, var(--text) 16%, transparent)" }}>
         <span className="shrink-0 rounded-full flex items-center justify-center text-[13px]"
           style={{ width: 26, height: 26, background: c.failure > 0 ? "var(--error)" : c.pending > 0 ? "var(--warning)" : "var(--success)", color: "var(--bg)" }}>
-          {c.failure > 0 ? "✕" : c.pending > 0 ? "•" : "✓"}
+          {c.failure > 0 ? <CrossIcon size={ICON.sm} /> : c.pending > 0 ? <CircleIcon size={ICON.sm} /> : <DoneIcon size={ICON.sm} />}
         </span>
         <span className="min-w-0">
           <span className="block text-[13px] font-semibold leading-tight" style={{ color: "var(--text)" }}>
@@ -11447,8 +11452,8 @@ function Checks({ d, root, jobs, onRerun, onRerunJobs, onAsk, busy, busyWhat }: 
               style={{ background: "color-mix(in srgb, var(--border) 14%, transparent)" }}>
               <span style={{ color: "var(--text3)" }}>{isOpen ? "▾" : "▸"}</span>
               <b style={{ color: "var(--text)", fontWeight: 500 }}>{name}</b>
-              {bad > 0 && <span style={{ color: "var(--error)" }}>{bad} ✕</span>}
-              {good > 0 && <span style={{ color: "var(--success)" }}>{good} ✓</span>}
+              {bad > 0 && <span className="inline-flex items-center gap-0.5" style={{ color: "var(--error)" }}>{bad}<CrossIcon size={ICON.xs} /></span>}
+              {good > 0 && <span className="inline-flex items-center gap-0.5" style={{ color: "var(--success)" }}>{good}<DoneIcon size={ICON.xs} /></span>}
               <span className="ml-auto tabular-nums" style={{ color: "var(--text3)" }}>{list.length}</span>
             </button>
             {isOpen && list.map((k, i) => {
@@ -11461,7 +11466,7 @@ function Checks({ d, root, jobs, onRerun, onRerunJobs, onAsk, busy, busyWhat }: 
                       it is the one row that opens into somewhere to go next. */}
                   <button onClick={() => bad && setOpenCheck(expanded ? null : id)} disabled={!bad}
                     className="w-full text-left flex items-center gap-2 px-2.5 py-1" style={{ cursor: bad ? "pointer" : "default" }}>
-                    <span className="shrink-0 w-3 text-center" style={{ color: CHECK_TINT[k.state] }}>{CHECK_GLYPH[k.state]}</span>
+                    <span className="shrink-0 w-3 flex justify-center" style={{ color: CHECK_TINT[k.state] }}>{CHECK_GLYPH[k.state]}</span>
                     <span className="truncate" style={{ color: k.state === "skipped" || k.state === "neutral" ? "var(--text3)" : "var(--text2)" }}>
                       {k.name.startsWith(name) ? k.name.slice(name.length).replace(/^\s*\/\s*/, "") || k.name : k.name}
                     </span>
@@ -11470,12 +11475,12 @@ function Checks({ d, root, jobs, onRerun, onRerunJobs, onAsk, busy, busyWhat }: 
                   </button>
                   {expanded && (
                     <div className="flex items-center gap-1.5 flex-wrap px-2.5 pb-2 pt-0.5">
-                      {onAsk && <Btn onClick={() => onAsk(k)} primary small title="Check the pull request out locally and hand the failure to Claude">✦ Ask Claude why</Btn>}
+                      {onAsk && <Btn onClick={() => onAsk(k)} primary small title="Check the pull request out locally and hand the failure to Claude"><SparkleIcon size={ICON.xs} />Ask Claude why</Btn>}
                       {k.url && (
                         <a href={externalUrl(k.url)} target="_blank" rel="noreferrer noopener" className="agx-btn text-[10px] px-2 py-0.5 rounded"
                           style={{ color: "var(--text2)", border: "1px solid color-mix(in srgb, var(--text) 24%, transparent)" }}>Open run ↗</a>
                       )}
-                      <Btn onClick={onRerun} disabled={busy} small pending={busyWhat === "Re-run checks"} title="Re-run every failing check on this pull request">↻ Re-run failed</Btn>
+                      <Btn onClick={onRerun} disabled={busy} small pending={busyWhat === "Re-run checks"} title="Re-run every failing check on this pull request"><RefreshIcon size={ICON.xs} />Re-run failed</Btn>
                       {/* GitHub offers all three, and "the whole run failed
                           again for one flaky job" is exactly when you want the
                           single-job one. */}
@@ -11484,8 +11489,8 @@ function Checks({ d, root, jobs, onRerun, onRerunJobs, onAsk, busy, busyWhat }: 
                         if (!job || !onRerunJobs) return null;
                         return (
                           <>
-                            <Btn onClick={() => onRerunJobs("job", job.id)} disabled={busy} small pending={busyWhat === "Re-run"} title={`Re-run only ${job.name}`}>↻ This job</Btn>
-                            <Btn onClick={() => onRerunJobs("all", job.runId)} disabled={busy} small pending={busyWhat === "Re-run"} title="Re-run every job in this run, passing ones included">↻ All jobs</Btn>
+                            <Btn onClick={() => onRerunJobs("job", job.id)} disabled={busy} small pending={busyWhat === "Re-run"} title={`Re-run only ${job.name}`}><RefreshIcon size={ICON.xs} />This job</Btn>
+                            <Btn onClick={() => onRerunJobs("all", job.runId)} disabled={busy} small pending={busyWhat === "Re-run"} title="Re-run every job in this run, passing ones included"><RefreshIcon size={ICON.xs} />All jobs</Btn>
                           </>
                         );
                       })()}
@@ -11689,16 +11694,16 @@ function ReviewTab({ d, root, held, drafts, seen, busy, busyWhat, draft, onDraft
           <div className="flex items-center gap-2 flex-wrap">
             <div className="flex rounded-lg overflow-hidden" style={{ border: "1px solid color-mix(in srgb, var(--text) 18%, transparent)" }}>
               {([
-                ["approve", "✓ Approve", "Submit and mark the pull request approved.", "var(--success)"],
-                ["request_changes", "✕ Request changes", "Submit and block the merge until they land.", "var(--error)"],
-                ["comment", "💬 Comment", "Submit without a verdict.", "var(--text)"],
+                ["approve", <><DoneIcon size={ICON.xs} />Approve</>, "Submit and mark the pull request approved.", "var(--success)"],
+                ["request_changes", <><CrossIcon size={ICON.xs} />Request changes</>, "Submit and block the merge until they land.", "var(--error)"],
+                ["comment", <><CommentIcon size={ICON.xs} />Comment</>, "Submit without a verdict.", "var(--text)"],
               ] as const).map(([id, label, hint, tint], n) => {
                 const on = verb === id;
                 const off = id !== "comment" && d.viewerDidAuthor;
                 return (
                   <button key={id} onClick={() => setVerb(id)} disabled={off} aria-pressed={on}
                     title={off ? "GitHub does not let you approve or block your own pull request" : hint}
-                    className="agx-btn text-[11px] px-3 py-1.5 whitespace-nowrap"
+                    className="agx-btn text-[11px] px-3 py-1.5 whitespace-nowrap inline-flex items-center gap-1.5"
                     style={{
                       color: on ? tint : "var(--text2)",
                       fontWeight: on ? 650 : 400,

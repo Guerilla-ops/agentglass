@@ -19,6 +19,8 @@ import { ViewHeader } from "./workspace/ViewHeader.tsx";
 import { PeekFile, type Peek } from "./PeekFile.tsx";
 import { subscribeFilesReveal, filesReveal } from "../lib/filesReveal.ts";
 import { FOLDER, FOLDER_OPEN, guides, iconFor, isNoise } from "../lib/fileIcons.ts";
+import { SearchIcon } from "../lib/glyphIcons.tsx";
+import { ICON } from "../lib/iconSize.ts";
 
 /** How a row is drawn depends only on this, so the tree and the search results
  *  cannot drift apart. */
@@ -111,7 +113,7 @@ function FilesBody({ root, branch, active }: { root: string; branch: string; act
       <div className="flex items-center gap-2 px-5 py-2 shrink-0" style={{ borderBottom: edge(12) }}>
         <span className="flex items-center gap-1.5 flex-1 min-w-0 px-2 py-1 rounded-md"
           style={{ background: "var(--bg)", border: edge(20) }}>
-          <span style={{ color: "var(--text3)" }}>⌕</span>
+          <span className="flex" style={{ color: "var(--text3)" }}><SearchIcon size={ICON.xs} /></span>
           <input value={q} onChange={(e) => setQ(e.target.value)} spellCheck={false} autoComplete="off"
             placeholder={mode === "names" ? "Find a file by name…" : "Search the code of this checkout…"}
             className="flex-1 min-w-0 bg-transparent outline-none text-[11px]" style={{ color: "var(--text)" }} />

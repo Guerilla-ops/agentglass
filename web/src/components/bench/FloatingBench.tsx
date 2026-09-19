@@ -28,7 +28,7 @@
  *   proportion of the window, never as pixels — this machine has two monitors
  *   at different scales.
  */
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentType } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { Portal } from "../Portal.tsx";
 import { LAYER } from "../../lib/layers.ts";
@@ -49,6 +49,9 @@ import { BoardSlot } from "../workspace/BoardSlot.tsx";
 import { RAIL_W } from "../workspace/ViewRail.tsx";
 import { TOP_BAR_H } from "../TopBar.tsx";
 import type { GitRepoRef } from "../../../../shared/types.ts";
+import { ICON } from "../../lib/iconSize.ts";
+import { AgentIcon, ExpandIcon, FileIcon, NoteIcon } from "../../lib/glyphIcons.tsx";
+import { BrowserIcon, IssuesIcon, PrIcon, TerminalIcon } from "../workspace/icons.tsx";
 
 const edge = (pct: number) => `1px solid color-mix(in srgb, var(--text) ${pct}%, transparent)`;
 
@@ -95,15 +98,19 @@ const EDGES: { dir: string; cursor: string; box: React.CSSProperties }[] = [
   { dir: "se", cursor: "nwse-resize", box: { right: 0, bottom: 0, width: 14, height: 14 } },
 ];
 
-/** What a kind looks like in a tab, once, so the tab bar and the menu agree. */
-const GLYPH: Record<BenchTab["kind"], { glyph: string; tint: string }> = {
-  term: { glyph: ">_", tint: "var(--info)" },
-  file: { glyph: "◆", tint: "var(--primary)" },
-  note: { glyph: "▤", tint: "var(--success)" },
-  web: { glyph: "◍", tint: "var(--warning)" },
-  agent: { glyph: "✳", tint: "var(--error)" },
-  pr: { glyph: "⇄", tint: "var(--primary)" },
-  tasks: { glyph: "☑", tint: "var(--success)" },
+/** What a kind looks like in a tab, once, so the tab bar and the menu agree.
+ *  The rail's own icons where the kind is a view (a terminal, the browser, the
+ *  boards), line icons for the rest, all in the text's colour: these were
+ *  characters in five tints — `>_`, `◍`, `✳`, `☑` — and the emoji among them
+ *  drew in colour at whatever size the system font gave them. */
+const GLYPH: Record<BenchTab["kind"], ComponentType<{ size?: number }>> = {
+  term: TerminalIcon,
+  file: FileIcon,
+  note: NoteIcon,
+  web: BrowserIcon,
+  agent: AgentIcon,
+  pr: PrIcon,
+  tasks: IssuesIcon,
 };
 
 /**
@@ -546,7 +553,7 @@ export function FloatingBench() {
                 <div className="flex items-center gap-1 min-w-0 overflow-x-auto agx-scroll">
                   {tabs.map((t) => {
                     const on = t.id === active?.id;
-                    const g = GLYPH[t.kind];
+                    const Glyph = GLYPH[t.kind];
                     return (
                       <span key={t.id} className="shrink-0 flex items-center rounded-md overflow-hidden"
                         style={on
@@ -557,7 +564,7 @@ export function FloatingBench() {
                           className="agx-bench-hit flex items-center gap-2 text-[11.5px] px-2.5 max-w-[200px]"
                           style={{ height: 28, color: on ? "var(--text)" : "var(--text3)" }}
                           title={tabTitle(t, root, cold(t, liveSlots))}>
-                          <span className="shrink-0 text-[13px] leading-none" style={{ color: g.tint }}>{g.glyph}</span>
+                          <span className="shrink-0 flex" style={{ color: on ? "var(--text2)" : "var(--text3)" }}><Glyph size={ICON.sm} /></span>
                           <span className="truncate" style={cold(t, liveSlots) ? { opacity: 0.6 } : undefined}>{t.title}</span>
                           {t.readonly && <span className="shrink-0 text-[9px]" style={{ color: "var(--warning)" }}>ro</span>}
                         </button>
@@ -598,7 +605,7 @@ export function FloatingBench() {
                 )}
                 <button onClick={() => setBenchGrown(!st.grown)} title={st.grown ? "Back to size" : "Fill the window"}
                   className="agx-bench-hit shrink-0 rounded-md text-[14px] leading-none flex items-center justify-center"
-                  style={{ width: 28, height: 28, color: "var(--text2)" }}>{st.grown ? "⤡" : "⤢"}</button>
+                  style={{ width: 28, height: 28, color: "var(--text2)" }}><ExpandIcon size={ICON.sm} shrink={st.grown} /></button>
                 <button onClick={closeBench} title={`Minimise to the button (${chord})`}
                   className="agx-bench-hit shrink-0 rounded-md text-[15px] leading-none flex items-center justify-center"
                   style={{ width: 28, height: 28, color: "var(--text2)" }}>—</button>
@@ -865,11 +872,11 @@ function BenchMenu({ root, onClose, onTerm, onNote, onWeb, onAgent, onBoard }: {
   );
 }
 
-function MenuRow({ glyph, label, onClick }: { glyph: { glyph: string; tint: string }; label: string; onClick: () => void }) {
+function MenuRow({ glyph: Glyph, label, onClick }: { glyph: ComponentType<{ size?: number }>; label: string; onClick: () => void }) {
   return (
     <button onClick={onClick} className="agx-bench-hit w-full text-left px-3 flex items-center gap-2.5 text-[12px]"
       style={{ minHeight: 32, color: "var(--text)" }}>
-      <span style={{ color: glyph.tint }}>{glyph.glyph}</span>{label}
+      <span className="shrink-0 flex" style={{ color: "var(--text3)" }}><Glyph size={ICON.sm} /></span>{label}
     </button>
   );
 }

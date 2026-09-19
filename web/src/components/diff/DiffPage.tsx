@@ -42,6 +42,7 @@ import { subscribeWorktreeJump, worktreeJump } from "../../lib/worktreeJump.ts";
 import { hunkChanges, hunkWithoutWhitespace } from "../../lib/diffNoWhitespace.ts";
 import { useDiffHighlight, HiliteCtx } from "../../lib/diffHighlight.ts";
 import { SplitDiff, UnifiedDiff, SCROLLBAR_CSS, SPLIT_SEL_CSS } from "./DiffLines.tsx";
+import { FileIcon, IconLabel } from "../../lib/glyphIcons.tsx";
 
 /* Storage keys are v3 on purpose: the two before them stored a group-by that no
    longer exists and ticks keyed by an id that no longer exists either. */
@@ -628,7 +629,7 @@ function Body({ row, state, split, wrap, noWs }: {
         <button onClick={openFile} title="Open it here, at its first change"
           className="ml-auto shrink-0 px-2 py-1 rounded-md text-[10.5px] flex items-center gap-1"
           style={{ color: "var(--text3)", border: "1px solid color-mix(in srgb, var(--border) 30%, transparent)" }}>
-          ⧉ Open
+          <IconLabel icon={<FileIcon size={ICON.xs} />}>Open</IconLabel>
         </button>
         <button onClick={copy} title="Copy the full path"
           className="shrink-0 px-2 py-1 rounded-md text-[10.5px]"

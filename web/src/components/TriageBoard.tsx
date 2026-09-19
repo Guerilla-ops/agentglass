@@ -12,10 +12,10 @@
 // Nothing is fetched for this. It reads the two lists the panel already loads
 // for the pill counts — see stakeFrom in prLanes.ts — so the board costs what
 // the pill row cost, and the numbers cannot disagree with their source.
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { ICON, MIN_BOX } from "../lib/iconSize.ts";
 import { InfoIcon } from "./settingsNavIcons.tsx";
-import { CopyIcon, DoneIcon, StarIcon } from "../lib/glyphIcons.tsx";
+import { CircleIcon, CommentIcon, CopyIcon, CrossIcon, DoneIcon, DraftIcon, FlagIcon, RefreshIcon, SearchIcon, StarIcon, WarningIcon } from "../lib/glyphIcons.tsx";
 import { ALWAYS_OPEN, foldable, foldedLanes, setFoldedLanes, walkable } from "../lib/boardPrefs.ts";
 import type { PrSummary } from "../../../shared/types.ts";
 import { LANES, LANE_CAP, board as fileAll, suggestedAction, ACTION_LABEL, type Filed, type LaneId } from "../lib/prLanes.ts";
@@ -617,7 +617,7 @@ export function TriageBoard({
                 title="Find in these cards — number, title, author, branch, labels, assignees, reviewers"
                 className="agx-btn inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[10.5px]"
                 style={{ color: "var(--text3)", border: "1px solid color-mix(in srgb, var(--text) 16%, transparent)" }}>
-                <span aria-hidden>⌕</span>Find in these<span style={{ color: "var(--text4)" }}>⌃F</span>
+                <SearchIcon size={ICON.xs} />Find in these<span style={{ color: "var(--text4)" }}>⌃F</span>
               </button>
             )}
             {(find || onlyUnread || onlyLane !== null) && (
@@ -975,12 +975,12 @@ function stalledFor(updatedAt: string): boolean {
 }
 
 function cardVerdict(p: PrSummary): {
-  tint: string; glyph: string; line: string; aria: string; url?: string; skeleton?: boolean;
+  tint: string; glyph: ReactNode; line: string; aria: string; url?: string; skeleton?: boolean;
 } | null {
   /* A draft is waiting on nobody, and said so nowhere — it was a label lost
      among the others. */
   if (p.isDraft) {
-    return { tint: "var(--text3)", glyph: "\u25CB", line: "Draft \u2014 nobody has been asked",
+    return { tint: "var(--text3)", glyph: <DraftIcon size={ICON.xs} />, line: "Draft \u2014 nobody has been asked",
       aria: "Draft, nobody has been asked to review" };
   }
   /*
@@ -1033,7 +1033,7 @@ function cardVerdict(p: PrSummary): {
    * asked. On a release branch that is the whole story.
    */
   if (!raw) {
-    return { tint: "var(--text4)", glyph: "○", line: "No review asked for yet",
+    return { tint: "var(--text4)", glyph: <CircleIcon size={ICON.xs} />, line: "No review asked for yet",
       aria: "Nobody has been asked to review this" };
   }
   const v = typeof raw === "string"
@@ -1045,7 +1045,7 @@ function cardVerdict(p: PrSummary): {
   /* A shape this build does not know is "no verdict", not "no header": a
      malformed field must not change what the card looks like. */
   if (!v.kind) {
-    return { tint: "var(--text4)", glyph: "○", line: "No review asked for yet",
+    return { tint: "var(--text4)", glyph: <CircleIcon size={ICON.xs} />, line: "No review asked for yet",
       aria: "Nobody has been asked to review this" };
   }
 
@@ -1057,14 +1057,14 @@ function cardVerdict(p: PrSummary): {
        state — the row says green and the reviewer approved something else. */
     if (v.stale) {
       return {
-        tint: "var(--warning)", glyph: "\u21BB", url: v.url,
+        tint: "var(--warning)", glyph: <RefreshIcon size={ICON.xs} />, url: v.url,
         line: v.mine ? "You approved, but it has moved since" : names ? `Approved by ${names}, but it has moved since` : "Approved, but it has moved since",
         aria: names ? `Approved by ${names}, but commits have landed since that review`
           : "Approved, but commits have landed since that review",
       };
     }
     return {
-      tint: "var(--success)", glyph: "\u2713", url: v.url,
+      tint: "var(--success)", glyph: <DoneIcon size={ICON.xs} />, url: v.url,
       line: (v.mine ? "You approved" : names ? `Approved by ${names}` : "Approved") + also,
       aria: names ? `Approved by ${names}` : "Approved",
     };
@@ -1082,7 +1082,7 @@ function cardVerdict(p: PrSummary): {
       : v.mine ? "You asked for changes"
         : (names ? `Changes requested by ${names}` : "Changes requested") + (v.askedAgain ? " \u2014 asked to look again" : "");
     return {
-      tint: "var(--error)", glyph: "\u2715", url: v.url,
+      tint: "var(--error)", glyph: <CrossIcon size={ICON.xs} />, url: v.url,
       line: line + also,
       aria: (names ? `Changes requested by ${names}` : "Changes requested") + (v.askedAgain ? ", and asked to look again since" : ""),
     };
@@ -1090,13 +1090,13 @@ function cardVerdict(p: PrSummary): {
   if (v.kind === "awaiting") {
     /* Your own column is the one place this card is about YOU. */
     return {
-      tint: "var(--warning)", glyph: "\u25EF",
+      tint: "var(--warning)", glyph: <CircleIcon size={ICON.xs} />,
       line: v.mine ? "Waiting on you" : names ? `Waiting on ${names}` : "Awaiting review",
       aria: v.mine ? "Waiting on you to review" : names ? `Waiting on ${names} to review` : "Awaiting review",
     };
   }
   return {
-    tint: "var(--text3)", glyph: "\uD83D\uDCAC", url: v.url,
+    tint: "var(--text3)", glyph: <CommentIcon size={ICON.xs} />, url: v.url,
     line: names ? `${names} commented, no verdict` : "Commented, no verdict",
     aria: names ? `${names} commented without giving a verdict` : "Commented without a verdict",
   };
@@ -1225,7 +1225,7 @@ function CardView({ p, hasTaskProvider, pinned, cursor, onOpen, onPin, onAct, bu
           }}>
           {/* The glyph as well as the colour: the board's own rule for check
               state, and the header is the first thing read. */}
-          <span aria-hidden style={{ color: verdict.tint }}>{verdict.glyph}</span>
+          <span aria-hidden className="flex" style={{ color: verdict.tint }}>{verdict.glyph}</span>
           {verdict.skeleton ? (
             /* A bar the width a verdict tends to be, so the header keeps its
                height and the card does not jump when the real one lands. */
@@ -1399,7 +1399,7 @@ function CardView({ p, hasTaskProvider, pinned, cursor, onOpen, onPin, onAct, bu
               border: "1px solid color-mix(in srgb, var(--error) 35%, transparent)",
             }}
             title="Conflicts with the base branch — nothing else can move until they are resolved">
-            <span aria-hidden>⚠</span>conflicts
+            <WarningIcon size={ICON.xs} />conflicts
           </span>
         )}
         <span style={{ color: "var(--text4)" }}>→</span>
@@ -1431,7 +1431,7 @@ function CardView({ p, hasTaskProvider, pinned, cursor, onOpen, onPin, onAct, bu
           <span className="shrink-0 tabular-nums px-1 rounded"
             title={`${behind} commit${behind === 1 ? "" : "s"} on ${p.baseRefName} that this branch does not have — its checks ran against an older base`}
             style={{ color: "var(--warning)", background: "color-mix(in srgb, var(--warning) 14%, transparent)" }}>
-            ↻ {behind}
+            <RefreshIcon size={ICON.xs} />{behind}
           </span>
         ) : asking ? (
           /* The space, held, while the answer is out. Twelve chips arriving one
@@ -1535,7 +1535,7 @@ function CardView({ p, hasTaskProvider, pinned, cursor, onOpen, onPin, onAct, bu
         */}
       {!shown && p.checksLoaded !== false && (
         <div className="flex items-center gap-1.5 mt-1.5 text-[10px]" style={{ color: "var(--text4)" }}>
-          <span aria-hidden style={{ opacity: 0.5 }}>⚐</span>
+          <span aria-hidden className="flex" style={{ opacity: 0.5 }}><FlagIcon size={ICON.xs} /></span>
           <span>{task ? "card not found on your boards" : "no linked card"}</span>
         </div>
       )}
@@ -1731,7 +1731,7 @@ function PinnedStrip({ list, onOpen }: { list?: { number: number; title: string 
     <div className="shrink-0 flex flex-col min-h-0 mt-2 pt-2" style={{ borderTop: edge(18), maxHeight: "40%" }}>
       <h4 className="flex items-baseline gap-2 m-0 pb-1 px-0.5 text-[9px] uppercase tracking-wider shrink-0"
         style={{ color: "var(--text3)" }}>
-        <span style={{ color: "var(--primary-hover)" }}>★</span> Pinned
+        <span className="flex" style={{ color: "var(--primary-hover)" }}><StarIcon size={ICON.xs} filled /></span> Pinned
         <span className="tabular-nums" style={{ color: "var(--text4)" }}>{list.length}</span>
       </h4>
       <div className="flex-1 min-h-0 overflow-y-auto agx-scroll">

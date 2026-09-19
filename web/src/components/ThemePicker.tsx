@@ -7,6 +7,8 @@ import {
 } from "../lib/themes.ts";
 import { ACCENTS, currentAccent, setAccentPref } from "../lib/accent.ts";
 import { SERVER, authHeaders } from "../lib/api.ts";
+import { DoneIcon } from "../lib/glyphIcons.tsx";
+import { ICON } from "../lib/iconSize.ts";
 
 /* Settings → Appearance.
  *
@@ -50,7 +52,7 @@ function ThemeBtn({ t, current, onPick }: { t: Theme; current: string; onPick: (
       <span className="flex items-center gap-1.5 px-2 py-1 text-[11.5px]"
         style={{ background: "color-mix(in srgb, var(--bg3) 30%, transparent)", color: on ? "var(--primary-hover)" : "var(--text3)" }}>
         <span className="truncate">{t.name}</span>
-        {on && <span className="ml-auto shrink-0">✓</span>}
+        {on && <span className="ml-auto shrink-0 flex"><DoneIcon size={ICON.xs} /></span>}
       </span>
     </button>
   );

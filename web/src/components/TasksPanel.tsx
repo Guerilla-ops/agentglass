@@ -11,7 +11,7 @@
 // second half is the half nobody builds, and it is the reason a machine ends up
 // with fourteen checkouts nobody can name.
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { RefreshIcon } from "../lib/glyphIcons.tsx";
+import { BlockedIcon, CheckboxIcon, CircleIcon, ClockIcon, CommentIcon, CopyIcon, CrossIcon, DoneIcon, DotIcon, IconLabel, KeyboardIcon, LockIcon, MonitorIcon, NoteIcon, PlusIcon, RefreshIcon, SearchIcon } from "../lib/glyphIcons.tsx";
 import { api } from "../lib/api.ts";
 import { FilterBuilder } from "./tasks/FilterBuilder.tsx";
 import { EMPTY, apply as applyFilters, fieldsOf, liveCount as builtCount, type FilterSet } from "./tasks/filters.ts";
@@ -330,7 +330,7 @@ function IssuesBody({ root, active, jump }: { root: string; active: boolean; jum
             ? { color: "var(--primary)", border: "1px solid color-mix(in srgb, var(--primary) 45%, transparent)", background: "color-mix(in srgb, var(--primary) 12%, transparent)" }
             : { color: "var(--text3)", border: edge(20) }}>Assigned to me</button>
         <span className="flex items-center gap-1.5 flex-1 min-w-0 px-2 py-1 rounded-md" style={{ background: "var(--bg)", border: edge(20) }}>
-          <span style={{ color: "var(--text3)" }}>⌕</span>
+          <span className="flex" style={{ color: "var(--text3)" }}><SearchIcon size={ICON.xs} /></span>
           <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") load(); }}
             placeholder="Search issues — press ↵" spellCheck={false}
             className="flex-1 min-w-0 bg-transparent outline-none text-[11px]" style={{ color: "var(--text)" }} />
@@ -403,7 +403,7 @@ function Row({ i, on, work, onPick, onStart }: {
       <button onClick={onPick} className="flex-1 min-w-0 text-left">
         <div className="flex items-center gap-2">
           <span className="text-[10px] tabular-nums shrink-0" style={{ color: closed ? "var(--purple, var(--text3))" : "var(--success)" }}>
-            {closed ? "⊘" : "⊙"} #{i.number}
+            <IconLabel icon={closed ? <BlockedIcon size={ICON.xs} /> : <CircleIcon size={ICON.xs} />}>#{i.number}</IconLabel>
           </span>
           <span className="truncate text-[11.5px]" style={{ color: "var(--text)" }}>{i.title}</span>
           {work && <span className="shrink-0 text-[10px] px-1.5 rounded-full"
@@ -491,7 +491,7 @@ function Detail({ root, number, onSay, onChanged }: {
       <div className="flex items-center gap-2 mb-2 flex-wrap">
         <span className="text-[10px] px-2 py-0.5 rounded-full"
           style={{ color: d.state === "OPEN" ? "var(--success)" : "var(--text3)", border: `1px solid color-mix(in srgb, ${d.state === "OPEN" ? "var(--success)" : "var(--text3)"} 45%, transparent)` }}>
-          {d.state === "OPEN" ? "⊙ Open" : "⊘ Closed"}
+          {d.state === "OPEN" ? <IconLabel icon={<CircleIcon size={ICON.xs} />}>Open</IconLabel> : <IconLabel icon={<BlockedIcon size={ICON.xs} />}>Closed</IconLabel>}
         </span>
         <span className="text-[10px]" style={{ color: "var(--text3)" }}>{d.author} opened this · updated {fmtAgo(new Date(d.updatedAt).getTime())}</span>
         <span className="ml-auto flex items-center gap-1.5">
@@ -2292,7 +2292,7 @@ function ClickUpBody({ active, repos, here, onOpenChatWith, jump }: {
           className="text-[11px] px-2 py-0.5 rounded-full"
           style={{ border: edge(14), color: adding ? "var(--text2)" : "var(--text3)" }}
           title={adding ? "Never mind" : "Add a board by pasting its address"}>
-          {adding ? "✕" : "＋"}
+          {adding ? <CrossIcon size={ICON.sm} /> : <PlusIcon size={ICON.sm} />}
         </button>
 
         {/* Where this board sits, beside the chip that chose it — which is where
@@ -2519,7 +2519,7 @@ function ClickUpBody({ active, repos, here, onOpenChatWith, jump }: {
             : "Read this board again now"}
           className="text-[10.5px] px-2 py-0.5 rounded-lg"
           style={{ border: edge(16), color: "var(--text2)", opacity: busy ? 0.5 : 1 }}>
-          {busy ? <span className="inline-block animate-spin">⟳</span> : "Refresh"}
+          {busy ? <RefreshIcon size={ICON.xs} className="animate-spin" /> : "Refresh"}
         </button>
       </div>
 
@@ -2792,7 +2792,7 @@ function ClickUpBody({ active, repos, here, onOpenChatWith, jump }: {
             className="shrink-0 text-[10px] px-1.5 py-0.5 rounded"
             style={{ border: "1px solid color-mix(in srgb, var(--warning) 45%, transparent)",
               color: "var(--warning)", opacity: busy ? 0.5 : 1 }}>
-            {busy ? <span className="inline-block animate-spin">⟳</span> : "Try now"}
+            {busy ? <RefreshIcon size={ICON.xs} className="animate-spin" /> : "Try now"}
           </button>
         </div>
       )}
@@ -3980,7 +3980,7 @@ function FolderPicker({ folders, busy, onAdd, onAddList }: {
                   color: openList === row.list.id ? "var(--text)" : "var(--text2)",
                   opacity: busy ? 0.5 : 1,
                 }}>
-                <span className="text-[9.5px] shrink-0" style={{ color: "var(--text4)" }}>▤</span>
+                <span className="shrink-0 flex" style={{ color: "var(--text4)" }}><NoteIcon size={ICON.xs} /></span>
                 <span className="truncate max-w-[190px]">{row.list.name}</span>
                 {typeof row.list.tasks === "number" && (
                   <span className="tabular-nums text-[9.5px]" style={{ color: "var(--text4)" }}>{row.list.tasks}</span>
@@ -4630,7 +4630,7 @@ function ClickUpRow({ t, today, on, onPick, grid, showWho, showSquad, showSprint
             <span className={`${ROW_CHIP} tracking-[0.06em] shrink-0 tabular-nums`}
               title={`Waiting on ${blocked.map((b) => `${shortName(b.title, b.customId ?? b.id)} — ${b.title}`).join("\n")}`}
               style={{ color: "var(--error)", background: "color-mix(in srgb, var(--error) 14%, transparent)" }}>
-              ⛔ {shortName(blocked[0]!.title, blocked[0]!.customId ?? blocked[0]!.id)}
+              <BlockedIcon size={ICON.xs} className="inline-block align-[-2px] mr-1" />{shortName(blocked[0]!.title, blocked[0]!.customId ?? blocked[0]!.id)}
               {blocked.length > 1 ? ` +${blocked.length - 1}` : ""}
             </span>
           )}
@@ -4952,7 +4952,7 @@ function CopyRow({ label, value, mono }: { label: string; value: string; mono?: 
         <span className={`block text-[11px] break-all ${mono ? "font-mono" : ""}`} style={{ color: "var(--text2)" }}>{value}</span>
       </span>
       <span className="shrink-0 text-[10px] mt-2" style={{ color: done ? "var(--success)" : "var(--text4)" }}>
-        {done ? "Copied" : "⧉"}
+        {done ? "Copied" : <CopyIcon size={ICON.xs} />}
       </span>
     </button>
   );
@@ -5767,7 +5767,7 @@ function CardDetail({ t, today, statuses, fields, place, writable, repos, here, 
           <button onClick={() => void copyIt(t.customId || t.id, "human")} className={`${ID_CHIP} tabular-nums`}
             style={{ color: "var(--primary)", background: "color-mix(in srgb, var(--primary) 12%, transparent)" }}
             title={`Copy ${t.customId || t.id} — the id for a branch, a commit or a colleague`}>
-            {copied === "human" ? "copied ✓" : (t.customId || t.id)}
+            {copied === "human" ? <span className="inline-flex items-center gap-1">copied<DoneIcon size={ICON.xs} /></span> : (t.customId || t.id)}
           </button>
           {/* Only when there are genuinely two. A workspace without custom ids
               would otherwise get the same string twice. */}
@@ -5775,7 +5775,7 @@ function CardDetail({ t, today, statuses, fields, place, writable, repos, here, 
             <button onClick={() => void copyIt(t.id, "raw")} className={`${ID_CHIP} tabular-nums`}
               style={{ color: "var(--text4)", border: edge(16) }}
               title={`Copy ${t.id} — ClickUp's own id, the one its API and URLs take`}>
-              {copied === "raw" ? "copied ✓" : t.id}
+              {copied === "raw" ? <span className="inline-flex items-center gap-1">copied<DoneIcon size={ICON.xs} /></span> : t.id}
             </button>
           )}
           {t.priority && <PriorityChip p={t.priority} />}
@@ -6272,7 +6272,7 @@ function CardDetail({ t, today, statuses, fields, place, writable, repos, here, 
                     style={{ gridTemplateColumns: wide ? "200px 1fr" : "minmax(110px, 42%) 1fr", borderBottom: edge(8) }}>
                     <span className="text-[10.5px] min-w-0 truncate flex items-center gap-1" style={{ color: "var(--text4)" }} title={spec?.readOnly ? `${c.name} — marked read-only by its own name` : c.name}>
                       <span className="truncate">{fieldLabel(c.name)}</span>
-                      {spec?.readOnly && <span aria-hidden title="Marked read-only by its own name">🔒</span>}
+                      {spec?.readOnly && <span aria-hidden className="flex" title="Marked read-only by its own name"><LockIcon size={ICON.xs} /></span>}
                     </span>
                     <span className="min-w-0">
                       {canPick
@@ -6298,8 +6298,8 @@ function CardDetail({ t, today, statuses, fields, place, writable, repos, here, 
           </div>
           {full.subtasks.map((s) => (
             <div key={s.id} className="flex items-center gap-2 py-1 text-[11px]">
-              <span style={{ color: s.statusKind === "done" ? "var(--success)" : "var(--text4)" }}>
-                {s.statusKind === "done" ? "✓" : "○"}
+              <span className="flex" style={{ color: s.statusKind === "done" ? "var(--success)" : "var(--text4)" }}>
+                {s.statusKind === "done" ? <DoneIcon size={ICON.xs} /> : <CircleIcon size={ICON.xs} />}
               </span>
               <span className="truncate" style={{ color: s.statusKind === "done" ? "var(--text4)" : "var(--text2)" }}>{s.title}</span>
             </div>
@@ -6312,7 +6312,7 @@ function CardDetail({ t, today, statuses, fields, place, writable, repos, here, 
           <div className={`${EYEBROW} mb-1.5`} style={{ color: "var(--text4)" }}>{cl.name}</div>
           {cl.items.map((it, j) => (
             <div key={j} className="flex items-center gap-2 py-1 text-[11px]">
-              <span style={{ color: it.done ? "var(--success)" : "var(--text4)" }}>{it.done ? "☑" : "☐"}</span>
+              <span className="flex" style={{ color: it.done ? "var(--success)" : "var(--text4)" }}><CheckboxIcon size={ICON.sm} checked={it.done} /></span>
               <span style={{ color: it.done ? "var(--text4)" : "var(--text2)", textDecoration: it.done ? "line-through" : undefined }}>{it.name}</span>
             </div>
           ))}
@@ -6887,7 +6887,7 @@ function CardDetail({ t, today, statuses, fields, place, writable, repos, here, 
                     style={to === d
                       ? { background: "color-mix(in srgb, var(--primary) 20%, transparent)", border: "1px solid color-mix(in srgb, var(--primary) 45%, transparent)", color: "var(--text)" }
                       : { border: edge(14), color: "var(--text4)" }}>
-                    {d === "chat" ? "💬 chat" : "🖥 pane"}
+                    {d === "chat" ? <IconLabel icon={<CommentIcon size={ICON.xs} />}>chat</IconLabel> : <IconLabel icon={<MonitorIcon size={ICON.xs} />}>pane</IconLabel>}
                   </button>
                 ))}
               </div>
@@ -6937,7 +6937,7 @@ function CardDetail({ t, today, statuses, fields, place, writable, repos, here, 
         {t.url && (
           <button onClick={() => void copyIt(t.url, "url")} className="text-[10.5px] px-2 py-1 rounded-lg"
             style={{ border: line, color: "var(--text2)" }}
-            title={t.url}>{copied === "url" ? "copied ✓" : "Copy URL"}</button>
+            title={t.url}>{copied === "url" ? <span className="inline-flex items-center gap-1">copied<DoneIcon size={ICON.xs} /></span> : "Copy URL"}</button>
         )}
         {t.url && (
           <a href={t.url} target="_blank" rel="noreferrer" className="text-[10.5px] px-2 py-1 rounded-lg"
@@ -7345,7 +7345,7 @@ function LocalBody({ active, repos, here, onOpenChatWith }: {
       <div className="flex items-center gap-2 px-5 pb-1.5 shrink-0">
         <div className="flex items-center gap-2 flex-1 min-w-0 rounded-lg px-2.5 py-1"
           style={{ background: "var(--bg2)", border: edge(14) }}>
-          <span className="text-[11px] shrink-0" style={{ color: "var(--text3)" }}>⌕</span>
+          <span className="shrink-0 flex" style={{ color: "var(--text3)" }}><SearchIcon size={ICON.xs} /></span>
           <input ref={barRef} value={input} onChange={(e) => setInput(e.target.value)}
             onKeyDown={async (e) => {
               if (e.key === "Escape") { setEditing(null); setInput(""); barRef.current?.blur(); return; }
@@ -7464,7 +7464,7 @@ function LocalBody({ active, repos, here, onOpenChatWith }: {
         )}
         <button onClick={() => setKeysOpen((o) => !o)} aria-expanded={keysOpen}
           className="shrink-0 px-2 py-0.5 rounded-lg" style={{ border: edge(14), color: "var(--text3)" }}>
-          ⌨ {keysOpen ? "Hide" : "Shortcuts"}
+          <IconLabel icon={<KeyboardIcon size={ICON.xs} />}>{keysOpen ? "Hide" : "Shortcuts"}</IconLabel>
         </button>
       </div>
     </div>
@@ -7498,7 +7498,7 @@ function TaskRow({ t, today, on, onPick, marked, onMark, reminder, remindOpen, o
   //
   // Modifier-click marks, which is what every list does, and it means the row
   // needs no permanent checkbox competing with the one that completes it.
-  const glyph = isDone ? "\u2713" : t.priority ? "\u25cf" : "\u25cb";
+  const glyph = isDone ? <DoneIcon size={ICON.xs} /> : t.priority ? <DotIcon size={ICON.xs} /> : <CircleIcon size={ICON.xs} />;
   const glyphTone = isDone ? "var(--text3)"
     : t.priority === "H" ? "var(--error)"
     : t.priority === "M" ? "var(--warning)" : t.priority ? "var(--text3)" : "var(--text4)";
@@ -7523,16 +7523,16 @@ function TaskRow({ t, today, on, onPick, marked, onMark, reminder, remindOpen, o
           here rather than stealing a column nobody would recognise. */}
       {marked ? (
         <button onClick={(e) => { e.stopPropagation(); onMark?.(); }} aria-label="Unmark"
-          className="text-center text-[11px]" style={{ color: "var(--primary)" }}>\u2713</button>
+          className="flex justify-center" style={{ color: "var(--primary)" }}><DoneIcon size={ICON.xs} /></button>
       ) : onToggle && writable ? (
         <button onClick={(e) => { e.stopPropagation(); onToggle(); }}
           title={isDone ? "Reopen" : "Mark done"}
           aria-label={isDone ? `Reopen ${t.description}` : `Mark ${t.description} done`}
-          className="text-center text-[11px] rounded" style={{ color: glyphTone }}>
+          className="flex justify-center rounded" style={{ color: glyphTone }}>
           {glyph}
         </button>
       ) : (
-        <span className="text-center text-[11px]" style={{ color: glyphTone }}>{glyph}</span>
+        <span className="flex justify-center" style={{ color: glyphTone }}>{glyph}</span>
       )}
 
       {/* The task, and under it only what qualifies it. One size larger than
@@ -7593,14 +7593,14 @@ function TaskRow({ t, today, on, onPick, marked, onMark, reminder, remindOpen, o
       <span ref={remindAnchor} className="relative text-[11px] tabular-nums">
         {reminder ? (
           <span style={{ color: reminder.firedAt ? "var(--error)" : reminder.due - Date.now() < 3_600_000 ? "var(--warning)" : "var(--primary)" }}>
-            ⏰ {remindLabel(reminder.due)}
+            <IconLabel icon={<ClockIcon size={ICON.xs} />}>{remindLabel(reminder.due)}</IconLabel>
           </span>
         ) : isDone ? null : (
           <button onClick={(e) => { e.stopPropagation(); onRemind?.(); }}
             className="agx-onrow px-1 rounded hover:bg-white/5"
             style={{ color: t.due ? "var(--warning)" : "var(--text4)" }}
             title="Set a reminder for this task">
-            ＋ remind
+            <IconLabel icon={<PlusIcon size={ICON.xs} />}>remind</IconLabel>
           </button>
         )}
         {remindOpen && onSetRemind && onCloseRemind && (
@@ -7658,7 +7658,7 @@ function Note({ text, writable, onToggle }: {
         className="w-full text-left flex items-start gap-2 py-0.5 rounded hover:bg-white/5 disabled:hover:bg-transparent"
         style={{ cursor: writable && onToggle ? "pointer" : "default" }}>
         <span aria-hidden className="shrink-0 leading-[1.45]"
-          style={{ color: box.checked ? "var(--ok)" : "var(--text3)" }}>{box.checked ? "\u2611" : "\u2610"}</span>
+          style={{ color: box.checked ? "var(--ok)" : "var(--text3)" }}><CheckboxIcon size={ICON.sm} checked={box.checked} /></span>
         <span className="leading-[1.45]" style={{
           color: box.checked ? "var(--text3)" : "var(--text)",
           textDecoration: box.checked ? "line-through" : undefined,
@@ -8036,7 +8036,7 @@ function TaskFields({ t, today, projects, tags, onEdit }: {
             </form>
           ) : (
             <button onClick={() => setAddingTag(true)} className="text-[10px] px-1.5 py-0.5 rounded-full"
-              style={{ color: "var(--text4)" }}>＋ tag</button>
+              style={{ color: "var(--text4)" }}><IconLabel icon={<PlusIcon size={ICON.xs} />}>tag</IconLabel></button>
           )}
         </div>
         <datalist id="agx-projects">{projects.map((p) => <option key={p} value={p} />)}</datalist>
@@ -8090,7 +8090,7 @@ function TaskDetail({ t, today, reminder, onCancel, writable, onToggleNote, onSh
       </div>
       {reminder && (
         <div className="flex items-center gap-2 mb-4 text-[11px]">
-          <span style={{ color: reminder.firedAt ? "var(--error)" : "var(--primary)" }}>⏰ {remindLabel(reminder.due)}</span>
+          <span style={{ color: reminder.firedAt ? "var(--error)" : "var(--primary)" }}><IconLabel icon={<ClockIcon size={ICON.xs} />}>{remindLabel(reminder.due)}</IconLabel></span>
           <span className="flex-1" />
           <button onClick={onCancel} className="text-[10px] px-2 py-0.5 rounded" style={{ border: edge(20), color: "var(--text2)" }}>
             remove

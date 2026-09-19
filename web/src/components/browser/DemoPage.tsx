@@ -12,6 +12,7 @@
  * makes the view read as a browser rather than as another panel.
  */
 import { DEMO_BASKET, DEMO_DISCOUNT, DEMO_HEALTH, DEMO_SHIPPING, money, subtotal, total } from "../../lib/demoBrowser.ts";
+import { WarningIcon } from "../../lib/glyphIcons.tsx";
 
 const PAPER = "#fbfaf7";
 const INK = "#1f2328";
@@ -95,7 +96,7 @@ function NotReached({ url }: { url: string }) {
   try { host = new URL(url).host || url; } catch { /* whatever was typed */ }
   return (
     <div style={{ minHeight: "100%", background: "#fff", color: INK, padding: "56px 60px", fontFamily: "ui-sans-serif, system-ui, sans-serif", maxWidth: 620 }}>
-      <div style={{ fontSize: 44, lineHeight: 1, color: "#c9ccd1", marginBottom: 22 }}>⚠</div>
+      <div style={{ color: "#c9ccd1", marginBottom: 22, display: "flex", justifyContent: "center" }}><WarningIcon size={44} /></div>
       <h1 style={{ fontSize: 19, fontWeight: 500, margin: "0 0 10px" }}>This page isn’t in the demo</h1>
       <p style={{ fontSize: 13.5, color: MUTED, margin: "0 0 6px", lineHeight: 1.6 }}>
         <b style={{ color: INK, fontWeight: 500 }}>{host}</b> was not fetched. The demo runs entirely in this

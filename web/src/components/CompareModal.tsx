@@ -11,6 +11,8 @@ import { Portal } from "./Portal.tsx";
 import { CloseButton } from "./CloseButton.tsx";
 import { api } from "../lib/api.ts";
 import type { GitFileChange } from "../../../shared/types.ts";
+import { SwapIcon } from "../lib/glyphIcons.tsx";
+import { ICON } from "../lib/iconSize.ts";
 
 type CompareResult = {
   ok: boolean;
@@ -95,7 +97,7 @@ export function CompareModal({ root, initialBase, onClose }: {
                     {refs.map((n) => <option key={n} value={n}>{n}</option>)}
                   </select>
                 </div>
-                <button onClick={() => { setBase(other); setOther(base); }} title="Swap the two sides" className="mt-5 shrink-0 text-[13px] px-2 py-1.5 rounded-lg t-dim2 hover:brightness-125">⇄</button>
+                <button onClick={() => { setBase(other); setOther(base); }} title="Swap the two sides" className="mt-5 shrink-0 text-[13px] px-2 py-1.5 rounded-lg t-dim2 hover:brightness-125"><SwapIcon size={ICON.sm} /></button>
                 <div className="flex-1">
                   <div className="text-[9.5px] uppercase tracking-wider t-dim2 mb-1">other</div>
                   <select value={other} onChange={(e) => setOther(e.target.value)} className="w-full px-2 py-1.5 rounded-lg text-[11.5px] outline-none" style={{ background: "var(--bg3)", border: "1px solid color-mix(in srgb, var(--border) 45%, transparent)", color: "var(--text)" }}>

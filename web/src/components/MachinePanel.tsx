@@ -11,7 +11,7 @@
 // One surface, reachable from the dashboard and from inside the workspace,
 // because "is 5173 still up?" is a question you have while looking at anything.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { RefreshIcon } from "../lib/glyphIcons.tsx";
+import { CopyIcon, DiskIcon, IconLabel, RefreshIcon } from "../lib/glyphIcons.tsx";
 import { Portal } from "./Portal.tsx";
 import { api } from "../lib/api.ts";
 import type { GitLock, GitLocksReport, GitRepoRef, ProcDetail, MachineTotals, PortEntry, PortsReport, ProcEntry, ResourceReport, SpaceReport } from "../../../shared/types.ts";
@@ -160,7 +160,7 @@ function Ports({ onOpenBrowser }: { onOpenBrowser?: () => void }) {
           actions={
             <>
               <IconBtn title={HAS_BROWSER && onOpenBrowser ? "Open in the browser tab" : "Open in your browser"} onClick={() => open(p)}>↗</IconBtn>
-              <IconBtn title="Copy the address" onClick={() => void navigator.clipboard?.writeText(`http://localhost:${p.port}`)}>⧉</IconBtn>
+              <IconBtn title="Copy the address" onClick={() => void navigator.clipboard?.writeText(`http://localhost:${p.port}`)}><CopyIcon size={ICON.xs} /></IconBtn>
               {p.pid != null && p.proc !== "agentglass-serv" && (
                 <IconBtn title="Ask this process to stop (SIGTERM)" tint="var(--error)" disabled={busy === p.pid} onClick={() => void stop(p)}><CloseIcon size={ICON.sm} /></IconBtn>
               )}
@@ -729,7 +729,7 @@ function Space({ repos }: { repos: GitRepoRef[] }) {
   return (
     <div className="shrink-0" style={{ borderTop: edge(16), background: "color-mix(in srgb, var(--text) 5%, transparent)" }}>
       <div className="flex items-center gap-2 px-3.5 py-2 text-[11px] flex-wrap">
-        <span style={{ color: "var(--text3)" }}>⛁</span>
+        <span className="flex" style={{ color: "var(--text3)" }}><DiskIcon size={ICON.xs} /></span>
         <span style={{ color: "var(--text)", fontWeight: 500 }}>Disk</span>
         {/* Which checkout to measure — a one-shot argument for the scan, not a
             move: nothing else follows it anywhere. */}
@@ -752,7 +752,7 @@ function Space({ repos }: { repos: GitRepoRef[] }) {
             style={busy
               ? { color: "var(--text3)", border: edge(20) }
               : { color: "var(--primary)", border: "1px solid color-mix(in srgb, var(--primary) 45%, transparent)", background: "color-mix(in srgb, var(--primary) 12%, transparent)" }}>
-            {busy ? "Measuring…" : data ? "⟳ Measure again" : "⟳ Measure"}
+            {busy ? "Measuring…" : <IconLabel icon={<RefreshIcon size={ICON.xs} />}>{data ? "Measure again" : "Measure"}</IconLabel>}
           </button>
         </span>
       </div>

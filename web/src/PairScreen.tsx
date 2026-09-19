@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { SERVER } from "./lib/api.ts";
 import { claim, collectOnce, guessName, makeKeys, pairingBlocked, type PairKeys } from "./lib/pairing.ts";
+import { PhoneIcon } from "./lib/glyphIcons.tsx";
+import { ICON } from "./lib/iconSize.ts";
 
 /**
  * Connecting this phone, on the phone.
@@ -112,7 +114,7 @@ export function PairScreen({ ticket, onPaired }: { ticket: string; onPaired: (to
   return (
     <div className="pair-wrap">
       <div className="pair-card">
-        <div className="pair-mark" aria-hidden>🛰</div>
+        <div className="pair-mark" aria-hidden><PhoneIcon size={ICON.xl} /></div>
         <h1 className="pair-h1">Connect this device</h1>
 
         {stage === "checking" && <p className="pair-p">Checking the invitation…</p>}

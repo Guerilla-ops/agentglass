@@ -23,6 +23,8 @@ import type {
 } from "../../../../shared/types.ts";
 import { Row, Chip, RowAction, GroupHead, Empty, TickBox, wash, type Tone } from "./ui.tsx";
 import { primaryAction, actionsFor, grouped, groupByPrefix, type GitKind, type GitRowState } from "../../lib/gitActions.ts";
+import { BranchIcon, IconLabel } from "../../lib/glyphIcons.tsx";
+import { ICON } from "../../lib/iconSize.ts";
 
 export interface ListRow {
   key: string;
@@ -268,7 +270,7 @@ export function worktreeRows(
     title: w.path.split("/").pop(),
     chips: (
       <>
-        <Chip tone="accent" title={w.branch}>⎇ {w.branch}</Chip>
+        <Chip tone="accent" title={w.branch}><IconLabel icon={<BranchIcon size={ICON.xs} />}>{w.branch}</IconLabel></Chip>
         {w.current && <Chip>you are here</Chip>}
         {w.locked && <Chip tone="warn">locked</Chip>}
       </>

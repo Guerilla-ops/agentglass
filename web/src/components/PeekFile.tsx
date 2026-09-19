@@ -34,6 +34,8 @@ import {
 } from "../lib/mdPrefs.ts";
 import { findRanges, paint as paintFind, clear as clearFind, step as stepFind, reveal as revealFind } from "../lib/mdFind.ts";
 import { groupAt, groupLabel, groupTotals, type ChangeGroup } from "../lib/changeGroups.ts";
+import { IconLabel, SearchIcon } from "../lib/glyphIcons.tsx";
+import { ICON } from "../lib/iconSize.ts";
 
 export type Peek = {
   root: string;
@@ -647,7 +649,7 @@ export function PeekFile({ peek, onClose, topPx }: {
                 title="Find in this document (Ctrl+F)"
                 className="agx-btn rounded px-2 py-0.5 text-[10px]"
                 style={{ color: findOpen ? "var(--primary-hover)" : "var(--text2)", border: "1px solid color-mix(in srgb, var(--text) 20%, transparent)", opacity: text === null ? 0.4 : 1 }}>
-                ⌕ Find
+                <IconLabel icon={<SearchIcon size={ICON.xs} />}>Find</IconLabel>
               </button>
               <button onClick={copy} disabled={text === null}
                 title="Copy the markdown source, not the rendering"
@@ -866,7 +868,7 @@ function FindBar({ inputRef, value, onValue, hit, hits, onStep, onClose }: {
   return (
     <div className="flex items-center gap-2 px-3 py-1.5 shrink-0 text-[11px]"
       style={{ borderBottom: "1px solid color-mix(in srgb, var(--text) 16%, transparent)", background: "var(--bg2)" }}>
-      <span style={{ color: "var(--text3)" }}>⌕</span>
+      <span className="flex" style={{ color: "var(--text3)" }}><SearchIcon size={ICON.xs} /></span>
       <input ref={inputRef} value={value} onChange={(e) => onValue(e.target.value)}
         spellCheck={false} autoComplete="off" placeholder="Find in this document…"
         className="flex-1 min-w-0 bg-transparent outline-none text-[12px]"
