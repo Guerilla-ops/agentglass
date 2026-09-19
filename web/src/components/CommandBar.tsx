@@ -18,6 +18,8 @@
 // the second scrolling strip this was meant to replace.
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
+import { ICON } from "../lib/iconSize.ts";
+import { GearIcon } from "./workspace/icons.tsx";
 import { ContextMenu } from "./ContextMenu.tsx";
 import { RunDialog, runRecipeSteps } from "./RecipesPane.tsx";
 import type { GitRepoRef } from "../../../shared/types.ts";
@@ -510,7 +512,8 @@ export function CommandBar({ root, disabled, font, onRun, runTargetInTmux, onClo
           style={quiet
             ? { color: "var(--text3)", border: "1px solid color-mix(in srgb, var(--border) 25%, transparent)", opacity: root && !IS_DEMO ? 1 : 0.5 }
             : { color: n ? "var(--primary-hover)" : "var(--text2)", background: "color-mix(in srgb, var(--primary) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--primary) 30%, transparent)", fontWeight: 500, opacity: root && !IS_DEMO ? 1 : 0.5 }}>
-          ⚙ Commands{quiet ? "" : n ? ` (${n})` : cmds ? " (none)" : " …"}<span className="t-dim2">▼</span>
+          <GearIcon size={ICON.xs} />
+          Commands{quiet ? "" : n ? ` (${n})` : cmds ? " (none)" : " …"}<span style={{ color: "var(--text4)" }}>▾</span>
         </button>
         {open && (
           // keepTermFocus on the whole popover: a click on its padding, a
