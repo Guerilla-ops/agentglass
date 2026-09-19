@@ -49,7 +49,7 @@ import { wantsWebgl, wantsCanvas, fallBackToCanvas } from "../lib/termRenderer.t
 import { isPluckChord, isFindChord, isAppChord } from "../lib/termKeys.ts";
 import { registerClaim } from "../lib/findScope.ts";
 import { typingWouldLandInApp } from "../lib/termForeground.ts";
-import { THEMES } from "../lib/themes.ts";
+import { THEMES, themeAnsi } from "../lib/themes.ts";
 import { deriveAnsi } from "../lib/termPalette.ts";
 import { termOptions, copyOnSelect, rightClickPaste } from "../lib/termPrefs.ts";
 import { useModernWidths } from "../lib/termUnicode.ts";
@@ -109,7 +109,7 @@ export function themeFromCss() {
   // derived from the same UI colours the rest of the panel already follows — so
   // switching theme repaints the terminal's own output too, not just its frame.
   const id = document.documentElement.getAttribute("data-theme") || "";
-  const ansi = THEMES.find((t) => t.id === id)?.ansi ?? deriveAnsi({
+  const ansi = themeAnsi(id) ?? deriveAnsi({
     bg,
     text: readVar(s, "--text", "#e6edf3"),
     primary: readVar(s, "--primary", "#a78bfa"),

@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { SettingRow } from "./SettingRow.tsx";
 import {
   THEMES, pickTheme, applyTheme, isDarkTheme, EXPERIMENTAL_THEME_IDS,
-  themeMode, applyThemeMode, persistThemeMode, SERIOUS_DARK, SERIOUS_LIGHT,
+  themeMode, applyThemeMode, persistThemeMode, SERIOUS_DARK, SERIOUS_LIGHT, desktopPaletteName, onDesktopPalette,
   type Theme, type ThemeMode,
 } from "../lib/themes.ts";
 import { ACCENTS, currentAccent, setAccentPref } from "../lib/accent.ts";
@@ -140,6 +140,10 @@ const MODES: { m: ThemeMode; label: string }[] = [
  *  through `onChange`. */
 export function AppearancePane({ current, onChange }: { current: string; onChange: (id: string) => void }) {
   const [mode, setMode] = useState<ThemeMode>(() => themeMode());
+  /* Which desktop palette "System" is wearing, if any — re-read when it moves,
+     so the line under the switch names the theme that is actually on. */
+  const [desk, setDesk] = useState(() => desktopPaletteName());
+  useEffect(() => onDesktopPalette(() => { setDesk(desktopPaletteName()); setMode(themeMode()); }), []);
 
   const chooseMode = (m: ThemeMode) => {
     const id = applyThemeMode(m);
@@ -169,7 +173,9 @@ export function AppearancePane({ current, onChange }: { current: string; onChang
     <>
       <SettingRow
         label="Mode"
-        hint={<>A serious neutral pair. <b style={{ color: "var(--text3)" }}>System</b> follows your OS.</>}
+        hint={desk
+          ? <><b style={{ color: "var(--text3)" }}>System</b> wears your desktop's theme — {desk.name}, from {desk.source === "omarchy" ? "Omarchy" : desk.source}, and it follows when you switch there.</>
+          : <>A serious neutral pair. <b style={{ color: "var(--text3)" }}>System</b> follows your OS.</>}
         control={<span className="flex p-0.5 rounded-lg" style={{ background: "color-mix(in srgb, var(--bg3) 40%, transparent)", border: "1px solid color-mix(in srgb, var(--border) 45%, transparent)" }}>
           {MODES.map(({ m, label }) => {
             const on = mode === m;

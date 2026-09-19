@@ -5,7 +5,7 @@ import { PairScreen } from "./PairScreen.tsx";
 import { adoptServer } from "./lib/api.ts";
 import { ticketFromUrl, clearTicketFromUrl } from "./lib/pairing.ts";
 import { followServerChanges } from "./lib/desktop.ts";
-import { applyTheme, initialTheme, watchThemeStorage, watchSystemTheme } from "./lib/themes.ts";
+import { applyTheme, initialTheme, watchThemeStorage, watchSystemTheme, watchDesktopPalette } from "./lib/themes.ts";
 import { restoreScale } from "./lib/uiScale.ts";
 import "./index.css";
 import "./fonts.ts"; // bundled monospace faces — see fonts.ts
@@ -17,6 +17,9 @@ applyTheme(initialTheme());
 watchThemeStorage();
 // When the mode is "System", follow the OS between the two serious defaults live.
 watchSystemTheme();
+// And, on a desktop that publishes its palette, wear it in "System" and follow
+// its theme switches live. Does nothing anywhere else.
+watchDesktopPalette();
 // The webview always launches at 100%, so the saved zoom has to be re-asked for
 // on every start. Fire-and-forget: it resolves a tick later and the window
 // reflows into it, which is far less jarring than blocking the first paint.
