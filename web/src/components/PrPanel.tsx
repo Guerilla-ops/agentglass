@@ -19,7 +19,7 @@
 //
 // 4. Nothing waits on the network. `gh` costs a second or more per call and the
 //    server has one thread; every read is a cached answer with its age shown.
-import { useLocalNotes, groupByRun, RunCard, NoteCard, LocalMark, sortNotes, type LocalNotes, type LocalNote } from "./plugins/LocalReview.tsx";
+import { useLocalNotes, groupByRun, RunCard, NoteCard, LocalMark, LocalGlyph, sortNotes, type LocalNotes, type LocalNote } from "./plugins/LocalReview.tsx";
 import { createContext, Fragment, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from "react";
 import { handoffTo } from "../lib/handoffTo.ts";
 import { isBackButton } from "../lib/mouseBack.ts";
@@ -10726,7 +10726,7 @@ function Conversation({ d, lanes, raw, onRaw, onResolve, onReply, onComment, onR
     for (const g of groupByRun(local)) {
       entries.push({
         at: new Date(g.ms).toISOString(), ms: g.ms, key: g.key, lane: "local",
-        node: <span style={{ color: "var(--primary)" }}>◆</span>,
+        node: <span style={{ color: "var(--primary)" }}><LocalGlyph size={ICON.xs} /></span>,
         body: g.run
           ? <RunCard run={g.run} notes={g.notes} publisher={local.publishers[g.run.plugin]} onStatus={local.setStatus} onOpenFile={onOpenFile} md={localMd} />
           : <div className="flex flex-col gap-1.5">{g.notes.map((n) => <NoteCard key={`${n.plugin}/${n.id}`} n={n} md={localMd} onStatus={(st) => local.setStatus(n, st)} onOpenFile={onOpenFile} />)}</div>,

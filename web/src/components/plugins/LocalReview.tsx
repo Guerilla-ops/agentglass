@@ -87,14 +87,22 @@ function SevChip({ s, dim }: { s: PrNote["severity"]; dim?: boolean }) {
   );
 }
 
+/** The padlock that says "only on this machine", as a line icon at any size:
+ *  the timeline's node for a local pass, and inside the local chip. */
+export function LocalGlyph({ size = ICON.xs }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" />
+    </svg>
+  );
+}
+
 export function LocalMark({ title }: { title?: string }) {
   return (
     <span className="shrink-0 inline-flex items-center gap-1 text-[9.5px] uppercase tracking-wide px-1.5 py-px rounded"
       title={title ?? "Only on this machine. Never sent to GitHub."}
       style={{ color: "var(--primary)", background: "color-mix(in srgb, var(--primary) 10%, transparent)" }}>
-      <svg width={ICON.xs} height={ICON.xs} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-        <rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" />
-      </svg>
+      <LocalGlyph />
       local
     </span>
   );
