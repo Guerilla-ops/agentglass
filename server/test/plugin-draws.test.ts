@@ -69,6 +69,10 @@ for (;;) {
     if (ev.type === "note-status") await post("/plugin/self/pr/notes", { notes: [note("open", "Off by one (seen again)")] });
     // The button in the pull request's own header. The queued run is posted
     // at once, which is what that button reads its state from.
+    // A plugin filling in a settings field it declared: the box the person
+    // is meant to edit has to arrive with something in it.
+    if (ev.type === "settings" && ev.settings.repos?.[0] === "acme/prefill")
+      await post("/plugin/self/settings", { values: { repos: ["acme/orbit", "acme/filled-by-the-plugin"] } });
     if (ev.type === "pr-action" && ev.id === "review")
       await post("/plugin/self/pr/run", { id: "r2", repo: ev.repo, number: ev.number, state: "queued", title: "Review · asked for" });
   }
@@ -241,6 +245,25 @@ describe("settings the manifest declared", () => {
     const r = await post("/plugins/settings", { name: MANIFEST.name, values: { repos: "acme/orbit\n\n acme/v2 ", junk: 1 } });
     expect(((await r.json()) as Json).values).toEqual({ repos: ["acme/orbit", "acme/v2"] });
     expect((await get(`/plugins/settings?name=${MANIFEST.name}`)).values).toEqual({ repos: ["acme/orbit", "acme/v2"] });
+  });
+});
+
+describe("a plugin filling in its own settings", () => {
+  test("writes the field it declared, and the window reads it back", async () => {
+    await post("/plugins/settings", { name: MANIFEST.name, values: { repos: "acme/prefill" } });
+    const v = await until(() => get(`/plugins/settings?name=${MANIFEST.name}`),
+      (r: Json) => (r.values?.repos ?? []).includes("acme/filled-by-the-plugin"));
+    expect(v.values.repos).toEqual(["acme/orbit", "acme/filled-by-the-plugin"]);
+  });
+
+  test("and cannot write into another plugin, whatever it sends", async () => {
+    // The name comes from the token, never from the request: there is no
+    // field here to name somebody else with.
+    const r = await fetch(base + "/plugin/self/settings", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "somebody-else", values: { repos: ["x/y"] } }),
+    });
+    expect(r.status).toBe(403);
   });
 });
 

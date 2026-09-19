@@ -4762,6 +4762,27 @@ const server = Bun.serve<WsData>({
         const r = setOptions(self, c, b.key, b.options);
         return json(r, r.ok ? 200 : 400);
       }
+      if (pathname === "/plugin/self/settings" && req.method === "POST") {
+        /*
+         * A plugin filling in its own settings.
+         *
+         * Only its own, and only fields it declared — `setPluginSettings`
+         * checks both, the same way it does for the window. This exists for
+         * the case a settings box cannot handle on its own: a prompt the
+         * person is meant to edit has to arrive with something in it, and
+         * only the plugin knows what the starting text is.
+         *
+         * The write pushes a `settings` event back, which is how the plugin
+         * hears the window's edits too. A plugin that answers that event with
+         * another write of the same values would loop, so it compares first —
+         * which is the plugin's business, and is why this route does not
+         * quietly drop a write that changes nothing.
+         */
+        const b = await body<{ values?: unknown }>();
+        if (!b || !b.values || typeof b.values !== "object") return json({ ok: false, error: "values is required" }, 400);
+        const r = setPluginSettings(self, b.values);
+        return json(r, r.ok ? 200 : 400);
+      }
       if (pathname === "/plugin/self/pr/run") {
         const r = upsertRun(self, c, await body<unknown>());
         return json(r, r.ok ? 200 : 400);

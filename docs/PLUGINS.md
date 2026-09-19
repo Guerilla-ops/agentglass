@@ -212,6 +212,7 @@ plugin cannot draw into another's panel.
 | `GET /plugin/self/events?wait=25000` | Long poll: clicks, submitted forms, settings changes, a note marked resolved, a pull request opened |
 | `POST /plugin/self/panel` `{id, tree}` | Draw a declared panel |
 | `POST /plugin/self/options` `{key, options}` | Choices for a `select` it could only find at run time |
+| `POST /plugin/self/settings` `{values}` | Fill in its own declared settings — for a box the person edits that has to arrive with something in it |
 | `POST /plugin/self/pr/run` | Start or finish a pass over a pull request |
 | `POST /plugin/self/pr/notes` `{notes}` | Add or update notes |
 
