@@ -15,7 +15,7 @@ const svg = {
 };
 
 const PATHS: Record<string, React.ReactNode> = {
-  puzzle: <path d="M9 4h4v2.2a1.8 1.8 0 0 0 3 1.3 1.8 1.8 0 0 1 3 1.3V13h-2.2a1.8 1.8 0 0 0 0 3.6H19v4h-4v-2.2a1.8 1.8 0 0 0-3.6 0V21H9v-4.5H6.8a1.8 1.8 0 0 1 0-3.6H9V9H6.8a1.8 1.8 0 0 1-1.3-3 1.8 1.8 0 0 1 3-1.3V4z" />,
+  puzzle: <path d="M5 7.2h3.7a2.3 2.3 0 1 1 4.6 0H17v3.7a2.3 2.3 0 1 1 0 4.6v3.7h-3.7a2.3 2.3 0 1 0-4.6 0H5v-3.7a2.3 2.3 0 1 0 0-4.6z" />,
   review: <><path d="M4 5h16v11H9l-5 4z" /><path d="M8.5 10.5l2 2 4-4" /></>,
   check: <path d="M5 12.5l4.5 4.5L19 7.5" />,
   chart: <><path d="M4 20V4" /><path d="M4 20h16" /><path d="M8 16v-5" /><path d="M12 16V8" /><path d="M16 16v-3" /></>,
