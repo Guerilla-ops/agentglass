@@ -68,3 +68,22 @@ export function desktopPalette(): DesktopPalette | null {
 
 /** For a test that points XDG_STATE_HOME somewhere else between cases. */
 export function __forgetDesktopPalette(): void { cache = null; }
+
+/**
+ * The desktop's own mark, read off the machine rather than shipped.
+ *
+ * This repository is public and the mark is somebody else's; carrying a copy
+ * would be redistributing it. Every machine this can be shown on already has it
+ * installed, so it is served from there — recoloured to `currentColor` so the
+ * button can draw it in whatever tone the segment is using — and a machine
+ * without it gets nothing and the button falls back to the word.
+ */
+export function desktopLogo(): string | null {
+  if (!omarchy()) return null;
+  const share = process.env.OMARCHY_PATH || "/usr/share/omarchy";
+  try {
+    const svg = readFileSync(join(share, "logo.svg"), "utf8");
+    if (!svg.trimStart().startsWith("<svg") || svg.length > 64_000) return null;
+    return svg.replace(/fill="#(?:000|000000)"/gi, 'fill="currentColor"');
+  } catch { return null; }
+}
