@@ -453,7 +453,7 @@ export function UnifiedDiff({ c, hunks, wrap, hunkAction, rowAfter, onPick, sel 
     <div className="flex flex-col flex-1 min-w-0 text-[12px] leading-[1.6]" style={CODE_FONT_STYLE}>
     <style>{PANE_CSS}</style>
     <div ref={paneRef} className="agx-scroll agx-nobar min-w-0" data-vscroll data-hpane
-      onScroll={rail.onPaneScroll} style={{ overflowX: "auto", overflowY: "hidden" }}>
+      onScroll={rail.onPaneScroll} style={{ overflowX: "auto", overflowY: "hidden", containerType: "inline-size" }}>
       {/*
        * One width for the whole file, and it is the widest line in it.
        *
@@ -545,6 +545,9 @@ export function UnifiedDiff({ c, hunks, wrap, hunkAction, rowAfter, onPick, sel 
  * bottom of the pane). Vertical scroll is kept in sync between the two so rows
  * stay aligned; only the right side shows the vertical scrollbar.
  */
+/* The scrolling panes below are size containers (`container-type: inline-size`)
+   so a card under a line can be as wide as the pane you SEE rather than as wide
+   as the code, which is wider whenever one line is long: `100cqw` is the pane. */
 export function SplitDiff({ c, hunks, wrap, rowAfter, onPick, sel }: DiffProps) {
   const source = hunks ?? c?.hunks ?? NO_HUNKS;
   const built = useMemo(() => source.map((h) => ({ h, rows: splitRows(h) })), [source]);
@@ -614,7 +617,7 @@ export function SplitDiff({ c, hunks, wrap, rowAfter, onPick, sel }: DiffProps) 
   if (wrap) {
     return (
       <div className="agx-split agx-scroll flex-1 min-w-0 text-[12px] leading-[1.6]" data-vscroll
-        style={{ ...CODE_FONT_STYLE, overflowX: "auto", overflowY: "hidden" }} onMouseDown={onDown}>
+        style={{ ...CODE_FONT_STYLE, overflowX: "auto", overflowY: "hidden", containerType: "inline-size" }} onMouseDown={onDown}>
         <style>{SPLIT_SEL_CSS}</style>
         {built.map(({ h, rows }, hi) => (
           <div key={hi}>
@@ -645,13 +648,13 @@ export function SplitDiff({ c, hunks, wrap, rowAfter, onPick, sel }: DiffProps) 
     <div className="agx-split flex flex-col flex-1 min-w-0 text-[12px] leading-[1.6]" style={CODE_FONT_STYLE} onMouseDown={onDown}>
       <style>{SPLIT_SEL_CSS}{PANE_CSS}</style>
       <div className="flex min-w-0">
-        <div ref={leftRef} data-side="l" data-hpane className="agx-scroll agx-nobar flex-1 min-w-0" style={{ overflowX: "auto", overflowY: "hidden" }} onWheel={onLeftWheel} onScroll={lRail.onPaneScroll}>
+        <div ref={leftRef} data-side="l" data-hpane className="agx-scroll agx-nobar flex-1 min-w-0" style={{ overflowX: "auto", overflowY: "hidden", containerType: "inline-size" }} onWheel={onLeftWheel} onScroll={lRail.onPaneScroll}>
           {side("l")}
         </div>
         {/* Both sides horizontal-only now, so neither is a vertical scroller and
             the sync below has nothing left to fight over: they grow to the same
             height inside whatever scrolls the page. */}
-        <div ref={rightRef} data-side="r" data-vscroll data-hpane className="agx-scroll agx-nobar flex-1 min-w-0 border-l" style={{ overflowX: "auto", overflowY: "hidden", borderColor: "color-mix(in srgb, var(--text) 16%, transparent)" }}
+        <div ref={rightRef} data-side="r" data-vscroll data-hpane className="agx-scroll agx-nobar flex-1 min-w-0 border-l" style={{ overflowX: "auto", overflowY: "hidden", containerType: "inline-size", borderColor: "color-mix(in srgb, var(--text) 16%, transparent)" }}
           onScroll={() => { syncTop(); rRail.onPaneScroll(); }}>
           {side("r")}
         </div>

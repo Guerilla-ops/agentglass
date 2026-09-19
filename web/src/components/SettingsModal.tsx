@@ -8,6 +8,7 @@
 //
 // Here each kind gets its own section, toggles look like toggles and say what
 // they control, and downloads say what you actually get.
+import { PluginSettingsPane } from "./plugins/PluginSettingsPane.tsx";
 import { Fragment, createContext, isValidElement, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { RecipesPane } from "./RecipesPane.tsx";
 import { ReviewPromptsPane } from "./ReviewPromptsPane.tsx";
@@ -353,7 +354,9 @@ function Row({ label, hint, kbd, href, download, onClick }: { label: string; hin
   );
 }
 
-type Pane = "recipes" | "review-prompts" | "saved-replies" | "appearance" | "prefs" | "terminal" | "diff" | "tasks" | "privacy" | "notifications" | "browser" | "rail" | "keys" | "open" | "export" | "log" | "budgets" | "hooks" | "connections" | "tmux" | "remote" | "plugins" | "understudy" | "about" | "onboarding";
+type Pane = "recipes" | "review-prompts" | "saved-replies" | "appearance" | "prefs" | "terminal" | "diff" | "tasks" | "privacy" | "notifications" | "browser" | "rail" | "keys" | "open" | "export" | "log" | "budgets" | "hooks" | "connections" | "tmux" | "remote" | "plugins" | "understudy" | "about" | "onboarding"
+  /** A plugin's own settings page, one per plugin that declares any. */
+  | `plugin:${string}`;
 /** "" is the ungrouped tail: a heading over one item is a rule that separates
  *  nothing, so About sits alone at the foot of the nav.
  *
@@ -3194,10 +3197,35 @@ export function SettingsModal({ open, onClose, sound, onSound, scale, onZoom, on
    * Settings is a place you come back to for the same thing twice, so it now
    * lands where you left it, defaulting to the first page on a fresh install.
    */
+  /*
+   * A page per plugin that declares settings, added to the nav at run time.
+   * Listed from the same /plugins read the Plugins page makes, so a plugin
+   * shows here the moment it is installed and goes when it is removed.
+   */
+  const [pluginTabs, setPluginTabs] = useState<typeof TABS>([]);
+  useEffect(() => {
+    if (!open) return;
+    let live = true;
+    api.plugins().then((r) => {
+      if (!live) return;
+      setPluginTabs(r.plugins.filter((p) => p.contributes?.settings?.length).map((p) => ({
+        id: `plugin:${p.name}` as Pane,
+        label: p.name,
+        group: "Connections" as TabGroup,
+        kw: `plugin ${p.name} ${p.publisher} settings configure options`,
+        what: p.description,
+        icon: PuzzleIcon,
+      })));
+    }).catch(() => { /* the static pages still work */ });
+    return () => { live = false; };
+  }, [open]);
+  const allTabs = useMemo(() => [...TABS, ...pluginTabs], [pluginTabs]);
   const [pane, setPane] = useState<Pane>(() => {
     try {
       const saved = localStorage.getItem(LAST_PANE_KEY);
-      if (saved && TABS.some((t) => t.id === saved)) return saved as Pane;
+      // A plugin page is kept even before the list of plugins has loaded; if
+      // the plugin is gone its page says so rather than silently moving you.
+      if (saved && (TABS.some((t) => t.id === saved) || saved.startsWith("plugin:"))) return saved as Pane;
     } catch { /* private mode */ }
     return TABS[0]!.id;
   });
@@ -3205,7 +3233,7 @@ export function SettingsModal({ open, onClose, sound, onSound, scale, onZoom, on
   // Somebody asked for a specific pane. Overrides the remembered one for this
   // opening only — the next plain open still lands where you left it.
   useEffect(() => {
-    if (open && jumpTo && TABS.some((t) => t.id === jumpTo)) setPane(jumpTo as Pane);
+    if (open && jumpTo && (TABS.some((t) => t.id === jumpTo) || jumpTo.startsWith("plugin:"))) setPane(jumpTo as Pane);
   }, [open, jumpTo]);
   /*
    * What each page would tell you if you opened it.
@@ -3280,14 +3308,14 @@ export function SettingsModal({ open, onClose, sound, onSound, scale, onZoom, on
    * page that is still a legitimate result for what you typed. */
   useEffect(() => {
     if (!ql) return;
-    const scored = TABS.map((t) => ({ t, s: tabScore(t, ql) }));
+    const scored = allTabs.map((t) => ({ t, s: tabScore(t, ql) }));
     const top = Math.max(...scored.map((x) => x.s));
     if (top === 0) return;
     const here = scored.find((x) => x.t.id === pane);
     if (here && here.s === top) return;
     const best = scored.find((x) => x.s === top);
     if (best) setPane(best.t.id);
-  }, [ql, pane]);
+  }, [ql, pane, allTabs]);
   const [termFont, setTermFontState] = useState(() => currentTermFont());
   const [termSize, setTermSizeState] = useState(() => currentTermSize());
   const [termLine, setTermLineState] = useState(() => currentTermLineHeight());
@@ -3603,7 +3631,7 @@ export function SettingsModal({ open, onClose, sound, onSound, scale, onZoom, on
                 {(() => {
                   const hit = (t: typeof TABS[number]) => !ql || tabScore(t, ql) > 0;
                   const groups = TAB_GROUPS
-                    .map((g) => ({ g, tabs: TABS.filter((t) => t.group === g && hit(t)) }))
+                    .map((g) => ({ g, tabs: allTabs.filter((t) => t.group === g && hit(t)) }))
                     .filter((x) => x.tabs.length);
                   if (!groups.length) return <div className="px-2.5 py-3 text-[12.5px]" style={{ color: "var(--text4)" }}>No settings match “{q.trim()}”.</div>;
                   return groups.map(({ g, tabs }) => (
@@ -3720,7 +3748,7 @@ export function SettingsModal({ open, onClose, sound, onSound, scale, onZoom, on
                     </div>
                   )}
                   {(() => {
-                    const t = TABS.find((x) => x.id === pane);
+                    const t = allTabs.find((x) => x.id === pane);
                     return t ? (
                       /* px-1 rather than px-4: the cards below carry their
                          own 18px of inner padding, so a title indented to the
@@ -4385,6 +4413,7 @@ export function SettingsModal({ open, onClose, sound, onSound, scale, onZoom, on
 
                   {pane === "remote" && <RemoteAccessPane open={open} />}
                   {pane === "plugins" && <PluginsPane open={open} />}
+                  {pane.startsWith("plugin:") && <PluginSettingsPane key={pane} name={pane.slice("plugin:".length)} open={open} />}
 
                   {pane === "log" && <ActivityPane open={open} />}
                   {pane === "understudy" && <UnderstudyPane open={open} onLeave={onClose} />}

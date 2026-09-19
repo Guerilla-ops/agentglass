@@ -1,0 +1,18 @@
+{
+  "name": "agentglass plugins",
+  "owner": "SirAllap",
+  "plugins": [
+    {
+      "id": "local-review",
+      "title": "Local review",
+      "publisher": "agentglass",
+      "verified": true,
+      "scope": "read",
+      "draws": ["panel", "settings", "pr-notes"],
+      "source": { "kind": "git", "url": "https://github.com/SirAllap/agentglass-local-review", "ref": null },
+      "description": "Reviews your labelled pull requests on this machine with the agent and model you choose, inside a sandbox that cannot write or reach GitHub. The findings land in the pull request view, marked local. Nothing is posted.",
+      "categories": ["review", "github", "agents"],
+      "added": "2026-09-19"
+    }
+  ]
+}

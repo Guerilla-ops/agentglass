@@ -1052,7 +1052,7 @@ export type Liveness = "working" | "stuck" | "lost" | "unknown";
  * *type*; the UI (web/src/components/workspace/views.ts) attaches the icons,
  * labels and hotkeys and re-exports this so both sides name one set.
  */
-export type ViewId = "dash" | "git" | "diff" | "pr" | "docker" | "term" | "chat" | "browser" | "files" | "tasks" | "lantern" | "seat";
+export type ViewId = "dash" | "git" | "diff" | "pr" | "docker" | "term" | "chat" | "browser" | "files" | "tasks" | "lantern" | "seat" | "plugins";
 
 /**
  * A UI-navigation command from an external controller (a Stream Deck, a phone),
@@ -1792,7 +1792,10 @@ export type WsFrame =
   /** The understudy scorecard, recomputed and pushed whole. It reports what
    *  the understudy WOULD have done and how often that matched; it commands
    *  nothing, which is why it rides the same read-only socket. */
-  | { type: "understudy"; data: UnderstudyFrame };
+  | { type: "understudy"; data: UnderstudyFrame }
+  /** A plugin redrew a panel or wrote notes on a pull request. Only where to
+   *  look again — the contents are fetched over the token. See plugin-ui.ts. */
+  | { type: "plugin"; data: { kind: "panels"; plugin?: string; panel?: string } | { kind: "pr"; repo: string; number: number } };
 
 export interface AlertNote {
   title: string;
@@ -4548,6 +4551,10 @@ export interface PublicPlugin {
    *  approval still holds. Distinguishes "never reviewed" from "an update
    *  asked for something different since it was approved". */
   hadApproval: boolean;
+  /** Where it draws — see shared/pluginUi.ts. Empty for a plugin that only
+   *  runs in the background. */
+  contributes: import("./pluginUi.ts").Contributes;
+  settings?: Record<string, unknown>;
   running: boolean;
   pid: number | null;
 }

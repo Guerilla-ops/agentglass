@@ -173,11 +173,16 @@ import { probeAgents, ROSTER } from "./agentprobe.ts";
 import { join as joinPath, basename } from "node:path";
 import { tmpdir } from "node:os";
 import { privateHost, resolvePeer, originOf, guardedFetch, hostsOnly } from "./net.ts";
-import { resolveToken, tokenOk, isIntake, isAuthExempt, callerFor, allowed, scopeNeeded, answersFromADevice, understudyRequiresToken, UNDERSTUDY_NO_TOKEN_ERROR, mintUnderstudyToken, revokeUnderstudyToken, type Caller, type Origin } from "./auth.ts";
+import { resolveToken, tokenOk, isIntake, isAuthExempt, callerFor, allowed, scopeNeeded, pluginOfRequest, answersFromADevice, understudyRequiresToken, UNDERSTUDY_NO_TOKEN_ERROR, mintUnderstudyToken, revokeUnderstudyToken, type Caller, type Origin } from "./auth.ts";
 import {
   listPlugins, masterEnabled, setMaster, installPlugin, installFromCatalogue, updatePlugin, enablePlugin, disablePlugin, removePlugin,
   listCatalogues, addCatalogue, removeCatalogue,
+  contributesOf, isRunning, pluginSettings, setPluginSettings, resumeEnabledPlugins, stopAllPluginsSync,
 } from "./plugins.ts";
+import {
+  setPluginUiHook, setPanel, panelState, setOptions, pushEvent, takeEvents, upsertRun, upsertNotes, notesFor, setNoteStatus, flushPluginNotes,
+} from "./plugin-ui.ts";
+import { validPrRef } from "../../shared/pluginUi.ts";
 import { fetchCatalogue } from "./plugin-catalogue.ts";
 import {
   openStub, settleLedger, recordDecision, recordFence, scorecard,
@@ -4721,6 +4726,131 @@ const server = Bun.serve<WsData>({
       return json({ ok }, ok ? 200 : 404);
     }
 
+    /**
+     * --- plugins that draw: the plugin's side ---
+     *
+     * docs/PLUGINS.md, "Drawing in the app". Every route here answers only
+     * to a live plugin token and acts only on that plugin's own things;
+     * `allowed` lets a plugin through to `/plugin/self` at any scope, and
+     * each handler checks the request against what the manifest declared.
+     * The name comes from the token, never from the body, so one plugin
+     * cannot draw into another's panel or drain another's clicks.
+     */
+    if (pathname === "/plugin/self" || pathname.startsWith("/plugin/self/")) {
+      const self = pluginOfRequest(req, url);
+      if (!self) return json({ ok: false, error: "only a running plugin has a self — this needs its own token" }, 403);
+      const c = contributesOf(self);
+      const body = async <T,>(): Promise<T | null> => { try { return (await req.json()) as T; } catch { return null; } };
+
+      if (pathname === "/plugin/self" && req.method === "GET") {
+        return json({ ok: true, name: self, contributes: c, settings: pluginSettings(self)?.values ?? {} });
+      }
+      if (pathname === "/plugin/self/events" && req.method === "GET") {
+        const wait = Math.max(0, Math.min(30_000, Number(url.searchParams.get("wait") ?? 25_000) || 0));
+        return json({ ok: true, events: await takeEvents(self, wait) });
+      }
+      if (req.method !== "POST") return json({ ok: false, error: "not found" }, 404);
+      if (pathname === "/plugin/self/panel") {
+        const b = await body<{ id?: unknown; tree?: unknown }>();
+        if (!b || typeof b.id !== "string") return json({ ok: false, error: "id and tree are required" }, 400);
+        const r = setPanel(self, c, b.id, b.tree);
+        return json(r, r.ok ? 200 : 400);
+      }
+      if (pathname === "/plugin/self/options") {
+        const b = await body<{ key?: unknown; options?: unknown }>();
+        if (!b || typeof b.key !== "string") return json({ ok: false, error: "key and options are required" }, 400);
+        const r = setOptions(self, c, b.key, b.options);
+        return json(r, r.ok ? 200 : 400);
+      }
+      if (pathname === "/plugin/self/pr/run") {
+        const r = upsertRun(self, c, await body<unknown>());
+        return json(r, r.ok ? 200 : 400);
+      }
+      if (pathname === "/plugin/self/pr/notes") {
+        const b = await body<{ notes?: unknown }>();
+        const r = upsertNotes(self, c, b?.notes);
+        return json(r, r.ok ? 200 : 400);
+      }
+      return json({ ok: false, error: "not found" }, 404);
+    }
+
+    /* --- plugins that draw: the window's side. Reads are reads; every write
+       is unlisted in ANSWER_POST/READ_POST, so it needs `full` like the rest
+       of /plugins, and goes through the same CSRF check. */
+    if (pathname === "/plugins/panels" && req.method === "GET") {
+      // `?plugin=&panel=` asks for one; a redraw ping names which, so an open
+      // window fetches the panel that changed rather than every tree.
+      const onlyPlugin = url.searchParams.get("plugin");
+      const onlyPanel = url.searchParams.get("panel");
+      const out = [];
+      for (const p of listPlugins()) {
+        if (!p.enabled || (onlyPlugin && p.name !== onlyPlugin)) continue;
+        for (const panel of p.contributes.panels ?? []) {
+          if (onlyPanel && panel.id !== onlyPanel) continue;
+          const st = panelState(p.name, panel.id);
+          out.push({ plugin: p.name, publisher: p.publisher, ...panel, running: isRunning(p.name), tree: st?.tree ?? null, updatedAt: st?.updatedAt ?? null });
+        }
+      }
+      return json({ ok: true, panels: out });
+    }
+    if (pathname === "/plugins/action" && req.method === "POST") {
+      if (!trustedCaller(req, from)) return csrfBlocked();
+      let b: { plugin?: unknown; panel?: unknown; action?: unknown; values?: unknown };
+      try { b = (await req.json()) as typeof b; } catch { return json({ ok: false, error: "invalid json" }, 400); }
+      if (typeof b.plugin !== "string" || !isRunning(b.plugin)) return json({ ok: false, error: "that plugin is not running" }, 409);
+      const a = b.action as { id?: unknown; payload?: unknown } | undefined;
+      if (!a || typeof a.id !== "string" || a.id.length > 120) return json({ ok: false, error: "action.id is required" }, 400);
+      let values: Record<string, unknown> | undefined;
+      if (b.values && typeof b.values === "object" && !Array.isArray(b.values)) {
+        const raw = JSON.stringify(b.values);
+        if (raw.length > 64_000) return json({ ok: false, error: "form values too large" }, 413);
+        values = JSON.parse(raw) as Record<string, unknown>;
+      }
+      pushEvent(b.plugin, {
+        type: "action", panel: typeof b.panel === "string" ? b.panel.slice(0, 40) : undefined,
+        action: { id: a.id, payload: a.payload }, values, at: Date.now(),
+      });
+      return json({ ok: true });
+    }
+    if (pathname === "/plugins/settings" && req.method === "GET") {
+      const s = pluginSettings(url.searchParams.get("name") ?? "");
+      return s ? json({ ok: true, ...s }) : json({ ok: false, error: "no such plugin" }, 404);
+    }
+    if (pathname === "/plugins/settings" && req.method === "POST") {
+      if (!trustedCaller(req, from)) return csrfBlocked();
+      let b: { name?: unknown; values?: unknown };
+      try { b = (await req.json()) as typeof b; } catch { return json({ ok: false, error: "invalid json" }, 400); }
+      if (typeof b.name !== "string") return json({ ok: false, error: "name is required" }, 400);
+      const r = setPluginSettings(b.name, b.values);
+      return json(r, r.ok ? 200 : 400);
+    }
+    if (pathname === "/plugins/pr-notes" && req.method === "GET") {
+      const r = notesFor(url.searchParams.get("repo"), url.searchParams.get("number"));
+      if (!r) return json({ ok: false, error: "repo (owner/name) and number are required" }, 400);
+      const names = new Map(listPlugins().map((p) => [p.name, p.publisher] as const));
+      return json({ ok: true, ...r, publishers: Object.fromEntries(names) });
+    }
+    if (pathname === "/plugins/pr-notes/status" && req.method === "POST") {
+      if (!trustedCaller(req, from)) return csrfBlocked();
+      let b: { plugin?: unknown; id?: unknown; status?: unknown };
+      try { b = (await req.json()) as typeof b; } catch { return json({ ok: false, error: "invalid json" }, 400); }
+      if (typeof b.plugin !== "string" || typeof b.id !== "string") return json({ ok: false, error: "plugin and id are required" }, 400);
+      const r = setNoteStatus(b.plugin, b.id, b.status);
+      return json(r, r.ok ? 200 : 400);
+    }
+    if (pathname === "/plugins/pr-open" && req.method === "POST") {
+      // The person opened a pull request. Told to every running plugin that
+      // writes notes, so a reviewer can offer to look without polling GitHub
+      // for what the person is reading.
+      if (!trustedCaller(req, from)) return csrfBlocked();
+      let b: { repo?: unknown; number?: unknown };
+      try { b = (await req.json()) as typeof b; } catch { return json({ ok: false, error: "invalid json" }, 400); }
+      const ref = validPrRef(b.repo, b.number);
+      if (!ref) return json({ ok: false, error: "repo and number are required" }, 400);
+      for (const p of listPlugins()) if (p.running && p.contributes.prNotes) pushEvent(p.name, { type: "pr-open", ...ref, at: Date.now() });
+      return json({ ok: true });
+    }
+
     if (pathname === "/search") {
       const q = url.searchParams.get("q") || "";
       const limit = Math.min(200, Number(url.searchParams.get("limit") || 60));
@@ -8324,6 +8454,8 @@ for (const sig of ["SIGINT", "SIGTERM"] as const) {
        work, and the next boot's own recovery covers exactly that case. */
     stopUnderstudyWatchdog();
     stopMirrorSweeper();
+    stopAllPluginsSync();
+    flushPluginNotes();
     shutdownTerminals();
     releaseDatabaseClaim();
     process.exit(0);
@@ -8499,6 +8631,12 @@ startAutoFetch();
 // arrives once per verdict no matter how many browser tabs are watching, and
 // the frame carries the names of what failed rather than only a count.
 subscribeCi((v) => broadcast({ type: "ci", data: v }));
+// A plugin drew something, or wrote notes on a pull request. The frame says
+// only where to look again; what was drawn is fetched over the token.
+setPluginUiHook((f) => broadcast({ type: "plugin", data: f }));
+// Plugins that were on before this server went down come back with fresh
+// tokens. After the listener, so their first request finds a server.
+void resumeEnabledPlugins().then((names) => { if (names.length) console.log(`   Plugins     → ${names.join(", ")}`); });
 /* And somebody speaking on one. Derived from the same poll — GitHub's
    notifications are an inbox rather than a feed a desktop app can subscribe to —
    with the latch on the server, so a review carrying nine line comments is one

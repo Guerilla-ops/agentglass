@@ -6,6 +6,7 @@ import { gitChanged } from "./gitBus.ts";
 import { emitControl } from "./controlBus.ts";
 import { emitBrowserAsk } from "./browserBus.ts";
 import { emitUnderstudy } from "./understudyBus.ts";
+import { emitPlugin } from "./pluginBus.ts";
 import { recordNote, fireDesktopAlert } from "./sysNotify.ts";
 import { ciShouldNotify } from "./ciNotifyPref.ts";
 import { talkBody, talkShouldNotify, talkSummary, talkUrgency } from "./talkNotify.ts";
@@ -208,6 +209,12 @@ export function useLive(paused = false): LiveData {
         // not data — hand it to App, which runs it through the same setters the
         // keyboard does.
         emitControl(frame.data);
+        return;
+      }
+      if (frame.type === "plugin") {
+        // A plugin redrew a panel or wrote notes on a pull request. Only a
+        // pointer; the listener fetches what it needs.
+        emitPlugin(frame.data);
         return;
       }
       if (frame.type === "understudy") {

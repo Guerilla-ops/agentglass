@@ -1,3 +1,4 @@
+import type { UiAction, Field, NoteStatus, PluginPanel, PluginPrNotes } from "./pluginTypes.ts";
 import type { ImportedPlace } from "./desktop.ts";
 import type { WatchEvent, SessionRollup, StatsSummary, SkillInfo, FileChange, DiffHunk, Insight, SearchHit, PendingGate, GateRecord, SessionDetail, GitStatusResponse, CommitResult, WalkthroughResult, WalkthroughInputFile, GitRepoRef, FsCompletion, WorkingTree, GitActionResult, GitBranch, GitCommit, GitStash, GitGraphLine, GitWorktree, WorktreeLeftovers, GitRemote, GitRemoteBranch, GitTag, GitReflogEntry, GitLogEntry, DockerOverview, DockerStat, DockerActionResult, DockerCapability, DockerDisk, DockerVolumeDetail, DockerPeek, DockerEnvRow, BrowseReport, FileFacts, TerminalCommands, CodexStatus, AgentCliStatus, AgentModel, ChatImage, ConflictBlock, ConflictFile, MergeSessionView, BlockChoice, MergeInfo, UpdateStatus, ReleaseNotes, PrListResponse, PrDetail, PrSummary, PrActionResult, PrLocalHead, GitCapability, HookSetupStatus, HookSetupResult, PrCheckJob, PrCheckRollup, ChatEngine, TmuxEngineInfo, ChatEffort, RemoteStatus, PairState, PairedDevice, DeviceScope, ChatPaneList, Budget, BudgetStatus, AgentProbe, UsageHistory, ActionRecord, IssuesReport, IssuePrsReport, IssueDetail, IssueWork, IssueStartResult, IssueActionResult, StartMode, PortsReport, ResourceReport, SpaceReport, TreeReport, FindReport, GrepReport, DiskPlaces, AgentPane, PanesResponse, TasksListResponse, RemindersResponse, Reminder, TaskWriteResponse, TidyReport, Recipe, RecipesResponse, ReviewRecipe, ReviewRecipesResponse, BrowserUseStatus, ProviderUsage, GitLocksReport, ProcDetail, PrBranchSummary, ChangeRow, ChangeRowsResult, FileDiff, GitFileChange, RepoStats, Changelog, GitSubmodule, BlameLine, FileHistoryEntry, GitBisectStatus, GitGrepHit, AgentSessionRow, InboxItem, PluginsStatus, PublicPlugin, Catalogue } from "../../../shared/types.ts";
 import type { ProvidersResponse, ProviderStatus, ProviderTasksResponse, SavedView, SavedFolder, ClickUpBoards, ViewTasksResponse, TaskDetail, ProviderTask, ListStatus, ListField, ListPlace, ListMember } from "../../../shared/providers.ts";
@@ -1715,6 +1716,23 @@ const realApi = {
     post<{ ok: boolean }>("/plugins/disable", { name }),
   pluginRemove: (name: string) =>
     post<{ ok: boolean }>("/plugins/remove", { name }),
+  /** What every enabled plugin has drawn in the panels it declared. */
+  pluginPanels: (plugin?: string, panel?: string) => get<{ ok: boolean; panels: PluginPanel[] }>(
+    plugin && panel ? `/plugins/panels?plugin=${encodeURIComponent(plugin)}&panel=${encodeURIComponent(panel)}` : "/plugins/panels"),
+  /** A click or a submitted form, sent back to the plugin that drew it. */
+  pluginAction: (plugin: string, panel: string | undefined, action: UiAction, values?: Record<string, unknown>) =>
+    post<{ ok: boolean; error?: string }>("/plugins/action", { plugin, panel, action, values }),
+  pluginSettings: (name: string) =>
+    get<{ ok: boolean; fields: Field[]; values: Record<string, unknown>; error?: string }>(`/plugins/settings?name=${encodeURIComponent(name)}`),
+  pluginSettingsSave: (name: string, values: Record<string, unknown>) =>
+    post<{ ok: boolean; values?: Record<string, unknown>; error?: string }>("/plugins/settings", { name, values }),
+  /** Runs and notes plugins wrote on one pull request. Local only. */
+  pluginPrNotes: (repo: string, number: number) =>
+    get<PluginPrNotes>(`/plugins/pr-notes?repo=${encodeURIComponent(repo)}&number=${number}`),
+  pluginNoteStatus: (plugin: string, id: string, status: NoteStatus) =>
+    post<{ ok: boolean; error?: string }>("/plugins/pr-notes/status", { plugin, id, status }),
+  pluginPrOpen: (repo: string, number: number) =>
+    post<{ ok: boolean }>("/plugins/pr-open", { repo, number }),
   /** Re-clones a git-backed install at its recorded URL/ref. Same review
    *  gate as a fresh install: an update that changes the declaration loses
    *  its approval rather than re-enabling itself. */
@@ -2244,6 +2262,13 @@ const demoApi: typeof realApi = {
   pluginEnable: (_name: string) => D({ ok: false, error: "not available in the demo" }),
   pluginDisable: (_name: string) => D({ ok: false }),
   pluginRemove: (_name: string) => D({ ok: false }),
+  pluginPanels: (_plugin?: string, _panel?: string) => D({ ok: true, panels: [] as PluginPanel[] }),
+  pluginAction: (_p: string, _panel: string | undefined, _a: UiAction, _v?: Record<string, unknown>) => D({ ok: false, error: "not available in the demo" }),
+  pluginSettings: (_name: string) => D({ ok: false, fields: [] as Field[], values: {}, error: "not available in the demo" }),
+  pluginSettingsSave: (_name: string, _v: Record<string, unknown>) => D({ ok: false, error: "not available in the demo" }),
+  pluginPrNotes: (_repo: string, _n: number) => D({ ok: true, runs: [], notes: [], publishers: {} } as PluginPrNotes),
+  pluginNoteStatus: (_p: string, _id: string, _s: NoteStatus) => D({ ok: false, error: "not available in the demo" }),
+  pluginPrOpen: (_repo: string, _n: number) => D({ ok: true }),
   pluginUpdate: (_name: string) => D({ ok: false, error: "not available in the demo" } as { ok: false; error: string }),
   pluginCatalogues: () => D({ catalogues: [] }),
   pluginCatalogueAdd: (_url: string) => D({ ok: false, error: "not available in the demo" }),

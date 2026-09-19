@@ -275,3 +275,12 @@ export function GearIcon({ size = ICON.md }: P) {
     </svg>
   );
 }
+
+/** A puzzle piece: the thing that fits into something else — a plugin's panels. */
+export function PluginsIcon({ size = ICON.md }: P) {
+  return (
+    <svg {...svg} width={size} height={size}>
+      <path d="M9 4h4v2.2a1.8 1.8 0 0 0 3 1.3 1.8 1.8 0 0 1 3 1.3V13h-2.2a1.8 1.8 0 0 0 0 3.6H19v4h-4v-2.2a1.8 1.8 0 0 0-3.6 0V21H9v-4.5H6.8a1.8 1.8 0 0 1 0-3.6H9V9H6.8a1.8 1.8 0 0 1-1.3-3 1.8 1.8 0 0 1 3-1.3V4z" />
+    </svg>
+  );
+}

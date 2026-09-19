@@ -415,6 +415,14 @@ export function mintPluginToken(scope: Scope, name: string): string {
   return t;
 }
 
+/** Which plugin holds this token, if any. The `/plugin/self` routes ask this
+ *  directly, because on a loopback box with no machine token configured the
+ *  global gate never builds a caller at all. */
+export function pluginOfRequest(req: Request, url: URL): string | null {
+  const t = presented(req, url);
+  return t ? pluginTokens.get(t)?.name ?? null : null;
+}
+
 export function revokePluginToken(t: string): void {
   pluginTokens.delete(t);
 }
@@ -478,6 +486,12 @@ const FULL_GET = new Set([
   // pull. Drive verbs (/browser/open, /browser/read) already need full as POSTs;
   // this brings the history read in line with them.
   "/browser/places/all",
+  // What a person typed into a plugin's settings, and what plugins draw. A
+  // key or a private repository list is not for another plugin's read token
+  // or a paired read-only phone; the plugin itself reads its own over
+  // /plugin/self.
+  "/plugins/settings",
+  "/plugins/panels",
 ]);
 
 /**
@@ -611,6 +625,12 @@ export function allowed(caller: Caller, method: string, pathname: string): boole
      check — the seat's token says `full` so its reads work, and an `||` here
      would hand back every write this exists to withhold. */
   if (caller.principal === "seat") return seatAllows(caller.seat?.powers ?? "speak", method, pathname);
+  // A plugin's own channel: its panels, its settings, its event queue, its
+  // notes. Open at any scope because drawing is not a power over anything
+  // else — what it may draw was declared in its manifest and approved, and
+  // the handlers check each request against that. Only a plugin token gets
+  // here; anybody else asking for `/plugin/self` has no self to be.
+  if (caller.kind === "plugin" && (pathname === "/plugin/self" || pathname.startsWith("/plugin/self/"))) return true;
   return scopeAllows(caller.scope, scopeNeeded(method, pathname));
 }
 
