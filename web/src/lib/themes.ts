@@ -13,6 +13,7 @@ import { SERVER, authHeaders, whenServerUp } from "./api.ts";
 import type { AnsiPalette } from "./termPalette.ts";
 import { applyAccent } from "./accent.ts";
 import { BASE, cssVars } from "../../../shared/palettes.ts";
+import type { DesktopTheme } from "../../../shared/desktopPalette.ts";
 
 export interface Theme {
   id: string;
@@ -119,6 +120,18 @@ export function isDarkTheme(t: Theme): boolean {
  * per-browser. Only a deliberate pick may broadcast — see `pickTheme`.
  */
 export function applyTheme(id: string, { sync = false } = {}) {
+  /* The desktop's palette is a live source, not an entry in the list: painted
+     like any theme, never written to storage (the next switch on the desktop
+     would make that copy stale), and never broadcast to tmux and nvim — the
+     desktop already themes its own terminal and editor, and a second writer
+     there would fight it. */
+  if (id === DESKTOP_ID && desktop) {
+    const root = document.documentElement;
+    for (const [k, v] of Object.entries(floorTiers(desktop.vars))) root.style.setProperty(k, v);
+    root.setAttribute("data-theme", DESKTOP_ID);
+    applyAccent();
+    return;
+  }
   const known = THEMES.find((x) => x.id === id);
   const t = known || THEMES[0];
   const root = document.documentElement;
@@ -196,7 +209,7 @@ function systemIsDark(): boolean {
 export function resolveThemeMode(mode: ThemeMode): string | null {
   if (mode === "dark") return SERIOUS_DARK;
   if (mode === "light") return SERIOUS_LIGHT;
-  if (mode === "system") return systemIsDark() ? SERIOUS_DARK : SERIOUS_LIGHT;
+  if (mode === "system") return desktop ? DESKTOP_ID : systemIsDark() ? SERIOUS_DARK : SERIOUS_LIGHT;
   return null;
 }
 
@@ -220,6 +233,9 @@ export function watchSystemTheme(): void {
   try {
     window.matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => {
       if (themeMode() !== "system") return;
+      /* The desktop's palette carries its own dark or light; an OS flip is not
+         news while it is being worn. */
+      if (desktop) return;
       // An OS event is not a fresh request to repaint processes outside this
       // document. The next explicit picker choice may sync the resolved theme.
       applyTheme(systemIsDark() ? SERIOUS_DARK : SERIOUS_LIGHT);
@@ -257,4 +273,76 @@ export function watchThemeStorage() {
     if (document.documentElement.getAttribute("data-theme") === e.newValue) return;
     applyTheme(e.newValue);
   });
+}
+
+/*
+ * THE DESKTOP'S PALETTE, FOLLOWED LIVE.
+ *
+ * On a desktop that themes every app together, "System" wears that desktop's
+ * own colours rather than one of the two neutral themes — so switching theme
+ * there repaints this window along with the terminal, the bar and the editor.
+ * On any other desktop the server answers null and none of this does anything:
+ * "System" is dark or light off the OS, exactly as before.
+ *
+ * Polled, and cheap on both sides: the server re-reads the palette file only
+ * when its mtime moves, and the answer is a few hundred bytes. A few seconds is
+ * how long a switch takes to arrive, which is about how long the desktop's own
+ * apps take to follow.
+ */
+export const DESKTOP_ID = "desktop";
+let desktop: DesktopTheme | null = null;
+let desktopSource: { source: string; name: string } | null = null;
+const desktopListeners = new Set<() => void>();
+
+/** The desktop palette being followed, for the label under the switch. */
+export function desktopPaletteName(): { source: string; name: string } | null { return desktopSource; }
+export function onDesktopPalette(fn: () => void): () => void {
+  desktopListeners.add(fn);
+  return () => { desktopListeners.delete(fn); };
+}
+
+/** The terminal's sixteen for a theme id, the desktop's included. */
+export function themeAnsi(id: string): AnsiPalette | undefined {
+  if (id === DESKTOP_ID) return desktop?.ansi;
+  return THEMES.find((t) => t.id === id)?.ansi;
+}
+
+const POLL_MS = 3000;
+
+/** Call once at boot. */
+export function watchDesktopPalette(): void {
+  let stamp = "";
+  let first = true;
+  type Answer = { stamp: string; source: string; name: string; theme: DesktopTheme };
+  const tick = async () => {
+    let next: Answer | null = null;
+    try {
+      const r = await fetch(`${SERVER}/desktop/palette`, { headers: authHeaders() });
+      if (r.ok) next = ((await r.json()) as { palette: Answer | null }).palette;
+    } catch { /* no server yet, or none at all (the static demo) */ }
+    const was = desktop;
+    const changed = (next?.stamp ?? "") !== stamp;
+    stamp = next?.stamp ?? "";
+    desktop = next?.theme ?? null;
+    desktopSource = next ? { source: next.source, name: next.name } : null;
+    if (first) {
+      first = false;
+      /* A first run on such a desktop, with nothing ever picked, starts in
+         System — the point of a desktop that themes everything is that a new
+         app joins in. Anybody who has picked a theme keeps it. */
+      if (desktop) {
+        let untouched = false;
+        try { untouched = localStorage.getItem(MODE_KEY) === null && localStorage.getItem("agentglass-theme") === null; } catch {}
+        if (untouched) persistThemeMode("system");
+      }
+    }
+    if (changed || was !== desktop) {
+      if (themeMode() === "system") applyTheme(resolveThemeMode("system") ?? DEFAULT_THEME);
+      for (const fn of desktopListeners) fn();
+    }
+  };
+  void whenServerUp().then(() => {
+    void tick();
+    setInterval(() => { void tick(); }, POLL_MS);
+  }).catch(() => {});
 }
