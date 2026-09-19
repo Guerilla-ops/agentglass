@@ -11,6 +11,7 @@
 // the forwarder it wires still runs under python3, which is a separate runtime
 // concern the UI names.
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { failed } from "./refused.ts";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import type { HookSetupStatus, HookSetupResult } from "../../shared/types.ts";
@@ -335,7 +336,7 @@ export function applyGate(action: "install" | "uninstall"): HookSetupResult {
     }
     writeFileSync(path, JSON.stringify(cfg, null, 2) + "\n");
   } catch (e: any) {
-    return { ok: false, installed: false, changed: false, settingsPath: path, error: String(e?.message ?? e) };
+    return { ok: false, installed: false, changed: false, settingsPath: path, error: failed("hooks/settings", e, "the Claude Code settings file could not be written — the server log has why") };
   }
   return { ok: true, installed, changed: true, backup, settingsPath: path };
 }
@@ -384,7 +385,7 @@ export function applyHooks(action: "install" | "uninstall"): HookSetupResult {
     }
     writeFileSync(path, JSON.stringify(cfg, null, 2) + "\n");
   } catch (e: any) {
-    return { ok: false, installed: false, changed: false, settingsPath: path, error: String(e?.message ?? e) };
+    return { ok: false, installed: false, changed: false, settingsPath: path, error: failed("hooks/settings", e, "the Claude Code settings file could not be written — the server log has why") };
   }
   return { ok: true, installed, changed: true, backup, settingsPath: path };
 }

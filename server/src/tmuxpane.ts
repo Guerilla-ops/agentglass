@@ -16,6 +16,7 @@
 // their sessions — which is also what makes `tmux -L agentglass attach` a safe
 // thing to hand them.
 import { tmpdir } from "node:os";
+import { failed } from "./refused.ts";
 import { resolveTmuxBin, tmuxSocket } from "./tmuxbin.ts";
 import { confPath, confHealth, ensureConf } from "./tmuxconf.ts";
 /* The restore layer is bookkeeping ON TOP of this one, and it already imports
@@ -245,7 +246,9 @@ export async function tmux(args: string[], stdin?: string): Promise<TmuxResult> 
     clearTimeout(kill);
     return { ok: code === 0, stdout, stderr };
   } catch (e) {
-    return { ok: false, stdout: "", stderr: String(e) };
+    /* A spawn that threw, not tmux talking: tmux's own stderr is returned above
+       and callers read it. This one is ours, and it goes to the log. */
+    return { ok: false, stdout: "", stderr: failed("tmux", e, "tmux could not be run") };
   }
 }
 

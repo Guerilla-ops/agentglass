@@ -21,6 +21,7 @@
 // and the data lands in the engine's state dir. The user's ~/.tmux/resurrect
 // saves are nobody's business but theirs (see tmuxsnapshot.ts).
 import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, renameSync, copyFileSync } from "node:fs";
+import { failed } from "./refused.ts";
 import { join } from "node:path";
 import { tmuxStateDir } from "./tmuxbin.ts";
 import { tmux, listPanes, validSessionName, tmuxSocket, setCaptureHook } from "./tmuxpane.ts";
@@ -780,7 +781,7 @@ export async function restoreLayout(mode: "lazy" | "all" = tmuxResume()): Promis
        boot calls this as `void restoreLayout().then(() => captureLayout())`,
        so a throw here used to skip that capture and print a rejection nobody
        reads. */
-    return { ok: false, restored: 0, error: String(e?.message ?? e) };
+    return { ok: false, restored: 0, error: failed("tmux/restore", e, "the layout could not be restored — the server log has why") };
   } finally {
     restoring = false;
     /* Whatever asked for a capture while this was running gets one now,

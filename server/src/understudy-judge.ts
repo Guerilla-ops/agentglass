@@ -28,6 +28,7 @@
  * switch on.
  */
 import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { failed } from "./refused.ts";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { classOf, retrieve, judgeEnabled, privateTermsGate, translate, termsStatus, type Precedent } from "./understudy.ts";
@@ -213,7 +214,7 @@ export async function judge(
     if (!text.trim()) return { ...DECLINE, error: "it returned nothing" };
     return parseVerdict(text);
   } catch (e) {
-    return { ...DECLINE, error: String(e instanceof Error ? e.message : e) };
+    return { ...DECLINE, error: failed("understudy/judge", e, "the judge could not run") };
   } finally {
     room.done();
   }
