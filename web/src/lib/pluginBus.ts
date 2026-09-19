@@ -6,7 +6,7 @@
  * request), because what a plugin drew is fetched over the token rather than
  * broadcast to every client on the socket.
  */
-export type PluginFrame = { kind: "panels" } | { kind: "pr"; repo: string; number: number };
+export type PluginFrame = { kind: "panels"; plugin?: string; panel?: string } | { kind: "pr"; repo: string; number: number };
 
 const listeners = new Set<(frame: PluginFrame) => void>();
 

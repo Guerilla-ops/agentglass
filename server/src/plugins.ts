@@ -28,7 +28,7 @@ import {
 import { fetchCatalogue } from "./plugin-catalogue.ts";
 import { blockedEntry, type BlockEntry } from "./plugin-blocklist.ts";
 import { type Contributes, validateContributes } from "../../shared/pluginUi.ts";
-import { coerceSettings, dropNotesOf, fieldsWithOptions, forgetPlugin, pushEvent, resolveSettings } from "./plugin-ui.ts";
+import { coerceSettings, dropNotesOf, fieldsWithOptions, forgetPlugin, pushEvent, resolveSettings, setLivenessCheck } from "./plugin-ui.ts";
 
 /** What a plugin folder must carry at its root, translated from `orca-plugin.json`
  *  in the decision doc into a name that names nothing but this app. */
@@ -281,11 +281,18 @@ function write(store: Store): void {
 
 /** Live process state, deliberately never persisted. A pid and a token are
  *  only meaningful for the process that holds them; a server restart cannot
- *  hand either back, so it starts with nothing running, exactly the state a
- *  fresh boot with no plugins would be in. Re-enabling is how a plugin comes
- *  back after a restart — see the note on Store.master below. */
+ *  hand either back, so it starts with nothing running and
+ *  `resumeEnabledPlugins` starts each enabled plugin again with a new token. */
 interface Running { proc: ReturnType<typeof Bun.spawn>; token: string; pid: number }
 const running = new Map<string, Running>();
+setLivenessCheck((name) => running.has(name));
+
+/** The whole group: the entrypoint runs as `bash -c`, and what it started
+ *  (an interpreter, a caged agent) is a grandchild that a kill of the bash
+ *  pid alone leaves running. Each plugin is spawned as its own group. */
+function killGroup(pid: number, sig: NodeJS.Signals = "SIGTERM"): void {
+  try { process.kill(-pid, sig); } catch { /* already gone */ }
+}
 
 async function stopRunning(name: string): Promise<void> {
   const r = running.get(name);
@@ -293,8 +300,22 @@ async function stopRunning(name: string): Promise<void> {
   running.delete(name);
   revokePluginToken(r.token);
   forgetPlugin(name);
-  try { r.proc.kill(); } catch { /* already gone */ }
+  killGroup(r.pid);
   try { await r.proc.exited; } catch { /* ignore */ }
+}
+
+/**
+ * On the way out of the server, synchronous because `process.exit` does not
+ * wait. Without it a restart left every plugin running with a dead token —
+ * measured: a Bun child outlives a parent that exits on SIGTERM — and resuming
+ * on boot then started a second copy beside it, one more per restart.
+ */
+export function stopAllPluginsSync(): void {
+  for (const [name, r] of [...running.entries()]) {
+    running.delete(name);
+    revokePluginToken(r.token);
+    killGroup(r.pid);
+  }
 }
 
 function serverBase(): string {
@@ -320,6 +341,8 @@ async function startProcess(rec: PluginRecord): Promise<void> {
   const token = mintPluginToken(rec.scope, rec.name);
   try {
     const proc = Bun.spawn(["bash", "-c", rec.entrypoint], {
+      // Its own process group, so stopping it stops everything it started.
+      detached: true,
       cwd: rec.installDir,
       env: {
         PATH: process.env.PATH ?? "",
@@ -365,8 +388,12 @@ function withContributes(p: PluginRecord): PluginRecord {
   return p.contributes ? p : { ...p, contributes: {} };
 }
 
+/** `settings` stays out: what a person typed into one plugin's settings (a
+ *  key, a private repository) is not for every read-scope caller of /plugins
+ *  — another plugin, a paired phone — to see. It is served on its own, at
+ *  `full`, and to the plugin itself over its own token. */
 export function listPlugins(): PublicPlugin[] {
-  return read().plugins.map((p) => ({ ...withContributes(p), running: running.has(p.name), pid: running.get(p.name)?.pid ?? null }));
+  return read().plugins.map(({ settings: _s, ...p }) => ({ ...withContributes(p), running: running.has(p.name), pid: running.get(p.name)?.pid ?? null }));
 }
 
 /** What a plugin declared, for the routes that check a draw against it. */
@@ -406,10 +433,12 @@ export function setPluginSettings(name: string, raw: unknown): { ok: true; value
  * Bring back what was running before the server went down.
  *
  * A token cannot survive a restart (they live in memory, on purpose), but the
- * person's decision can: `enabled` with an approval that still matches what
- * is on disk. Everything `enablePlugin` refuses is refused here too — master
- * off, blocked, or files that changed since they were approved — and a
- * plugin that fails to start stays off rather than stopping the boot.
+ * person's decision can: `enabled` with an approval that still matches the
+ * fingerprint recorded at install. Everything `enablePlugin` refuses is
+ * refused here too — master off, blocked, or an install whose fingerprint is
+ * not the approved one — and a plugin that fails to start stays off rather
+ * than stopping the boot. What is on disk is not re-hashed here: installing
+ * and updating are the only writers of that folder, and both re-derive it.
  */
 export async function resumeEnabledPlugins(): Promise<string[]> {
   const store = read();
@@ -693,6 +722,9 @@ export async function removePlugin(name: string): Promise<boolean> {
   if (insidePluginsRoot(rec.installDir)) rmSync(rec.installDir, { recursive: true, force: true });
   write({ ...store, plugins: store.plugins.filter((p) => p.name !== name) });
   dropNotesOf(name);
+  // Also when it was not running: a plugin installed later under the same
+  // name must not inherit a queue of this one's events.
+  forgetPlugin(name);
   return true;
 }
 

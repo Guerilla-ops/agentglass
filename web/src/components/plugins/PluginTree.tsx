@@ -276,12 +276,18 @@ function Tabs({ node, ctx }: { node: Extract<UiNode, { type: "tabs" }>; ctx: Ctx
 function usePending(version: number): [boolean, (p: Promise<unknown>) => void] {
   const [pending, setPending] = useState(false);
   const at = useRef(version);
-  useEffect(() => { if (version !== at.current) setPending(false); }, [version]);
+  const ceiling = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const stop = () => { if (ceiling.current) clearTimeout(ceiling.current); ceiling.current = null; setPending(false); };
+  // The answer is the redraw, not the POST: `/plugins/action` returns at once
+  // whatever the plugin later does, so settling the request says nothing.
+  useEffect(() => { if (version !== at.current) stop(); }, [version]);
+  useEffect(() => () => { if (ceiling.current) clearTimeout(ceiling.current); }, []);
   const run = (p: Promise<unknown>) => {
     at.current = version;
     setPending(true);
-    const t = setTimeout(() => setPending(false), 15_000);
-    p.catch(() => setPending(false)).finally(() => clearTimeout(t));
+    if (ceiling.current) clearTimeout(ceiling.current);
+    ceiling.current = setTimeout(stop, 15_000);
+    p.catch(stop);
   };
   return [pending, run];
 }
@@ -308,7 +314,11 @@ function Button({ node, ctx }: { node: Extract<UiNode, { type: "button" }>; ctx:
 }
 
 function Form({ node, ctx }: { node: Extract<UiNode, { type: "form" }>; ctx: Ctx }) {
-  const initial = useMemo(() => ({ ...(node.values ?? {}) }), [node.values]);
+  // Keyed on what the values ARE, not on the object: every redraw of any
+  // panel arrives as a new object, and resetting on identity wiped whatever
+  // the person was typing each time a plugin drew progress.
+  const valuesKey = JSON.stringify(node.values ?? {});
+  const initial = useMemo(() => ({ ...(node.values ?? {}) }), [valuesKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const [values, setValues] = useState<Record<string, unknown>>(initial);
   useEffect(() => setValues(initial), [initial]);
   const [pending, run] = usePending(ctx.version);
@@ -373,13 +383,14 @@ export function FieldRow({ field, value, onChange, onCommit }: {
         onChange={(e) => onChange(field.type === "list" ? e.target.value.split("\n") : e.target.value)}
         onBlur={(e) => onCommit?.(field.type === "list" ? e.target.value.split("\n") : e.target.value)} />
     );
+  } else if (field.type === "number") {
+    control = <NumberInput field={field} value={value} onChange={onChange} onCommit={onCommit} style={inputStyle} />;
   } else {
     control = (
-      <input className="agx-input" style={inputStyle} type={field.type === "number" ? "number" : "text"}
-        min={field.min} max={field.max} placeholder={field.placeholder}
+      <input className="agx-input" style={inputStyle} type="text" placeholder={field.placeholder}
         value={value === null || value === undefined ? "" : String(value)}
-        onChange={(e) => onChange(field.type === "number" ? (e.target.value === "" ? null : Number(e.target.value)) : e.target.value)}
-        onBlur={(e) => onCommit?.(field.type === "number" ? (e.target.value === "" ? null : Number(e.target.value)) : e.target.value)} />
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={(e) => onCommit?.(e.target.value)} />
     );
   }
   return (
@@ -387,5 +398,23 @@ export function FieldRow({ field, value, onChange, onCommit }: {
       {label}
       {control}
     </label>
+  );
+}
+
+/** A number is typed as text and read as a number when it is committed:
+ *  "-" and "1." are steps on the way to a number, and coercing each keystroke
+ *  turned them into "NaN" and "1". */
+function NumberInput({ field, value, onChange, onCommit, style }: {
+  field: Field; value: unknown; onChange: (v: unknown) => void; onCommit?: (v: unknown) => void; style: CSSProperties;
+}) {
+  const shown = value === null || value === undefined ? "" : String(value);
+  const [raw, setRaw] = useState(shown);
+  useEffect(() => setRaw(shown), [shown]);
+  const parse = (t: string) => (t.trim() === "" ? null : Number.isFinite(Number(t)) ? Number(t) : undefined);
+  return (
+    <input className="agx-input" style={style} type="text" inputMode="decimal" placeholder={field.placeholder}
+      value={raw}
+      onChange={(e) => { setRaw(e.target.value); const n = parse(e.target.value); if (n !== undefined) onChange(n); }}
+      onBlur={() => { const n = parse(raw); if (n === undefined) setRaw(shown); else onCommit?.(n); }} />
   );
 }

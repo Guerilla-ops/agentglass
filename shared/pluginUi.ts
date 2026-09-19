@@ -107,7 +107,19 @@ export const UI_LIMITS = {
   payloadBytes: 8_192,
   fields: 60,
   options: 200,
+  /** The whole tree, serialised. Per-node limits alone let 4000 nodes of
+   *  40,000 characters through — 160 MB for every open window to download
+   *  on each redraw. A real screen is well under this. */
+  treeBytes: 1_000_000,
 } as const;
+
+/** Epoch milliseconds a Date can hold. A plugin's `1e16` would otherwise be
+ *  stored and make `toISOString()` throw on every render of the pull request
+ *  it was written on, for good. */
+const MAX_MS = 8.64e15;
+export function validMs(v: unknown): number | undefined {
+  return typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= MAX_MS ? v : undefined;
+}
 
 type Ok<T> = { ok: true; value: T };
 type Err = { ok: false; error: string };
@@ -365,6 +377,10 @@ function node(raw: unknown, w: Walk, depth: number): UiNode | null {
       if (!Array.isArray(n.items)) return w.fail("list.items must be a list");
       if (n.items.length > UI_LIMITS.items) return w.fail(`a list holds at most ${UI_LIMITS.items} items`);
       const items: UiListItem[] = [];
+      // Items count as nodes: a list of a thousand rows is a thousand things
+      // to draw, whatever the tree around it looks like.
+      w.nodes += n.items.length;
+      if (w.nodes > UI_LIMITS.nodes) return w.fail(`more than ${UI_LIMITS.nodes} nodes`);
       for (const it of n.items) {
         if (!it || typeof it !== "object") return w.fail("a list item must be an object");
         const r = it as Record<string, unknown>;
@@ -384,6 +400,8 @@ function node(raw: unknown, w: Walk, depth: number): UiNode | null {
       if (!Array.isArray(n.items)) return w.fail("timeline.items must be a list");
       if (n.items.length > UI_LIMITS.items) return w.fail(`a timeline holds at most ${UI_LIMITS.items} items`);
       const items: UiTimelineItem[] = [];
+      w.nodes += n.items.length;
+      if (w.nodes > UI_LIMITS.nodes) return w.fail(`more than ${UI_LIMITS.nodes} nodes`);
       for (const it of n.items) {
         if (!it || typeof it !== "object") return w.fail("a timeline item must be an object");
         const r = it as Record<string, unknown>;
@@ -393,7 +411,7 @@ function node(raw: unknown, w: Walk, depth: number): UiNode | null {
         if (typeof id !== "string" || typeof title !== "string" || body === null) return null;
         const a = r.action === undefined ? undefined : action(r.action, w, "timeline item action");
         if (a === null) return null;
-        const at = typeof r.at === "number" && Number.isFinite(r.at) ? r.at : undefined;
+        const at = validMs(r.at);
         items.push({ id, at, title, body, tone: tone(r.tone), badges: badges(r.badges, w), action: a });
       }
       const empty = str(n.empty, S, w, "timeline.empty", true);
@@ -461,6 +479,9 @@ function node(raw: unknown, w: Walk, depth: number): UiNode | null {
 
 /** The whole screen, or the first reason it was refused. */
 export function validateTree(raw: unknown): Ok<UiNode> | Err {
+  let size: number;
+  try { size = JSON.stringify(raw)?.length ?? 0; } catch { return { ok: false, error: "tree is not JSON" }; }
+  if (size > UI_LIMITS.treeBytes) return { ok: false, error: `tree is ${size} bytes, over ${UI_LIMITS.treeBytes}` };
   const w = new Walk();
   const n = node(raw, w, 0);
   return n ? { ok: true, value: n } : { ok: false, error: w.error ?? "invalid tree" };
@@ -509,6 +530,10 @@ export interface PrNote {
   title: string;
   body?: string;
   status: NoteStatus;
+  /** Who set `status`. The person's word outranks the plugin's, and only
+   *  the plugin's: a finding the reviewer itself marked resolved can be
+   *  reopened by it when the bug comes back. */
+  statusBy?: "person" | "plugin";
   createdAt: number;
   updatedAt: number;
 }
@@ -535,12 +560,13 @@ export function validateRun(raw: unknown, now = Date.now()): Ok<PrRun> | Err {
   if (typeof r.title !== "string" || !r.title.trim() || r.title.length > UI_LIMITS.short) return { ok: false, error: "run.title must be 1-400 characters" };
   const out: PrRun = {
     id: r.id, ...ref, state, title: r.title,
-    startedAt: typeof r.startedAt === "number" && Number.isFinite(r.startedAt) ? r.startedAt : now,
+    startedAt: validMs(r.startedAt) ?? now,
   };
   if (typeof r.sha === "string" && SHA_RE.test(r.sha)) out.sha = r.sha;
   if (typeof r.summary === "string") out.summary = r.summary.slice(0, UI_LIMITS.long);
   if (typeof r.meta === "string") out.meta = r.meta.slice(0, 200);
-  if (typeof r.finishedAt === "number" && Number.isFinite(r.finishedAt)) out.finishedAt = r.finishedAt;
+  const fin = validMs(r.finishedAt);
+  if (fin !== undefined) out.finishedAt = fin;
   return { ok: true, value: out };
 }
 

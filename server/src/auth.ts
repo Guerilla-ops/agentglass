@@ -486,6 +486,12 @@ const FULL_GET = new Set([
   // pull. Drive verbs (/browser/open, /browser/read) already need full as POSTs;
   // this brings the history read in line with them.
   "/browser/places/all",
+  // What a person typed into a plugin's settings, and what plugins draw. A
+  // key or a private repository list is not for another plugin's read token
+  // or a paired read-only phone; the plugin itself reads its own over
+  // /plugin/self.
+  "/plugins/settings",
+  "/plugins/panels",
 ]);
 
 /**

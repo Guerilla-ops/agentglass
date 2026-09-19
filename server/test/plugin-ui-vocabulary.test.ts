@@ -9,7 +9,7 @@ import { createHash } from "node:crypto";
 import {
   UI_LIMITS, coerceValue, resolveSettings, safeHref, validateContributes, validateNote, validateTree,
 } from "../../shared/pluginUi.ts";
-import { manifestHash, validateManifest, type PluginManifest } from "../src/plugins.ts";
+import { consentFingerprint, manifestHash, validateManifest, type PluginManifest } from "../src/plugins.ts";
 
 describe("the tree a plugin sends", () => {
   test("a real review screen fits: split, list, timeline, tabs, form, markdown", () => {
@@ -85,10 +85,15 @@ describe("the manifest", () => {
     expect(manifestHash(m)).toBe(before);
   });
 
-  test("declaring somewhere new to draw changes the hash, so the person is asked again", () => {
+  test("declaring somewhere new to draw changes what was approved, so the person is asked again", () => {
     const plain = validateManifest(base) as PluginManifest;
     const draws = validateManifest({ ...base, contributes: { panels: [{ id: "main", title: "Lint" }] } }) as PluginManifest;
     expect(manifestHash(draws)).not.toBe(manifestHash(plain));
+    // What enable actually gates on is the consent fingerprint, over the
+    // files on disk; plugin.json is one of them, so the new declaration moves
+    // it. Same code, different manifest bytes: a different fingerprint.
+    const content = (m: PluginManifest) => createHash("sha256").update(JSON.stringify(m)).digest("hex");
+    expect(consentFingerprint(draws, content(draws))).not.toBe(consentFingerprint(plain, content(plain)));
   });
 
   test("a bad contribution loses the plugin rather than being trimmed", () => {
@@ -103,5 +108,41 @@ describe("a note", () => {
     expect(ok.ok && ok.value.path).toBeUndefined();
     expect(validateNote({ id: "n1", repo: "orbit", number: 42, severity: "high", title: "t" }).ok).toBe(false);
     expect(validateNote({ id: "n1", repo: "acme/orbit", number: 42, severity: "urgent", title: "t" }).ok).toBe(false);
+  });
+});
+
+describe("the plugin's own channel", () => {
+  test("is open to a plugin token at read scope, and to nothing else by that rule", async () => {
+    const { allowed } = await import("../src/auth.ts");
+    const plugin = { kind: "plugin" as const, scope: "read" as const, plugin: "orbit-lint" };
+    expect(allowed(plugin, "POST", "/plugin/self/panel")).toBe(true);
+    expect(allowed(plugin, "GET", "/plugin/self/events")).toBe(true);
+    // The same token is still read-scoped everywhere else.
+    expect(allowed(plugin, "POST", "/plugins/enable")).toBe(false);
+    expect(allowed(plugin, "POST", "/plugin/selfish")).toBe(false);
+    // A read-scope phone gets nothing from this rule, and a plugin's settings
+    // and panels are not reads for it.
+    const phone = { kind: "device" as const, scope: "read" as const };
+    expect(allowed(phone as never, "POST", "/plugin/self/panel")).toBe(false);
+    expect(allowed(phone as never, "GET", "/plugins/settings")).toBe(false);
+    expect(allowed(phone as never, "GET", "/plugins/panels")).toBe(false);
+  });
+});
+
+describe("a timestamp a Date cannot hold", () => {
+  test("is not stored, so it cannot break the pull request it was written on", async () => {
+    const { validateRun, validateTree } = await import("../../shared/pluginUi.ts");
+    const r = validateRun({ id: "r1", repo: "acme/orbit", number: 42, state: "done", title: "t", startedAt: 1e16, finishedAt: -5 }, 1000);
+    expect(r.ok && r.value.startedAt).toBe(1000);
+    expect(r.ok && r.value.finishedAt).toBeUndefined();
+    const t = validateTree({ type: "timeline", items: [{ id: "a", title: "x", at: 1e16 }] });
+    expect(t.ok && (t.value as { items: { at?: number }[] }).items[0]!.at).toBeUndefined();
+  });
+
+  test("a tree over the byte budget is refused whole", async () => {
+    const { validateTree, UI_LIMITS } = await import("../../shared/pluginUi.ts");
+    const big = { type: "stack", children: Array.from({ length: 30 }, () => ({ type: "markdown", text: "x".repeat(39_000) })) };
+    expect(JSON.stringify(big).length).toBeGreaterThan(UI_LIMITS.treeBytes);
+    expect(validateTree(big).ok).toBe(false);
   });
 });

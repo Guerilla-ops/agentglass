@@ -22,7 +22,8 @@ const MANIFEST = {
   name: "orbit-reviewer",
   publisher: "acme",
   description: "Draws a panel and writes notes on pull requests.",
-  entrypoint: "bun run plugin.js",
+  // The argument only marks the process, so the test can look for it by name.
+  entrypoint: "bun run plugin.js agx-draws-marker",
   scope: "read",
   contributes: {
     panels: [{ id: "main", title: "Reviews", icon: "review" }],
@@ -46,14 +47,23 @@ await draw("hello from " + me.name);
 const refused = await post("/plugin/self/panel", { id: "undeclared", tree: { type: "divider" } });
 const script = await post("/plugin/self/panel", { id: "main", tree: { type: "html", html: "<script>" } });
 require("fs").writeFileSync("refused.json", JSON.stringify({ undeclared: refused.status, script: script.status }));
-const note = (status) => ({ id: "n1", repo: "acme/orbit", number: 42, severity: "high", title: "Off by one", path: "src/a.ts", line: 3, ...(status ? { status } : {}) });
+const note = (status, title = "Off by one") => ({ id: "n1", repo: "acme/orbit", number: 42, severity: "high", title, path: "src/a.ts", line: 3, ...(status ? { status } : {}) });
 await post("/plugin/self/pr/run", { id: "r1", repo: "acme/orbit", number: 42, state: "done", title: "Review", sha: "abc1234" });
 await post("/plugin/self/pr/notes", { notes: [note(), { id: "n2", repo: "acme/orbit", number: 42, severity: "idea", title: "Rename" }] });
 for (;;) {
-  const r = await fetch(base + "/plugin/self/events?wait=5000", { headers: h }).then((r) => r.json()).catch(() => null);
-  for (const ev of r?.events ?? []) {
+  const res = await fetch(base + "/plugin/self/events?wait=5000", { headers: h }).catch(() => null);
+  // A revoked token means it was stopped: leave. An unreachable server is
+  // retried, the way a real plugin rides out a restart — so the only thing
+  // that can stop this process when the server goes down is the server.
+  if (res && (res.status === 401 || res.status === 403)) process.exit(0);
+  if (!res) { await Bun.sleep(300); continue; }
+  const r = await res.json().catch(() => null);
+  if (!r?.ok) { await Bun.sleep(500); continue; }
+  for (const ev of r.events) {
     if (ev.type === "action" && ev.action.id === "ping") await draw("pinged " + ev.action.payload.n);
-    if (ev.type === "note-status") await post("/plugin/self/pr/notes", { notes: [note("open")] });
+    // Re-sent as open, with a new title, so the test can see that it really
+    // arrived and that the person's "resolved" still won.
+    if (ev.type === "note-status") await post("/plugin/self/pr/notes", { notes: [note("open", "Off by one (seen again)")] });
   }
 }
 `;
@@ -125,6 +135,9 @@ afterAll(async () => {
   // started it rather than orphaned when the server is killed.
   try { await post("/plugins/disable", { name: MANIFEST.name }); } catch { /* server gone */ }
   await stop();
+  // And prove it: nothing may still be running the test plugin's script.
+  const left = Bun.spawnSync(["pgrep", "-f", "plugin.js agx-draws-marker"]).stdout.toString().trim();
+  if (left) { Bun.spawnSync(["kill", ...left.split("\n")]); throw new Error(`plugin processes outlived the server: ${left}`); }
   try { rmSync(dir, { recursive: true, force: true }); } catch { /* fine */ }
 });
 
@@ -166,11 +179,13 @@ describe("notes on a pull request", () => {
   test("resolved by the person stays resolved when the plugin sends the note again", async () => {
     const r = await post("/plugins/pr-notes/status", { plugin: MANIFEST.name, id: "n1", status: "resolved" });
     expect(r.status).toBe(200);
-    // The plugin answers a status change by re-sending n1 as open.
-    await Bun.sleep(600);
-    const n1 = (await get("/plugins/pr-notes?repo=acme/orbit&number=42")).notes.find((n: Json) => n.id === "n1");
+    // The plugin answers a status change by re-sending n1 as open, retitled.
+    const n1 = await until(
+      async () => (await get("/plugins/pr-notes?repo=acme/orbit&number=42")).notes.find((n: Json) => n.id === "n1"),
+      (n: Json) => n?.title === "Off by one (seen again)");
+    expect(n1.title).toBe("Off by one (seen again)");
     expect(n1.status).toBe("resolved");
-    expect(n1.updatedAt).toBeGreaterThan(n1.createdAt);
+    expect(n1.statusBy).toBe("person");
   });
 });
 
@@ -183,8 +198,20 @@ describe("settings the manifest declared", () => {
 });
 
 describe("a restart", () => {
-  test("brings an enabled plugin back with a fresh token, and its notes are still there", async () => {
+  test("stops the plugin with the server, brings it back with a fresh token, and its notes are still there", async () => {
+    const script = "plugin.js agx-draws-marker";
+    const before = Bun.spawnSync(["pgrep", "-f", script]).stdout.toString().trim();
+    expect(before).not.toBe("");
     await stop();
+    // Gone with the server — not left looping on a dead token.
+    let after = "";
+    for (let i = 0; i < 30; i++) {
+      after = Bun.spawnSync(["pgrep", "-f", script]).stdout.toString().trim();
+      if (!after) break;
+      await Bun.sleep(100);
+    }
+    if (after) console.error("survivors:", Bun.spawnSync(["ps", "-o", "pid,ppid,pgid,sid,args", "-p", after.split("\n").join(",")]).stdout.toString());
+    expect(after).toBe("");
     await boot();
     expect(await until(heading, (h) => h !== null, 10_000)).toBe("hello from orbit-reviewer");
     const n1 = (await get("/plugins/pr-notes?repo=acme/orbit&number=42")).notes.find((n: Json) => n.id === "n1");

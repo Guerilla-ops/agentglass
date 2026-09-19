@@ -1717,7 +1717,8 @@ const realApi = {
   pluginRemove: (name: string) =>
     post<{ ok: boolean }>("/plugins/remove", { name }),
   /** What every enabled plugin has drawn in the panels it declared. */
-  pluginPanels: () => get<{ ok: boolean; panels: PluginPanel[] }>("/plugins/panels"),
+  pluginPanels: (plugin?: string, panel?: string) => get<{ ok: boolean; panels: PluginPanel[] }>(
+    plugin && panel ? `/plugins/panels?plugin=${encodeURIComponent(plugin)}&panel=${encodeURIComponent(panel)}` : "/plugins/panels"),
   /** A click or a submitted form, sent back to the plugin that drew it. */
   pluginAction: (plugin: string, panel: string | undefined, action: UiAction, values?: Record<string, unknown>) =>
     post<{ ok: boolean; error?: string }>("/plugins/action", { plugin, panel, action, values }),
@@ -2261,7 +2262,7 @@ const demoApi: typeof realApi = {
   pluginEnable: (_name: string) => D({ ok: false, error: "not available in the demo" }),
   pluginDisable: (_name: string) => D({ ok: false }),
   pluginRemove: (_name: string) => D({ ok: false }),
-  pluginPanels: () => D({ ok: true, panels: [] as PluginPanel[] }),
+  pluginPanels: (_plugin?: string, _panel?: string) => D({ ok: true, panels: [] as PluginPanel[] }),
   pluginAction: (_p: string, _panel: string | undefined, _a: UiAction, _v?: Record<string, unknown>) => D({ ok: false, error: "not available in the demo" }),
   pluginSettings: (_name: string) => D({ ok: false, fields: [] as Field[], values: {}, error: "not available in the demo" }),
   pluginSettingsSave: (_name: string, _v: Record<string, unknown>) => D({ ok: false, error: "not available in the demo" }),

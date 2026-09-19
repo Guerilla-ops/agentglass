@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../lib/api.ts";
 import type { NoteStatus, PluginPrNotes, PrNote, PrRun } from "../../lib/pluginTypes.ts";
 import { subscribePluginFrame } from "../../lib/pluginBus.ts";
@@ -36,9 +36,16 @@ const EMPTY: PluginPrNotes = { ok: true, runs: [], notes: [], publishers: {} };
  */
 export function useLocalNotes(repo: string | undefined, number: number | null | undefined): LocalNotes {
   const [data, setData] = useState<PluginPrNotes>(EMPTY);
+  // Only the latest request may land: switching pull requests quickly let an
+  // earlier answer arrive last and show one pull request's notes on another.
+  const seq = useRef(0);
   const load = useCallback(async () => {
+    const mine = ++seq.current;
     if (!repo || !number) { setData(EMPTY); return; }
-    try { setData(await api.pluginPrNotes(repo, number)); } catch { /* keep what is shown */ }
+    try {
+      const r = await api.pluginPrNotes(repo, number);
+      if (mine === seq.current) setData(r);
+    } catch { /* keep what is shown */ }
   }, [repo, number]);
   useEffect(() => { void load(); }, [load]);
   useEffect(() => {
@@ -221,7 +228,7 @@ export function RunCard({ run, notes, publisher, onStatus, onOpenFile, md = plai
       )}
       {notes.length > 0 && (
         <div className="px-2.5 pb-2.5 flex flex-col gap-1.5 min-w-0">
-          {shown.map((n) => <NoteCard key={n.id} n={n} md={md} onStatus={(s) => onStatus(n, s)} onOpenFile={onOpenFile} />)}
+          {shown.map((n) => <NoteCard key={`${n.plugin}/${n.id}`} n={n} md={md} onStatus={(s) => onStatus(n, s)} onOpenFile={onOpenFile} />)}
           {closedN > 0 && (
             <button type="button" onClick={() => setShowClosed((v) => !v)}
               className="text-[10.5px] self-start px-1 hover:underline" style={{ color: "var(--text3)", background: "transparent", border: 0 }}>
@@ -246,11 +253,18 @@ export function groupByRun(local: LocalNotes): { run: LocalRun | null; notes: Lo
   }
   for (const r of local.runs) {
     const k = `${r.plugin}/${r.id}`;
-    out.push({ run: r, notes: byRun.get(k) ?? [], ms: r.finishedAt ?? r.startedAt, key: `lr:${k}` });
+    out.push({ run: r, notes: byRun.get(k) ?? [], ms: safeMs(r.finishedAt ?? r.startedAt), key: `lr:${k}` });
     byRun.delete(k);
   }
   // Notes pointing at a run the plugin never described, and notes with no run.
-  for (const [k, ns] of byRun) out.push({ run: null, notes: ns, ms: Math.min(...ns.map((n) => n.createdAt)), key: `lo:${k}` });
-  for (const n of local.notes) if (!n.runId) out.push({ run: null, notes: [n], ms: n.createdAt, key: `ln:${n.plugin}/${n.id}` });
+  for (const [k, ns] of byRun) out.push({ run: null, notes: ns, ms: safeMs(Math.min(...ns.map((n) => n.createdAt))), key: `lo:${k}` });
+  for (const n of local.notes) if (!n.runId) out.push({ run: null, notes: [n], ms: safeMs(n.createdAt), key: `ln:${n.plugin}/${n.id}` });
   return out;
+}
+
+/** The server refuses a time a Date cannot hold; this is the second guard,
+ *  for a file written before it did — one bad number must not take the
+ *  conversation down. */
+function safeMs(v: number): number {
+  return Number.isFinite(v) && Math.abs(v) <= 8.64e15 ? v : 0;
 }

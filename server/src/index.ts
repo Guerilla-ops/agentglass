@@ -177,10 +177,10 @@ import { resolveToken, tokenOk, isIntake, isAuthExempt, callerFor, allowed, scop
 import {
   listPlugins, masterEnabled, setMaster, installPlugin, installFromCatalogue, updatePlugin, enablePlugin, disablePlugin, removePlugin,
   listCatalogues, addCatalogue, removeCatalogue,
-  contributesOf, isRunning, pluginSettings, setPluginSettings, resumeEnabledPlugins,
+  contributesOf, isRunning, pluginSettings, setPluginSettings, resumeEnabledPlugins, stopAllPluginsSync,
 } from "./plugins.ts";
 import {
-  setPluginUiHook, setPanel, panelState, setOptions, pushEvent, takeEvents, upsertRun, upsertNotes, notesFor, setNoteStatus,
+  setPluginUiHook, setPanel, panelState, setOptions, pushEvent, takeEvents, upsertRun, upsertNotes, notesFor, setNoteStatus, flushPluginNotes,
 } from "./plugin-ui.ts";
 import { validPrRef } from "../../shared/pluginUi.ts";
 import { fetchCatalogue } from "./plugin-catalogue.ts";
@@ -4778,10 +4778,15 @@ const server = Bun.serve<WsData>({
        is unlisted in ANSWER_POST/READ_POST, so it needs `full` like the rest
        of /plugins, and goes through the same CSRF check. */
     if (pathname === "/plugins/panels" && req.method === "GET") {
+      // `?plugin=&panel=` asks for one; a redraw ping names which, so an open
+      // window fetches the panel that changed rather than every tree.
+      const onlyPlugin = url.searchParams.get("plugin");
+      const onlyPanel = url.searchParams.get("panel");
       const out = [];
       for (const p of listPlugins()) {
-        if (!p.enabled) continue;
+        if (!p.enabled || (onlyPlugin && p.name !== onlyPlugin)) continue;
         for (const panel of p.contributes.panels ?? []) {
+          if (onlyPanel && panel.id !== onlyPanel) continue;
           const st = panelState(p.name, panel.id);
           out.push({ plugin: p.name, publisher: p.publisher, ...panel, running: isRunning(p.name), tree: st?.tree ?? null, updatedAt: st?.updatedAt ?? null });
         }
@@ -8449,6 +8454,8 @@ for (const sig of ["SIGINT", "SIGTERM"] as const) {
        work, and the next boot's own recovery covers exactly that case. */
     stopUnderstudyWatchdog();
     stopMirrorSweeper();
+    stopAllPluginsSync();
+    flushPluginNotes();
     shutdownTerminals();
     releaseDatabaseClaim();
     process.exit(0);

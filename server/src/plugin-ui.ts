@@ -29,8 +29,16 @@ import {
 import { pluginsConfigDir } from "./plugins.ts";
 
 export type PluginUiFrame =
-  | { kind: "panels" }
+  /** `plugin`/`panel` name what was redrawn, so a window fetches that one
+   *  panel rather than every plugin's every tree; absent means "the list of
+   *  panels itself may have changed". */
+  | { kind: "panels"; plugin?: string; panel?: string }
   | { kind: "pr"; repo: string; number: number };
+
+/** plugins.ts says which plugins have a process. Events for one that does
+ *  not are dropped rather than queued for whoever next runs under its name. */
+let isLive: (plugin: string) => boolean = () => true;
+export function setLivenessCheck(fn: (plugin: string) => boolean): void { isLive = fn; }
 
 let onChange: (f: PluginUiFrame) => void = () => {};
 /** index.ts wires this to `broadcast`, the same setter shape `setTaskChangeHook` uses. */
@@ -48,7 +56,7 @@ export function setPanel(plugin: string, c: Contributes, id: string, raw: unknow
   let m = panels.get(plugin);
   if (!m) panels.set(plugin, (m = new Map()));
   m.set(id, { tree: t.value, updatedAt: Date.now() });
-  onChange({ kind: "panels" });
+  onChange({ kind: "panels", plugin, panel: id });
   return { ok: true };
 }
 
@@ -114,6 +122,7 @@ const queues = new Map<string, PluginEvent[]>();
 const waiters = new Map<string, Set<() => void>>();
 
 export function pushEvent(plugin: string, ev: PluginEvent): void {
+  if (!isLive(plugin)) return;
   let q = queues.get(plugin);
   if (!q) queues.set(plugin, (q = []));
   q.push(ev);
@@ -129,11 +138,14 @@ export function pushEvent(plugin: string, ev: PluginEvent): void {
  * return, with no socket to hold and nothing for another plugin to overhear.
  */
 export async function takeEvents(plugin: string, waitMs: number): Promise<PluginEvent[]> {
-  const drain = () => { const q = queues.get(plugin) ?? []; queues.set(plugin, []); return q; };
+  const drain = () => { const q = queues.get(plugin) ?? []; if (queues.has(plugin)) queues.set(plugin, []); return q; };
   if ((queues.get(plugin)?.length ?? 0) > 0 || waitMs <= 0) return drain();
   await new Promise<void>((resolve) => {
     let set = waiters.get(plugin);
     if (!set) waiters.set(plugin, (set = new Set()));
+    // A plugin needs one long poll, two across a reconnect. More than a few
+    // is a leak or a loop; the oldest is answered now, empty.
+    if (set.size >= 4) { const oldest = set.values().next().value; oldest?.(); }
     const done = () => { clearTimeout(t); set!.delete(done); resolve(); };
     const t = setTimeout(done, Math.min(waitMs, 30_000));
     set.add(done);
@@ -189,7 +201,15 @@ function load(): NotesStore {
   return cache;
 }
 
+/** Coalesced: a plugin writing progress is many upserts a second, and the
+ *  file is rewritten whole. One write per quarter second at most, off the
+ *  request that caused it. */
+let saveTimer: ReturnType<typeof setTimeout> | null = null;
 function save(): void {
+  if (saveTimer) return;
+  saveTimer = setTimeout(() => { saveTimer = null; saveNow(); }, 250);
+}
+function saveNow(): void {
   const p = notesPath();
   if (!cache || offLimits(p)) return;
   try {
@@ -200,10 +220,22 @@ function save(): void {
   }
 }
 
-/** Per pull request per plugin. A review re-run a hundred times keeps its
- *  last hundred runs, and a plugin gone wrong cannot fill the disk. */
+/** Per pull request per plugin, and per plugin overall. The first keeps a
+ *  review re-run a hundred times to its last hundred runs; the second is what
+ *  keeps a plugin gone wrong — posting to PR 1, 2, 3, … — from filling the
+ *  disk, since repository and number are the plugin's to choose. */
 const MAX_RUNS_PER_PR = 100;
 const MAX_NOTES_PER_PR = 2000;
+const MAX_RUNS_PER_PLUGIN = 5_000;
+const MAX_NOTES_PER_PLUGIN = 20_000;
+const MAX_BYTES_PER_PLUGIN = 40_000_000;
+
+function bytesOf(plugin: string, s: NotesStore): number {
+  let n = 0;
+  for (const x of s.notes) if (x.plugin === plugin) n += (x.body?.length ?? 0) + x.title.length + 200;
+  for (const x of s.runs) if (x.plugin === plugin) n += (x.summary?.length ?? 0) + x.title.length + 200;
+  return n;
+}
 
 export function upsertRun(plugin: string, c: Contributes, raw: unknown): { ok: true } | { ok: false; error: string } {
   if (!c.prNotes) return { ok: false, error: "this plugin's manifest does not declare prNotes" };
@@ -212,6 +244,12 @@ export function upsertRun(plugin: string, c: Contributes, raw: unknown): { ok: t
   const s = load();
   const run = { ...r.value, plugin };
   const i = s.runs.findIndex((x) => x.plugin === plugin && x.id === run.id);
+  if (i < 0 && s.runs.filter((x) => x.plugin === plugin).length >= MAX_RUNS_PER_PLUGIN) {
+    return { ok: false, error: `this plugin already keeps ${MAX_RUNS_PER_PLUGIN} runs` };
+  }
+  if (bytesOf(plugin, s) + (run.summary?.length ?? 0) > MAX_BYTES_PER_PLUGIN) {
+    return { ok: false, error: "this plugin's notes are over their size limit" };
+  }
   if (i >= 0) s.runs[i] = { ...run, startedAt: s.runs[i]!.startedAt };
   else s.runs.push(run);
   const mine = s.runs.filter((x) => x.plugin === plugin && x.repo === run.repo && x.number === run.number);
@@ -241,15 +279,23 @@ export function upsertNotes(plugin: string, c: Contributes, raw: unknown): { ok:
     valid.push(v.value);
   }
   const s = load();
+  const mineN = s.notes.filter((x) => x.plugin === plugin).length;
+  if (mineN + valid.length > MAX_NOTES_PER_PLUGIN) return { ok: false, error: `this plugin already keeps ${mineN} notes, the limit is ${MAX_NOTES_PER_PLUGIN}` };
+  const incoming = valid.reduce((n, v) => n + (v.body?.length ?? 0) + v.title.length + 200, 0);
+  if (bytesOf(plugin, s) + incoming > MAX_BYTES_PER_PLUGIN) return { ok: false, error: "this plugin's notes are over their size limit" };
   const now = Date.now();
   const touched = new Set<string>();
   for (const v of valid) {
     const i = s.notes.findIndex((x) => x.plugin === plugin && x.id === v.id);
     const prev = i >= 0 ? s.notes[i]! : null;
+    // The person's choice stands; the plugin's own earlier choice does not
+    // bind it (a bug it marked fixed can come back).
+    const personSaid = prev?.statusBy === "person";
     const note: PrNote & { plugin: string } = {
       ...v,
       plugin,
-      status: prev && prev.status !== "open" ? prev.status : v.status ?? "open",
+      status: personSaid ? prev!.status : v.status ?? "open",
+      statusBy: personSaid ? "person" : "plugin",
       createdAt: prev?.createdAt ?? now,
       updatedAt: now,
     };
@@ -291,6 +337,7 @@ export function setNoteStatus(plugin: string, id: string, status: unknown): { ok
   const n = s.notes.find((x) => x.plugin === plugin && x.id === id);
   if (!n) return { ok: false, error: "no such note" };
   n.status = status as NoteStatus;
+  n.statusBy = "person";
   n.updatedAt = Date.now();
   save();
   pushEvent(plugin, { type: "note-status", repo: n.repo, number: n.number, id, status: n.status, at: n.updatedAt });
@@ -306,6 +353,11 @@ export function dropNotesOf(plugin: string): void {
   s.runs = s.runs.filter((r) => r.plugin !== plugin);
   s.notes = s.notes.filter((n) => n.plugin !== plugin);
   if (s.runs.length + s.notes.length !== before) save();
+}
+
+/** Flush a pending coalesced write — on shutdown, and for tests. */
+export function flushPluginNotes(): void {
+  if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; saveNow(); }
 }
 
 /** Test seam. */

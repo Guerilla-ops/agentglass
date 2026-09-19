@@ -10724,7 +10724,7 @@ function Conversation({ d, lanes, raw, onRaw, onResolve, onReply, onComment, onR
         node: <span style={{ color: "var(--primary)" }}>◆</span>,
         body: g.run
           ? <RunCard run={g.run} notes={g.notes} publisher={local.publishers[g.run.plugin]} onStatus={local.setStatus} onOpenFile={onOpenFile} md={localMd} />
-          : <div className="flex flex-col gap-1.5">{g.notes.map((n) => <NoteCard key={n.id} n={n} md={localMd} onStatus={(st) => local.setStatus(n, st)} onOpenFile={onOpenFile} />)}</div>,
+          : <div className="flex flex-col gap-1.5">{g.notes.map((n) => <NoteCard key={`${n.plugin}/${n.id}`} n={n} md={localMd} onStatus={(st) => local.setStatus(n, st)} onOpenFile={onOpenFile} />)}</div>,
       });
     }
   }

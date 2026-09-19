@@ -1795,7 +1795,7 @@ export type WsFrame =
   | { type: "understudy"; data: UnderstudyFrame }
   /** A plugin redrew a panel or wrote notes on a pull request. Only where to
    *  look again — the contents are fetched over the token. See plugin-ui.ts. */
-  | { type: "plugin"; data: { kind: "panels" } | { kind: "pr"; repo: string; number: number } };
+  | { type: "plugin"; data: { kind: "panels"; plugin?: string; panel?: string } | { kind: "pr"; repo: string; number: number } };
 
 export interface AlertNote {
   title: string;

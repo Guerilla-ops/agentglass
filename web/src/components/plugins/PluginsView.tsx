@@ -46,17 +46,32 @@ export function PluginsView({ active }: { active: boolean }) {
   }, []);
 
   useEffect(() => { if (active) void load(); }, [active, load]);
-  // A redraw is announced as "look again"; a burst of them (a plugin drawing
-  // progress) is coalesced into one fetch.
+  // A redraw is announced as "look again", naming the panel. Only while this
+  // view is on screen, and only that panel: a plugin drawing progress every
+  // second must not make every window re-download every tree. A burst is
+  // coalesced into one fetch per panel. Anything missed while hidden is
+  // caught by the full load when the view comes back.
   useEffect(() => {
-    let t: ReturnType<typeof setTimeout> | null = null;
+    if (!active) return;
+    const due = new Map<string, ReturnType<typeof setTimeout>>();
     const off = subscribePluginFrame((f) => {
       if (f.kind !== "panels") return;
-      if (t) clearTimeout(t);
-      t = setTimeout(() => { t = null; void load(); }, 120);
+      const k = f.plugin && f.panel ? `${f.plugin}/${f.panel}` : "*";
+      const t0 = due.get(k);
+      if (t0) clearTimeout(t0);
+      due.set(k, setTimeout(async () => {
+        due.delete(k);
+        if (k === "*") { void load(); return; }
+        try {
+          const r = await api.pluginPanels(f.plugin, f.panel);
+          const fresh = r.panels[0];
+          if (!fresh) { void load(); return; }
+          setPanels((ps) => ps?.map((p) => (keyOf(p) === keyOf(fresh) ? fresh : p)) ?? ps);
+        } catch { /* the next ping or the next visit catches up */ }
+      }, 120));
     });
-    return () => { off(); if (t) clearTimeout(t); };
-  }, [load]);
+    return () => { off(); for (const t of due.values()) clearTimeout(t); };
+  }, [active, load]);
 
   const current = useMemo(() => {
     if (!panels?.length) return null;

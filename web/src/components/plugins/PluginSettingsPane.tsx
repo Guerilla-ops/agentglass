@@ -37,7 +37,9 @@ export function PluginSettingsPane({ name, open }: { name: string; open: boolean
   // The plugin can publish the choices for a select once it has looked
   // around (which agents are installed, say); pick those up without losing
   // what is being typed.
-  useEffect(() => subscribePluginFrame((f) => { if (f.kind === "panels") void load(true); }), [load]);
+  // Only the ping without a panel: that is the one a change of options sends;
+  // a panel redrawing is not news to a settings page.
+  useEffect(() => subscribePluginFrame((f) => { if (f.kind === "panels" && !f.panel) void load(true); }), [load]);
   useEffect(() => () => { if (savedTimer.current) clearTimeout(savedTimer.current); }, []);
 
   const commit = async (key: string, v: unknown) => {
