@@ -6,7 +6,7 @@ import {
   type Theme, type ThemeMode,
 } from "../lib/themes.ts";
 import { ACCENTS, currentAccent, setAccentPref } from "../lib/accent.ts";
-import { SERVER, withToken } from "../lib/api.ts";
+import { SERVER, authHeaders } from "../lib/api.ts";
 
 /* Settings → Appearance.
  *
@@ -140,30 +140,29 @@ const MODES: { m: ThemeMode; label: string }[] = [
 /**
  * The desktop's own mark, as the label of its segment.
  *
- * Served by this machine's server off the desktop's install (see desktopLogo)
- * rather than shipped, and drawn as a MASK so it takes the segment's text colour
- * — dim at rest, bright when on — like the words beside it. If the mark cannot
- * be had the button says the name instead: a blank button is worse than a word.
+ * Inlined, so it takes the segment's text colour — dim at rest, bright when on
+ * — like the words beside it. The first version drew it as a CSS mask and it
+ * drew nothing. What comes back is safe to inline because the server rebuilds
+ * it from geometry alone (see rebuildMark); if it cannot be had the button says
+ * the name instead, because a blank button is worse than a word.
  */
 function DesktopMark({ source }: { source: string }) {
   const name = source === "omarchy" ? "Omarchy" : source;
-  const [ok, setOk] = useState<boolean | null>(null);
-  const url = withToken(`${SERVER}/desktop/logo`);
+  const [svg, setSvg] = useState<string | null>(null);
   useEffect(() => {
-    const img = new Image();
-    img.onload = () => setOk(true);
-    img.onerror = () => setOk(false);
-    img.src = url;
-  }, [url]);
-  if (ok !== true) return <>{name}</>;
+    let live = true;
+    fetch(`${SERVER}/desktop/logo`, { headers: authHeaders() })
+      .then((r) => (r.ok ? r.text() : ""))
+      .then((t) => { if (live && t.startsWith("<svg")) setSvg(t); })
+      .catch(() => {});
+    return () => { live = false; };
+  }, []);
+  if (!svg) return <>{name}</>;
   return (
-    <span role="img" aria-label={name} className="inline-block align-middle"
-      style={{
-        width: 52, height: 12,
-        backgroundColor: "currentColor",
-        WebkitMask: `url("${url}") center / contain no-repeat`,
-        mask: `url("${url}") center / contain no-repeat`,
-      }} />
+    <span role="img" aria-label={name} className="inline-flex items-center align-middle"
+      style={{ height: 12 }}
+      /* Sized by height; the view box gives the width. */
+      dangerouslySetInnerHTML={{ __html: svg.replace("<svg ", '<svg height="12" style="display:block" ') }} />
   );
 }
 

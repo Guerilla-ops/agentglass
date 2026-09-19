@@ -53,6 +53,6 @@ test("the desktop's mark is served from the machine, never shipped", async () =>
   const picker = await Bun.file(new URL("../src/components/ThemePicker.tsx", import.meta.url)).text();
   expect(picker).toContain("/desktop/logo");
   /* And the word stands in when the mark cannot be had. */
-  expect(picker).toMatch(/if \(ok !== true\) return <>\{name\}<\/>;/);
+  expect(picker).toMatch(/if \(!svg\) return <>\{name\}<\/>;/);
 });
 
