@@ -55,8 +55,31 @@ for await (const f of new Glob("**/*.{ts,tsx}").scan(root)) {
   });
 }
 
+/** A close cross typed as `×` — the multiplication sign — alone in a control.
+ *  `×3` as a count is a word, and stays. */
+const loneTimes: string[] = [];
+for await (const f of new Glob("**/*.tsx").scan(root)) {
+  const src = code(await Bun.file(root + f).text());
+  src.split("\n").forEach((line, i) => {
+    if (/>\s*×\s*</.test(line) || /^\s*×\s*$/.test(line)) loneTimes.push(`${f}:${i + 1}`);
+  });
+}
+
 describe("an icon is drawn, never typed", () => {
+  it("a close is a CloseIcon in a box, not a × character", () => {
+    expect(loneTimes).toEqual([]);
+  });
+
   it("no icon glyph is left as text in the UI", () => {
     expect(offenders).toEqual([]);
+  });
+});
+
+describe("an icon sits on its line", () => {
+  it("in a row that aligns by baseline, it is centred instead", async () => {
+    // An SVG's baseline is its bottom edge: in `items-baseline` the task rows'
+    // flag rode 3px above the title it leads. Measured in the rendered app.
+    const css = await Bun.file(new URL("../src/index.css", import.meta.url)).text();
+    expect(css).toMatch(/\.items-baseline > svg,\s*\n\.items-baseline > :is\(span, button, a\)\.flex:has\(> svg:only-child\) \{\s*align-self: center;/);
   });
 });

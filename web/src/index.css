@@ -2158,3 +2158,14 @@ textarea.agx-input { line-height: 1.45; resize: vertical; }
   font-size: 9px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase;
   padding: .12rem .3rem; border: 1px solid currentColor; flex: 0 0 auto; line-height: 1.3;
 }
+
+/* An icon in a row that aligns by baseline sits on the line, not above it.
+   An SVG's baseline is its bottom edge, so in `items-baseline` it rose like a
+   superscript beside the text it leads — measured 3px high on every task row.
+   Direct SVGs, and the one-icon `flex` wrappers that carry a colour or a
+   title; an icon-and-words pair (IconLabel is `inline-flex`) keeps the
+   baseline of its words. */
+.items-baseline > svg,
+.items-baseline > :is(span, button, a).flex:has(> svg:only-child) {
+  align-self: center;
+}

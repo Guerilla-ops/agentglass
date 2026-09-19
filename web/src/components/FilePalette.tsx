@@ -34,6 +34,7 @@ import { appChordFor, chordLabel } from "../lib/keybindings.ts";
 import { LAYER } from "../lib/layers.ts";
 import { shortPath } from "../lib/shortPath.ts";
 import type { DiskPlace, FsEntry, GitRepoRef, GrepHit } from "../../../shared/types.ts";
+import { CloseButton } from "./CloseButton.tsx";
 
 export type PaletteTab = "names" | "contents" | "recent" | "machine";
 
@@ -847,9 +848,7 @@ export function FilePalette({
                   away no longer closes this — without one the scrim is still
                   the obvious target and a second control would be clutter. */}
               {docOpen && (
-                <button onClick={onClose} title="Close the search (esc)"
-                  className="text-[13px] leading-none px-1.5 py-1 rounded"
-                  style={{ color: "var(--text3)" }}>×</button>
+                <CloseButton onClick={onClose} title="Close the search (esc)" size={ICON.sm} />
               )}
             </div>
 

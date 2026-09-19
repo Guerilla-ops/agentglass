@@ -21,6 +21,7 @@ import { subscribeFilesReveal, filesReveal } from "../lib/filesReveal.ts";
 import { FOLDER, FOLDER_OPEN, guides, iconFor, isNoise } from "../lib/fileIcons.ts";
 import { SearchIcon } from "../lib/glyphIcons.tsx";
 import { ICON } from "../lib/iconSize.ts";
+import { CloseButton } from "./CloseButton.tsx";
 
 /** How a row is drawn depends only on this, so the tree and the search results
  *  cannot drift apart. */
@@ -117,7 +118,7 @@ function FilesBody({ root, branch, active }: { root: string; branch: string; act
           <input value={q} onChange={(e) => setQ(e.target.value)} spellCheck={false} autoComplete="off"
             placeholder={mode === "names" ? "Find a file by name…" : "Search the code of this checkout…"}
             className="flex-1 min-w-0 bg-transparent outline-none text-[11px]" style={{ color: "var(--text)" }} />
-          {q && <button onClick={() => setQ("")} title="Clear" style={{ color: "var(--text3)" }}>×</button>}
+          {q && <CloseButton onClick={() => setQ("")} title="Clear" size={ICON.xs} hit={20} />}
         </span>
         {/* Two different questions — where is the file called X, and where is
             the code that says X — so two modes rather than one box that guesses

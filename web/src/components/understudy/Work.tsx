@@ -37,6 +37,7 @@ import type {
 } from "../../../../shared/types.ts";
 import { CircleIcon, DotIcon, MoonIcon } from "../../lib/glyphIcons.tsx";
 import { ICON } from "../../lib/iconSize.ts";
+import { CloseIcon } from "../CloseButton.tsx";
 
 const when = (ms: number) =>
   new Date(ms).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
@@ -1068,7 +1069,7 @@ export function Work({ active, standing, goTo }: {
               <span className="flex-1 min-w-0 text-[12.5px] truncate" title={q.detail || q.title}>{q.title}</span>
               <span className="text-[10.5px]" style={{ color: "var(--text4)" }} title={q.repo}>{leaf(q.repo)}</span>
               <button className="agx-work-x" aria-label={`Take "${q.title}" off the list`}
-                onClick={() => { void post("/understudy/work/unask", { id: q.id }).then(load); }}>×</button>
+                onClick={() => { void post("/understudy/work/unask", { id: q.id }).then(load); }}><CloseIcon size={ICON.xs} /></button>
             </li>
           ))}
         </ul>

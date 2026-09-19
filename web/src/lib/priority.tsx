@@ -55,7 +55,10 @@ export const prioLook = (p: ProviderTask["priority"]) =>
  * a different size on every desktop and in colour on some.
  */
 export function Flag({ c, on, size = 12 }: { c: string; on: boolean; size?: number }) {
-  return <span aria-hidden className="shrink-0 flex" style={{ color: c }}><FlagIcon size={size} filled={on} /></span>;
+  /* `self-center`: the rows it sits in align by BASELINE, and an SVG's baseline
+     is its bottom edge — measured 3px above the title it leads, like a
+     superscript. Centred, it sits on the line. */
+  return <span aria-hidden className="shrink-0 flex self-center" style={{ color: c }}><FlagIcon size={size} filled={on} /></span>;
 }
 
 /** The flag for a card, looked up and drawn in one step — what every surface

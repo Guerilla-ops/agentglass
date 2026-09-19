@@ -5,6 +5,7 @@ import {
   type FilterState, type FacetView, type SortTok,
 } from "../lib/prFilter.ts";
 import { SearchIcon } from "../lib/glyphIcons.tsx";
+import { CloseIcon } from "./CloseButton.tsx";
 
 /**
  * The PR list's filter bar (#pulldash-style): a query input, a wrapping row of
@@ -119,8 +120,8 @@ export function PrFilterBar({
         )}
         {query.trim() && (
           <button onClick={() => onQuery("")} title="Clear all filters" aria-label="Clear all filters"
-            className="text-[11px] px-1.5 py-0.5 rounded shrink-0 hover:bg-white/5" style={{ color: "var(--text3)", border }}>
-            ×
+            className="grid place-items-center w-[22px] h-[22px] rounded shrink-0 hover:bg-white/5" style={{ color: "var(--text3)", border }}>
+            <CloseIcon size={ICON.xs} />
           </button>
         )}
       </div>
@@ -173,7 +174,7 @@ export function PrFilterBar({
               className="text-[9.5px] pl-2 pr-1 py-0.5 rounded-full flex items-center gap-1 hover:opacity-80"
               style={{ color: "var(--text2)", background: "color-mix(in srgb, var(--primary) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--primary) 28%, transparent)" }}>
               <span className="truncate max-w-[140px]">{c.label}</span>
-              <span aria-hidden style={{ color: "var(--text3)" }}>×</span>
+              <span aria-hidden className="flex" style={{ color: "var(--text3)" }}><CloseIcon size={ICON.xs} /></span>
             </button>
           ))}
           <button onClick={() => onQuery("")} className="text-[9.5px] px-1.5 py-0.5 rounded-full hover:bg-white/5" style={{ color: "var(--text3)" }}>

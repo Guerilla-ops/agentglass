@@ -56,7 +56,7 @@ import { termOptions, copyOnSelect, rightClickPaste } from "../lib/termPrefs.ts"
 import { useModernWidths } from "../lib/termUnicode.ts";
 import { dragHold } from "../lib/dragHold.ts";
 import { mouseModeGuard, type MouseModeGuard } from "../lib/mouseModeGuard.ts";
-import { CloseButton } from "./CloseButton.tsx";
+import { CloseButton, CloseIcon } from "./CloseButton.tsx";
 import { FindArrow } from "./FindBar.tsx";
 import { PluckPalette } from "./terminal/PluckPalette.tsx";
 
@@ -3153,11 +3153,11 @@ export function TermView({ active, onClose = () => {} }: { active: boolean; onCl
                                     color: current || x.locked ? "var(--text4)" : "var(--error)",
                                     opacity: current || x.locked ? 0.35 : 1,
                                     cursor: current || x.locked ? "not-allowed" : "pointer",
-                                    fontSize: 13, lineHeight: 1,
+                                    display: "grid", placeItems: "center",
                                   }}
                                   onClick={() => { if (!current && !x.locked) setKilling(x.name); }}
                                 >
-                                  ×
+                                  <CloseIcon size={ICON.xs} />
                                 </button>
                                 </>
                               )}
