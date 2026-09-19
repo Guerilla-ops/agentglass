@@ -937,6 +937,10 @@ export const SuggestCtx = createContext<{ apply: (text: string) => void; busy: b
 const CommitJumpCtx = createContext<((sha: string) => boolean) | null>(null);
 
 
+/** Markdown for plugins' local notes, drawn by the same renderer as a GitHub
+ *  remark so the two read alike side by side. */
+const localMd = (text: string) => <Md body={text} />;
+
 export function Md({ body, className, onToggleTask }: {
   body: string; className?: string;
   /**
@@ -3982,7 +3986,7 @@ export function PrView({ active, onOpenChatWith, onReviewInTerminal, jumpTo }: {
     // than `warn`: amber on Checks means something is broken, and a colleague
     // answering you is not a failure — it is the one thing on this panel worth
     // walking towards.
-    { id: "conversation", label: "Conversation", n: lanes.humans.length + lanes.humanComments.length + d.threads.length + lanes.bots.length, hot: newAtoms.length },
+    { id: "conversation", label: "Conversation", n: lanes.humans.length + lanes.humanComments.length + d.threads.length + lanes.bots.length + groupByRun(local).length, hot: newAtoms.length },
     { id: "commits", label: "Commits", n: d.commits.length },
     // `one` because Files stopped being a list of diffs: it is the tree, the
     // diff and the rail at once, and a tab that behaves unlike its neighbours
@@ -9682,7 +9686,7 @@ function FilesTab({ d, root, byPath, loaded, diffErr, seenFiles, onSeen, onSeenM
                 <div className="flex items-center gap-2 text-[9.5px] uppercase tracking-wider" style={{ color: "var(--text3)" }}>
                   <LocalMark />Notes on lines this diff does not show
                 </div>
-                {belowNotes.map((n) => <NoteCard key={`${n.plugin}/${n.id}`} n={n} compact onStatus={(st) => { void local?.setStatus(n, st); }} />)}
+                {belowNotes.map((n) => <NoteCard key={`${n.plugin}/${n.id}`} n={n} compact md={localMd} onStatus={(st) => { void local?.setStatus(n, st); }} />)}
               </div>
             )}
             {open && belowThreads.length > 0 && (
@@ -10719,8 +10723,8 @@ function Conversation({ d, lanes, raw, onRaw, onResolve, onReply, onComment, onR
         at: new Date(g.ms).toISOString(), ms: g.ms, key: g.key, lane: "local",
         node: <span style={{ color: "var(--primary)" }}>◆</span>,
         body: g.run
-          ? <RunCard run={g.run} notes={g.notes} publisher={local.publishers[g.run.plugin]} onStatus={local.setStatus} onOpenFile={onOpenFile} />
-          : <div className="flex flex-col gap-1.5">{g.notes.map((n) => <NoteCard key={n.id} n={n} onStatus={(st) => local.setStatus(n, st)} onOpenFile={onOpenFile} />)}</div>,
+          ? <RunCard run={g.run} notes={g.notes} publisher={local.publishers[g.run.plugin]} onStatus={local.setStatus} onOpenFile={onOpenFile} md={localMd} />
+          : <div className="flex flex-col gap-1.5">{g.notes.map((n) => <NoteCard key={n.id} n={n} md={localMd} onStatus={(st) => local.setStatus(n, st)} onOpenFile={onOpenFile} />)}</div>,
       });
     }
   }

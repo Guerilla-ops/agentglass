@@ -124,7 +124,7 @@ function Node({ node, ctx }: { node: UiNode; ctx: Ctx }): ReactNode {
       return <Badge text={node.text} tone={node.tone} />;
     case "stat":
       return (
-        <div className="rounded-lg px-3 py-2.5 min-w-[112px]" style={{ background: "var(--surface-inset)", border: "1px solid var(--surface-line)" }}>
+        <div className="rounded-lg px-3 py-2.5 min-w-[112px] self-stretch" style={{ background: "var(--surface-inset)", border: "1px solid var(--surface-line)" }}>
           <div className="text-[10px] uppercase tracking-wide" style={{ color: "var(--text3)" }}>{node.label}</div>
           <div className="text-[20px] font-semibold tabular-nums leading-tight" style={{ color: TONE_COLOR[node.tone ?? "default"] }}>{node.value}</div>
           {node.hint && <div className="text-[10.5px] mt-0.5" style={{ color: "var(--text3)" }}>{node.hint}</div>}

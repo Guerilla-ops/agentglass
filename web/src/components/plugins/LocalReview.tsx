@@ -119,8 +119,14 @@ function StatusActions({ n, onStatus }: { n: LocalNote; onStatus: (s: NoteStatus
 
 /** One note, full width: the Conversation's list and the diff's inline row
  *  both draw this, so a note reads the same wherever you meet it. */
-export function NoteCard({ n, onStatus, onOpenFile, compact }: {
-  n: LocalNote; onStatus: (s: NoteStatus) => void; onOpenFile?: (path: string, line?: number) => void; compact?: boolean;
+/** The pull request view renders markdown its own way (a reading measure,
+ *  links into the repository); it hands that renderer in so a local note
+ *  reads exactly like the GitHub remark beside it. */
+export type MdFn = (text: string) => React.ReactNode;
+const plainMd: MdFn = (text) => <div className="agx-prose text-[12px]"><Markdown text={text} /></div>;
+
+export function NoteCard({ n, onStatus, onOpenFile, compact, md = plainMd }: {
+  n: LocalNote; onStatus: (s: NoteStatus) => void; onOpenFile?: (path: string, line?: number) => void; compact?: boolean; md?: MdFn;
 }) {
   const closed = n.status !== "open";
   const [open, setOpen] = useState(!closed);
@@ -131,10 +137,13 @@ export function NoteCard({ n, onStatus, onOpenFile, compact }: {
       background: closed ? "transparent" : `color-mix(in srgb, ${c} 4%, var(--surface-card))`,
       border: "1px solid var(--surface-line)", borderLeft: `3px solid ${closed ? "var(--surface-line)" : c}`,
     }}>
-      <div className="flex items-center gap-2 px-2.5 py-1.5 min-w-0">
+      {/* Wraps rather than clips: in a split diff the column is half the
+          window, and a title plus four buttons does not fit on one line. The
+          buttons go to the next line instead of off the edge. */}
+      <div className="flex items-center gap-x-2 gap-y-1 px-2.5 py-1.5 min-w-0 flex-wrap">
         <SevChip s={n.severity} dim={closed} />
         <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open}
-          className="text-left text-[12px] font-medium min-w-0 flex-1 truncate"
+          className="text-left text-[12px] font-medium min-w-[16ch] flex-1 truncate"
           style={{ color: closed ? "var(--text3)" : "var(--text)", textDecoration: n.status === "dismissed" ? "line-through" : undefined, background: "transparent", border: 0, padding: 0 }}>
           {n.title}
         </button>
@@ -149,9 +158,7 @@ export function NoteCard({ n, onStatus, onOpenFile, compact }: {
         <StatusActions n={n} onStatus={onStatus} />
       </div>
       {open && n.body && (
-        <div className="agx-prose text-[12px] px-3 pb-2.5 pt-0.5 min-w-0" style={{ color: "var(--text2)" }}>
-          <Markdown text={n.body} />
-        </div>
+        <div className="px-3 pb-2.5 pt-0.5 min-w-0">{md(n.body)}</div>
       )}
     </div>
   );
@@ -163,10 +170,11 @@ export function NoteCard({ n, onStatus, onOpenFile, compact }: {
  * first. The notes stay in this card rather than scattering through the
  * conversation, because they were said together and are read together.
  */
-export function RunCard({ run, notes, publisher, onStatus, onOpenFile }: {
+export function RunCard({ run, notes, publisher, onStatus, onOpenFile, md = plainMd }: {
   run: LocalRun; notes: LocalNote[]; publisher?: string;
   onStatus: (n: LocalNote, s: NoteStatus) => void;
   onOpenFile?: (path: string, line?: number) => void;
+  md?: MdFn;
 }) {
   const sorted = useMemo(() => sortNotes(notes), [notes]);
   const openN = notes.filter((n) => n.status === "open").length;
@@ -209,11 +217,11 @@ export function RunCard({ run, notes, publisher, onStatus, onOpenFile }: {
         {notes.length > 0 && openN === 0 && <span style={{ color: "var(--success)" }}>all handled</span>}
       </div>
       {run.summary && (
-        <div className="agx-prose text-[12px] px-3 pb-2.5 min-w-0" style={{ color: "var(--text2)" }}><Markdown text={run.summary} /></div>
+        <div className="px-3 pb-2.5 min-w-0">{md(run.summary)}</div>
       )}
       {notes.length > 0 && (
         <div className="px-2.5 pb-2.5 flex flex-col gap-1.5 min-w-0">
-          {shown.map((n) => <NoteCard key={n.id} n={n} onStatus={(s) => onStatus(n, s)} onOpenFile={onOpenFile} />)}
+          {shown.map((n) => <NoteCard key={n.id} n={n} md={md} onStatus={(s) => onStatus(n, s)} onOpenFile={onOpenFile} />)}
           {closedN > 0 && (
             <button type="button" onClick={() => setShowClosed((v) => !v)}
               className="text-[10.5px] self-start px-1 hover:underline" style={{ color: "var(--text3)", background: "transparent", border: 0 }}>
