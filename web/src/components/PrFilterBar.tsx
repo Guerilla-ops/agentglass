@@ -4,6 +4,7 @@ import {
   serializeQuery, toggleFacet, setSort, DEFAULT_SORT, SORT_OPTIONS,
   type FilterState, type FacetView, type SortTok,
 } from "../lib/prFilter.ts";
+import { SearchIcon } from "../lib/glyphIcons.tsx";
 
 /**
  * The PR list's filter bar (#pulldash-style): a query input, a wrapping row of
@@ -112,7 +113,7 @@ export function PrFilterBar({
               background: "color-mix(in srgb, var(--primary) 18%, transparent)",
               border: "1px solid color-mix(in srgb, var(--primary) 45%, transparent)",
             }}>
-            {searching ? <span className="agx-spin" aria-hidden style={{ width: 8, height: 8, borderWidth: 1.5 }} /> : <span aria-hidden>⌕</span>}
+            {searching ? <span className="agx-spin" aria-hidden style={{ width: 8, height: 8, borderWidth: 1.5 }} /> : <span aria-hidden className="flex"><SearchIcon size={ICON.xs} /></span>}
             <span>{searching ? "Searching" : "Search all"}</span>
           </button>
         )}

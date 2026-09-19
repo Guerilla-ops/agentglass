@@ -19,6 +19,7 @@
  * how the three answers happened in the first place.
  */
 import type { ProviderTask } from "../../../shared/providers.ts";
+import { FlagIcon } from "./glyphIcons.tsx";
 
 /**
  * THE HEIGHT EVERY CHIP ON A ROW SHARES.
@@ -48,12 +49,13 @@ export const prioLook = (p: ProviderTask["priority"]) =>
 /**
  * ClickUp's flag, at the size of the text beside it.
  *
- * A glyph rather than an icon: it is read WITH its word or its id, never alone,
- * so the icon floor for a control does not apply — and the outline one says "no
- * priority" without needing a legend.
+ * Read WITH its word or its id, never alone, so the icon floor for a control
+ * does not apply — and the outline one says "no priority" without a legend.
+ * Drawn rather than typed: `⚑`/`⚐` came out of whatever font the system had,
+ * a different size on every desktop and in colour on some.
  */
 export function Flag({ c, on, size = 12 }: { c: string; on: boolean; size?: number }) {
-  return <span aria-hidden className="shrink-0" style={{ color: c, fontSize: size, lineHeight: 1 }}>{on ? "\u2691" : "\u2690"}</span>;
+  return <span aria-hidden className="shrink-0 flex" style={{ color: c }}><FlagIcon size={size} filled={on} /></span>;
 }
 
 /** The flag for a card, looked up and drawn in one step — what every surface

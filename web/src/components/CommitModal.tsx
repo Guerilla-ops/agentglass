@@ -4,6 +4,8 @@ import type { RepoStatus, GitFileStatus, CommitResult } from "../../../shared/ty
 import { Portal } from "./Portal.tsx";
 import { api } from "../lib/api.ts";
 import { CloseButton } from "./CloseButton.tsx";
+import { BranchIcon, DoneIcon, IconLabel } from "../lib/glyphIcons.tsx";
+import { ICON } from "../lib/iconSize.ts";
 
 // Commits the repo's LIVE working tree (not the telemetry snapshot): the agent's
 // changed-file list is only the entry point — we read `git status` fresh and
@@ -40,7 +42,7 @@ function Checkbox({ on }: { on: boolean }) {
         background: on ? "var(--primary)" : "transparent",
         border: `1px solid ${on ? "var(--primary)" : "color-mix(in srgb, var(--border) 60%, transparent)"}`,
       }}
-    >{on ? "✓" : ""}</span>
+    >{on ? <DoneIcon size={ICON.xs} /> : null}</span>
   );
 }
 
@@ -130,7 +132,7 @@ export function CommitModal({ open, onClose, paths }: { open: boolean; onClose: 
                 {/* header */}
                 <div className="flex items-center gap-2.5 px-5 py-3 border-b shrink-0" style={{ borderColor: "color-mix(in srgb, var(--border) 40%, transparent)" }}>
                   <span className="text-[15px] font-semibold" style={{ color: "var(--text)" }}>Commit</span>
-                  {repo && <span className="chip text-[10px]" style={{ color: "var(--warning)", background: "color-mix(in srgb, var(--warning) 14%, transparent)" }}>⎇ {repo.branch}</span>}
+                  {repo && <span className="chip text-[10px]" style={{ color: "var(--warning)", background: "color-mix(in srgb, var(--warning) 14%, transparent)" }}><IconLabel icon={<BranchIcon size={ICON.xs} />}>{repo.branch}</IconLabel></span>}
                   {repo && <span className="text-[10.5px] t-dim2 truncate" title={repo.root}>{repo.root}</span>}
                   <CloseButton onClick={onClose} className="ml-auto" />
                 </div>
@@ -143,7 +145,7 @@ export function CommitModal({ open, onClose, paths }: { open: boolean; onClose: 
 
                   {result?.ok ? (
                     <div className="flex flex-col items-center justify-center py-10 gap-3">
-                      <div className="text-[26px]">✅</div>
+                      <div className="flex justify-center" style={{ color: "var(--success)" }}><DoneIcon size={ICON.xl} /></div>
                       <div className="text-[14px] font-semibold" style={{ color: "var(--text)" }}>{amending ? "Amended" : "Committed"}</div>
                       <div className="text-[12px] t-dim2 tabular-nums">
                         <span className="font-mono" style={{ color: "var(--primary)" }}>{result.shortSha}</span> · {result.summary}
@@ -226,11 +228,11 @@ export function CommitModal({ open, onClose, paths }: { open: boolean; onClose: 
                         color: amending ? "var(--text)" : "var(--text3)",
                       }}
                       title="Fold these changes into the previous commit instead of creating a new one. Only ever the last commit, and only when nothing else is mid-flight.">
-                      {amending ? "✓ amend last commit" : "amend last commit"}
+                      {amending ? <IconLabel icon={<DoneIcon size={ICON.xs} />}>amend last commit</IconLabel> : "amend last commit"}
                     </button>
                     {amending && <span className="text-[10px] t-dim2">rewrites HEAD — unpushed work only</span>}
                     <span className="text-[10.5px] t-dim2 tabular-nums ml-auto">
-                      {selPaths.length} file{selPaths.length === 1 ? "" : "s"} → <span style={{ color: "var(--warning)" }}>⎇ {repo.branch}</span>
+                      {selPaths.length} file{selPaths.length === 1 ? "" : "s"} → <span className="inline-flex items-center gap-1" style={{ color: "var(--warning)" }}><BranchIcon size={ICON.xs} />{repo.branch}</span>
                     </span>
                     <div className="flex items-center gap-2">
                       {confirming ? (

@@ -6,21 +6,23 @@
 // boundary is the screenshot, at the moment the markup is handed over: the
 // drawing is composed onto it here, so what an agent receives is one image of
 // the page with the circles and arrows on it.
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { addShape, COLOURS, emptyMarkup, paintAll, paintShape, redo, undo, WIDTHS, type MarkupTool, type Shape } from "../../lib/markup.ts";
 import { requestTermIssue } from "../../lib/termIssue.ts";
 import { feedbackWindowName } from "../../lib/pageRef.ts";
 import { api } from "../../lib/api.ts";
 import type { GitRepoRef } from "../../../../shared/types.ts";
 import { CheckoutPicker } from "../CheckoutPicker.tsx";
+import { ArrowIcon, BoxIcon, CircleIcon, EditIcon } from "../../lib/glyphIcons.tsx";
+import { ICON } from "../../lib/iconSize.ts";
 
 type Guest = { capturePage(): Promise<{ toDataURL(): string }> } | null;
 
-const TOOLS: { id: MarkupTool; glyph: string; label: string }[] = [
-  { id: "pen", glyph: "✎", label: "Draw freehand" },
-  { id: "arrow", glyph: "↗", label: "Arrow" },
-  { id: "box", glyph: "▭", label: "Box" },
-  { id: "ellipse", glyph: "◯", label: "Circle" },
+const TOOLS: { id: MarkupTool; glyph: ReactNode; label: string }[] = [
+  { id: "pen", glyph: <EditIcon size={ICON.sm} />, label: "Draw freehand" },
+  { id: "arrow", glyph: <ArrowIcon size={ICON.sm} />, label: "Arrow" },
+  { id: "box", glyph: <BoxIcon size={ICON.sm} />, label: "Box" },
+  { id: "ellipse", glyph: <CircleIcon size={ICON.sm} />, label: "Circle" },
 ];
 
 export function MarkupLayer({ view, url, onNote, onDone }: {

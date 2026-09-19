@@ -24,6 +24,8 @@ import { api } from "../lib/api.ts";
 import type { ReviewRecipe, ReviewRecipeGroup, ReviewRecipeWhen, SkillInfo } from "../../../shared/types.ts";
 import { SettingRow } from "./SettingRow.tsx";
 import { bumpReviewRecipes } from "./PrPanel.tsx";
+import { IconLabel, PlusIcon } from "../lib/glyphIcons.tsx";
+import { ICON } from "../lib/iconSize.ts";
 
 const edge = (pct: number) => `1px solid color-mix(in srgb, var(--border) ${pct}%, transparent)`;
 
@@ -124,7 +126,7 @@ export function ReviewPromptsPane({ open }: { open: boolean }) {
           already carries the two lines a heading needs; they just were not
           being used as one. */}
       <p className="text-[12.5px] px-1 pb-4" style={{ color: "var(--text3)" }}>
-        What the ✦ Review with Claude button offers on a pull request. The one that fits the pull request in front of you is
+        What the Review with Claude button offers on a pull request. The one that fits the pull request in front of you is
         suggested at the top; the rest are always in the menu, because GitHub's fields describe what somebody remembered to set.
       </p>
 
@@ -182,7 +184,7 @@ export function ReviewPromptsPane({ open }: { open: boolean }) {
               <div className="py-1.5">
                 <button onClick={() => setEditing(blank(g.id))} className="text-[12px] px-2.5 py-1 rounded-lg"
                   style={{ border: "1px solid color-mix(in srgb, var(--primary) 40%, transparent)", color: "var(--text)" }}>
-                  ＋ New prompt in {g.label.toLowerCase()}
+                  <IconLabel icon={<PlusIcon size={ICON.xs} />}>New prompt in {g.label.toLowerCase()}</IconLabel>
                 </button>
               </div>
             )}

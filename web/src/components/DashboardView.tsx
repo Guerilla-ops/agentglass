@@ -30,6 +30,8 @@ import { MissionTimeline } from "./MissionTimeline.tsx";
 import { UsageBox } from "./UsageBox.tsx";
 import { Select } from "./Select.tsx";
 import type { AgentCard, Alert } from "../lib/derive.ts";
+import { CrossIcon } from "../lib/glyphIcons.tsx";
+import { ICON } from "../lib/iconSize.ts";
 
 /** "unknown" is a real bucket (a session whose model never resolved), and it
  *  reads as a value rather than as a gap when it is spelled out. */
@@ -130,7 +132,7 @@ export function DashboardView({
         )}
         {hasFilter && (
           <button onClick={onClearFilter} className="text-[10.5px] px-2 py-1 rounded-lg shrink-0 whitespace-nowrap"
-            style={{ color: "var(--warning)", border: "1px solid color-mix(in srgb, var(--warning) 40%, transparent)" }}>Clear ✕</button>
+            style={{ color: "var(--warning)", border: "1px solid color-mix(in srgb, var(--warning) 40%, transparent)" }}><span className="inline-flex items-center gap-1">Clear<CrossIcon size={ICON.xs} /></span></button>
         )}
       </div>
 

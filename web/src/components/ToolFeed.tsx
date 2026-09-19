@@ -13,6 +13,8 @@
 import { useState } from "react";
 import type { ChatTool } from "../lib/chatStore.ts";
 import { toolFeedSummary, toolLabel } from "../lib/toolFeed.ts";
+import { CrossIcon, IconLabel } from "../lib/glyphIcons.tsx";
+import { ICON } from "../lib/iconSize.ts";
 
 const MONO = { fontFamily: "var(--font-mono, ui-monospace, monospace)" };
 
@@ -59,7 +61,7 @@ export function ToolFeed({ tools, streaming, children }: {
         {/* A failure never folds silently. */}
         {failed > 0 && (
           <span className="text-[10px] tabular-nums ml-auto shrink-0" style={{ color: "var(--error)" }}>
-            ✕ {failed} failed
+            <IconLabel icon={<CrossIcon size={ICON.xs} />}>{failed} failed</IconLabel>
           </span>
         )}
       </button>

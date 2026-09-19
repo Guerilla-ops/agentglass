@@ -3,6 +3,8 @@ import { motion, AnimatePresence } from "motion/react";
 import type { WorktreeLeftovers, LeftoverEntry } from "../../../shared/types.ts";
 import { Portal } from "./Portal.tsx";
 import { preselected, fmtBytes, rescueKey, rescuePicks } from "../lib/goneCleanup.ts";
+import { DoneIcon } from "../lib/glyphIcons.tsx";
+import { ICON } from "../lib/iconSize.ts";
 
 /**
  * The last thing between somebody's notes and `rm -rf`.
@@ -35,7 +37,7 @@ function Tick({ on, dim }: { on: boolean; dim?: boolean }) {
         background: on ? (dim ? "var(--warning)" : "var(--primary)") : "transparent",
         border: `1px solid ${on ? (dim ? "var(--warning)" : "var(--primary)") : "color-mix(in srgb, var(--border) 60%, transparent)"}`,
       }}
-    >{on ? "✓" : ""}</span>
+    >{on ? <DoneIcon size={ICON.xs} /> : null}</span>
   );
 }
 

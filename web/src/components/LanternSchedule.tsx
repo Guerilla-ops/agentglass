@@ -14,6 +14,8 @@ import { Portal } from "./Portal.tsx";
 import { api } from "../lib/api.ts";
 import { fmtAgo } from "../lib/format.ts";
 import { edge, wash } from "./git/ui.tsx";
+import { ClockIcon } from "../lib/glyphIcons.tsx";
+import { ICON } from "../lib/iconSize.ts";
 
 export interface AgentSchedule {
   id: string; name: string; cwd: string; kind: string; prompt: string; yolo: boolean;
@@ -81,7 +83,7 @@ export function ScheduleDialog({ open, checkouts, onClose, onAdded }: {
             <motion.div initial={{ opacity: 0, scale: 0.98, y: 6 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.98 }}
               className="pointer-events-auto w-full max-w-[560px] rounded-xl overflow-hidden agx-card" role="dialog" aria-modal="true" aria-label="Schedule an agent">
               <div className="px-5 pt-4 pb-3 flex items-baseline gap-3" style={{ borderBottom: edge(10) }}>
-                <span aria-hidden style={{ fontSize: 16 }}>⏰</span>
+                <span aria-hidden className="flex"><ClockIcon size={ICON.md} /></span>
                 <div className="flex-1 min-w-0">
                   <div className="text-[13.5px] font-semibold" style={{ color: "var(--text)" }}>Schedule an agent</div>
                   <div className="text-[11px]" style={{ color: "var(--text3)" }}>It is seated by name in the checkout, at the time, with the prompt as its first message — the machine has to be awake.</div>

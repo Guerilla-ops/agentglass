@@ -17,6 +17,7 @@ import { useDismiss } from "../lib/useDismiss.ts";
 import { viewHeaderClass, viewHeaderStyle } from "./workspace/ViewHeader.tsx";
 import { CHIP } from "./workspace/Chrome.tsx";
 import { ICON } from "../lib/iconSize.ts";
+import { BlockedIcon, BranchIcon, ChartIcon, CommitIcon, CrossIcon, DoneIcon, FileIcon, IconLabel, ListIcon, MinusIcon, PlusIcon, RefreshIcon, SparkleIcon, StashIcon, TargetIcon, TreeIcon, UndoIcon } from "../lib/glyphIcons.tsx";
 import type { GitRepoRef, WorkingTree, GitFileChange, GitBranch, GitBranchInfo, GitStash, GitGraphLine, GitWorktree, WorktreeLeftovers, GitRemote, GitRemoteBranch, GitTag, GitReflogEntry, ConflictBlock, BlockChoice, MergeInfo, FileChange, WalkthroughResult, WalkthroughFile, TidyReport, TidyFinding, GitSubmodule } from "../../../shared/types.ts";
 import { partitionByWorktree, splitReadable, goneConfirmTitle, goneConfirmBody, forcedDeletePrompt } from "../lib/goneCleanup.ts";
 import { CheckoutPicker } from "./CheckoutPicker.tsx";
@@ -151,7 +152,7 @@ function TidyView({ report, root, busy }: { report: TidyReport | null; root: str
     return (
       <div className="grid place-items-center gap-1.5 py-14 px-6 text-center">
         <div className="grid place-items-center rounded-full mb-1"
-          style={{ width: 34, height: 34, background: "color-mix(in srgb, var(--success) 14%, transparent)", color: "var(--success)", fontSize: 15 }}>✓</div>
+          style={{ width: 34, height: 34, background: "color-mix(in srgb, var(--success) 14%, transparent)", color: "var(--success)" }}><DoneIcon size={ICON.sm} /></div>
         <div className="text-[12.5px]" style={{ color: "var(--text)" }}>Nothing has piled up</div>
         <div className="text-[10.5px]" style={{ color: "var(--text3)", maxWidth: 340 }}>
           No stale branches, no dangling worktrees, no loose objects worth packing.
@@ -214,7 +215,7 @@ function TidyView({ report, root, busy }: { report: TidyReport | null; root: str
                         truncated: these run to ninety characters and a
                         trailing "· held" is the first thing to disappear —
                         which made six held branches look like one. */}
-                    {held ? `⊘ ${i}` : i}
+                    {held ? <IconLabel icon={<BlockedIcon size={ICON.xs} />}>{i}</IconLabel> : i}
                   </span>
                 );
               })}
@@ -331,13 +332,13 @@ function BranchChip({ branch, onCopied }: { branch: GitBranchInfo; onCopied?: (n
         navigator.clipboard?.writeText(branch.name).then(() => onCopied?.(branch.name)).catch(() => { /* no clipboard permission */ });
       }}
       title={`${branch.name}${upstream ? `\ntracking ${upstream}` : "\nno upstream — nothing to compare against"}\n\nclick to copy the branch name`}>
-      <span className="truncate min-w-0">⎇ {branch.name}</span>
+      <span className="truncate min-w-0"><BranchIcon size={ICON.xs} className="inline-block align-[-2px] mr-1" />{branch.name}</span>
       {busy && <span style={{ color: "var(--warning)" }}>({busy})</span>}
       {/* Behind first, then ahead — it reads as "pull this many, push that many",
           and it's the order lazygit uses, so the shape is already familiar. */}
       {behind > 0 && <span style={{ color: "var(--warning)" }}>↓{behind}</span>}
       {ahead > 0 && <span style={{ color: "var(--success)" }}>↑{ahead}</span>}
-      {upstream && !ahead && !behind && <span style={{ color: "var(--success)" }} title="in sync with upstream">✓</span>}
+      {upstream && !ahead && !behind && <span className="flex" style={{ color: "var(--success)" }} title="in sync with upstream"><DoneIcon size={ICON.xs} /></span>}
     </span>
   );
 }
@@ -2445,15 +2446,15 @@ export function GitView({ active, onOpenChat }: { active: boolean; onOpenChat?: 
     if (action === "discard" && !(await ask({ title: "Discard this hunk?", body: "This cannot be undone.", danger: true, confirmLabel: "Discard" }))) return;
     act(() => api.gitApplyHunk(root, selected.file_path, selected.staged, action, selected.hunks[i]), `${action}d hunk`);
   };
-  const hunkBtn = (label: string, tint: string, onClick: () => void) => (
+  const hunkBtn = (label: ReactNode, tint: string, onClick: () => void) => (
     <button onClick={onClick} className="text-[10px] px-1.5 py-0.5 rounded" style={{ fontFamily: "system-ui, sans-serif", color: tint, background: "color-mix(in srgb, var(--bg3) 70%, transparent)", border: "1px solid color-mix(in srgb, var(--border) 30%, transparent)" }}>{label}</button>
   );
   const hunkActionFn = (writeEnabled && selected && selected.status === "modified" && !selected.binary)
     ? (i: number) => (
         <span className="inline-flex items-center gap-1">
           {selected.staged
-            ? hunkBtn("－ Unstage hunk", "var(--text)", () => applyHunk("unstage", i))
-            : <>{hunkBtn("＋ Stage hunk", "var(--text)", () => applyHunk("stage", i))}{hunkBtn("↺ Discard", "var(--error)", () => applyHunk("discard", i))}</>}
+            ? hunkBtn(<IconLabel icon={<MinusIcon size={ICON.xs} />}>Unstage hunk</IconLabel>, "var(--text)", () => applyHunk("unstage", i))
+            : <>{hunkBtn(<IconLabel icon={<PlusIcon size={ICON.xs} />}>Stage hunk</IconLabel>, "var(--text)", () => applyHunk("stage", i))}{hunkBtn(<IconLabel icon={<UndoIcon size={ICON.xs} />}>Discard</IconLabel>, "var(--error)", () => applyHunk("discard", i))}</>}
         </span>
       )
     : undefined;
@@ -2783,21 +2784,21 @@ export function GitView({ active, onOpenChat }: { active: boolean; onOpenChat?: 
                     {/* Switched worktrees — say the numbers are being recomputed
                         rather than leave the old branch's sync count sitting
                         there looking current. */}
-                    {treeStale && <span className="animate-spin shrink-0 text-[12px]" style={{ color: "var(--text3)" }} title="Reading the branch you switched to…">⟳</span>}
+                    {treeStale && <span className="animate-spin shrink-0 text-[12px]" style={{ color: "var(--text3)" }} title="Reading the branch you switched to…"><RefreshIcon size={ICON.xs} /></span>}
                     <button
                       onClick={() => setInsightsOpen(true)}
                       disabled={busy}
                       className="text-[11px] px-2 py-1 rounded-lg whitespace-nowrap shrink-0 font-medium"
                       style={{ color: "var(--text2)", background: "color-mix(in srgb, var(--text) 4%, transparent)", border: "1px solid color-mix(in srgb, var(--text) 9%, transparent)", opacity: busy ? 0.5 : 1 }}
                       title="Repo insights — commit pace, contributors, churn, changelog"
-                    >☰ insights</button>
+                    ><IconLabel icon={<ChartIcon size={ICON.xs} />}>insights</IconLabel></button>
                     {branch?.state === "bisecting" && (
                       <button
                         onClick={() => setBisectOpen(true)}
                         className="text-[11px] px-2 py-1 rounded-lg whitespace-nowrap shrink-0"
                         style={{ color: "var(--warning)", border: "1px solid color-mix(in srgb, var(--warning) 45%, transparent)" }}
                         title="A bisect is in progress — mark the checked-out commit good or bad"
-                      >◉ bisect</button>
+                      ><IconLabel icon={<TargetIcon size={ICON.xs} />}>bisect</IconLabel></button>
                     )}
                     {branch && <BranchChip branch={branch} onCopied={(n) => flash(true, `copied ${n}`)} />}
                     {/* Offered only while undoing is exact: an unpushed merge
@@ -2819,7 +2820,7 @@ export function GitView({ active, onOpenChat }: { active: boolean; onOpenChat?: 
                         className="text-[11px] px-2 py-1 rounded-lg whitespace-nowrap shrink-0"
                     style={{ color: "var(--text2)", border: "1px solid color-mix(in srgb, var(--border) 40%, transparent)", opacity: busy ? 0.5 : 1 }}
                     title="Undo the last merge — the branch returns to exactly where it was. Offered only because it is unpushed and nothing sits on top of it.">
-                    {pending === "undo" ? "undoing…" : "⎌ undo merge"}
+                    {pending === "undo" ? "undoing…" : <IconLabel icon={<UndoIcon size={ICON.xs} />}>undo merge</IconLabel>}
                       </button>
                     )}
 
@@ -3010,7 +3011,7 @@ export function GitView({ active, onOpenChat }: { active: boolean; onOpenChat?: 
                           <button onClick={askClaude}
                             className="text-[10.5px] px-2 py-0.5 rounded-lg whitespace-nowrap"
                             style={{ color: "var(--primary-hover)", border: "1px solid color-mix(in srgb, var(--primary) 45%, transparent)" }}
-                            title="Open a chat in this repo, asking Claude to resolve them">✦ ask claude</button>
+                            title="Open a chat in this repo, asking Claude to resolve them"><IconLabel icon={<SparkleIcon size={ICON.xs} />}>ask claude</IconLabel></button>
                           {/* The other half of the same choice — see
                               askClaudeInTerminal. A tmux window in this repo,
                               attached, beside your own shells. */}
@@ -3072,7 +3073,7 @@ export function GitView({ active, onOpenChat }: { active: boolean; onOpenChat?: 
                       {!tree?.clean && (
                         <div className="shrink-0 px-2.5 py-2 border-b" style={{ borderColor: "color-mix(in srgb, var(--border) 40%, transparent)" }}>
                           <button onClick={() => explain(!!walk)} disabled={walkLoading} className="text-[11px] px-2.5 py-1 rounded-lg w-full" style={{ color: "var(--text)", background: "color-mix(in srgb, var(--info) 13%, transparent)", border: "1px solid color-mix(in srgb, var(--info) 28%, transparent)", opacity: walkLoading ? 0.6 : 1 }}>
-                            {walkLoading ? "✨ explaining…" : walk ? "✨ re-explain changes" : "✨ Explain changes"}
+                            <IconLabel icon={<SparkleIcon size={ICON.xs} />}>{walkLoading ? "explaining…" : walk ? "re-explain changes" : "Explain changes"}</IconLabel>
                           </button>
                           {(walk?.reviewFocus || walk?.error) && (
                             <div className="mt-1.5 text-[10px] leading-snug" style={{ color: walk?.error ? "var(--warning)" : "var(--text2)" }}>
@@ -3091,11 +3092,11 @@ export function GitView({ active, onOpenChat }: { active: boolean; onOpenChat?: 
                       )}
                       {!tree?.clean && (
                         <div className="shrink-0 flex items-center gap-1 px-2.5 py-1 border-b" style={{ borderColor: "color-mix(in srgb, var(--border) 25%, transparent)" }}>
-                          <button onClick={() => setTreeMode((v) => !v)} title="Toggle file tree / flat list (`)" className="text-[9.5px] px-1.5 py-0.5 rounded" style={{ color: "var(--text3)", border: "1px solid color-mix(in srgb, var(--border) 25%, transparent)" }}>{treeMode ? "⊟ tree" : "≡ flat"}</button>
+                          <button onClick={() => setTreeMode((v) => !v)} title="Toggle file tree / flat list (`)" className="text-[9.5px] px-1.5 py-0.5 rounded" style={{ color: "var(--text3)", border: "1px solid color-mix(in srgb, var(--border) 25%, transparent)" }}>{treeMode ? <IconLabel icon={<TreeIcon size={ICON.xs} />}>tree</IconLabel> : <IconLabel icon={<ListIcon size={ICON.xs} />}>flat</IconLabel>}</button>
                           {treeMode && (
                             <>
-                              <button onClick={() => setCollapsed(new Set(allDirPaths(buildFileTree(all, relOf))))} title="Collapse all (-)" className="text-[9.5px] px-1.5 py-0.5 rounded" style={{ color: "var(--text3)" }}>−</button>
-                              <button onClick={() => setCollapsed(new Set())} title="Expand all (=)" className="text-[9.5px] px-1.5 py-0.5 rounded" style={{ color: "var(--text3)" }}>＋</button>
+                              <button onClick={() => setCollapsed(new Set(allDirPaths(buildFileTree(all, relOf))))} title="Collapse all (-)" className="text-[9.5px] px-1.5 py-0.5 rounded flex" style={{ color: "var(--text3)" }}><MinusIcon size={ICON.xs} /></button>
+                              <button onClick={() => setCollapsed(new Set())} title="Expand all (=)" className="text-[9.5px] px-1.5 py-0.5 rounded flex" style={{ color: "var(--text3)" }}><PlusIcon size={ICON.xs} /></button>
                             </>
                           )}
                         </div>
@@ -3107,7 +3108,7 @@ export function GitView({ active, onOpenChat }: { active: boolean; onOpenChat?: 
                     {tree?.clean && (
                       <div className="grid place-items-center gap-1.5 py-10 px-4 text-center">
                         <div className="grid place-items-center rounded-full mb-1"
-                          style={{ width: 34, height: 34, background: "color-mix(in srgb, var(--success) 14%, transparent)", color: "var(--success)", fontSize: 15 }}>✓</div>
+                          style={{ width: 34, height: 34, background: "color-mix(in srgb, var(--success) 14%, transparent)", color: "var(--success)" }}><DoneIcon size={ICON.sm} /></div>
                         <div className="text-[12.5px]" style={{ color: "var(--text)" }}>Working tree clean</div>
                         <div className="text-[10.5px]" style={{ color: "var(--text3)" }}>
                           {branch?.ahead ? `${branch.ahead} commit${branch.ahead === 1 ? "" : "s"} waiting to push` : "nothing to commit here"}
@@ -3147,7 +3148,7 @@ export function GitView({ active, onOpenChat }: { active: boolean; onOpenChat?: 
                           <button onClick={() => setMergeRest(true)}
                             className="w-full text-left px-3 py-2 text-[10.5px] hover:bg-white/5"
                             style={{ color: "var(--text3)" }}>
-                            ＋ {(tree?.staged.length ?? 0) + (tree?.unstaged.length ?? 0)} more the merge brought — show them
+                            <PlusIcon size={ICON.xs} className="inline-block align-[-2px] mr-1" />{(tree?.staged.length ?? 0) + (tree?.unstaged.length ?? 0)} more the merge brought — show them
                           </button>
                         )}
                         {(!conflicts.length || mergeRest) && !!tree?.staged.length && (
@@ -3167,7 +3168,7 @@ export function GitView({ active, onOpenChat }: { active: boolean; onOpenChat?: 
                       <div className="shrink-0 border-t p-3 space-y-2" style={{ borderColor: "color-mix(in srgb, var(--text) 8%, transparent)", background: "color-mix(in srgb, var(--bg3) 22%, transparent)" }}>
                         <input value={title} onChange={(e) => setTitle(e.target.value)} onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") doCommit(); }} placeholder="Summary of what changed…" disabled={!writeEnabled} className="w-full px-2.5 py-1.5 rounded-lg text-[11.5px] outline-none" style={{ background: "color-mix(in srgb, var(--text) 5%, transparent)", border: "1px solid color-mix(in srgb, var(--text) 9%, transparent)", color: "var(--text)" }} />
                         <textarea value={body} onChange={(e) => setBody(e.target.value)} onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") doCommit(); }} placeholder="Why, if it needs saying (optional)…" rows={2} disabled={!writeEnabled} className="agx-scroll w-full px-2.5 py-1.5 rounded-lg text-[11px] outline-none resize-none" style={{ background: "color-mix(in srgb, var(--text) 5%, transparent)", border: "1px solid color-mix(in srgb, var(--text) 9%, transparent)", color: "var(--text)" }} />
-                        <button onClick={doCommit} disabled={!writeEnabled || busy || !tree?.staged.length || !title.trim()} className="w-full py-1.5 rounded-lg text-[11.5px] font-semibold" style={{ background: "color-mix(in srgb, var(--primary) 22%, transparent)", border: "1px solid color-mix(in srgb, var(--primary) 45%, transparent)", color: "var(--text)", opacity: (!writeEnabled || !tree?.staged.length || !title.trim()) ? 0.45 : 1 }}>⎇ Commit {tree?.staged.length ? `${tree.staged.length} staged` : ""}</button>
+                        <button onClick={doCommit} disabled={!writeEnabled || busy || !tree?.staged.length || !title.trim()} className="w-full py-1.5 rounded-lg text-[11.5px] font-semibold" style={{ background: "color-mix(in srgb, var(--primary) 22%, transparent)", border: "1px solid color-mix(in srgb, var(--primary) 45%, transparent)", color: "var(--text)", opacity: (!writeEnabled || !tree?.staged.length || !title.trim()) ? 0.45 : 1 }}><IconLabel icon={<CommitIcon size={ICON.xs} />}>Commit {tree?.staged.length ? `${tree.staged.length} staged` : ""}</IconLabel></button>
                         {!writeEnabled && <div className="text-[9.5px] t-dim2 text-center">read-only (AGENTGLASS_GIT_WRITE_DISABLED)</div>}
                       </div>
                     </div>
@@ -3234,8 +3235,8 @@ export function GitView({ active, onOpenChat }: { active: boolean; onOpenChat?: 
                                   already have open; the two are different
                                   intentions and both are worth having. */}
                               <Toggle onClick={() => editFile(selected)}
-                                title={`Open ${rel(selected)} here, at its first change`}>⧉ open</Toggle>
-                              {writeEnabled && (selected.staged ? <Toggle onClick={() => unstage(selected)} title="Unstage this file">－ unstage</Toggle> : <Toggle onClick={() => stage(selected)} title="Stage this file">＋ stage</Toggle>)}
+                                title={`Open ${rel(selected)} here, at its first change`}><IconLabel icon={<FileIcon size={ICON.xs} />}>open</IconLabel></Toggle>
+                              {writeEnabled && (selected.staged ? <Toggle onClick={() => unstage(selected)} title="Unstage this file"><IconLabel icon={<MinusIcon size={ICON.xs} />}>unstage</IconLabel></Toggle> : <Toggle onClick={() => stage(selected)} title="Stage this file"><IconLabel icon={<PlusIcon size={ICON.xs} />}>stage</IconLabel></Toggle>)}
                               <Toggle on={split} onClick={() => setSplit((s) => !s)} title="Split / unified">{split ? "split" : "unified"}</Toggle>
                               <Toggle on={wrap} onClick={() => setWrap((w) => !w)} title="Toggle line wrap">wrap</Toggle>
                               <ThemePicker value={themePref} onChange={setThemePref} error={hiliteError} />
@@ -3321,7 +3322,7 @@ export function GitView({ active, onOpenChat }: { active: boolean; onOpenChat?: 
                       <span className="text-[9.5px] uppercase tracking-wider t-dim2 shrink-0">history of</span>
                       <span className="min-w-0 truncate text-[11px] px-2 py-0.5 rounded" style={{ color: "var(--primary-hover)", background: "color-mix(in srgb, var(--primary) 12%, transparent)" }}
                         title={logScope === "all" ? "every branch in this repository" : `${graphBranch || "HEAD"} — the branch this checkout is on`}>
-                        {logScope === "all" ? "every branch" : `⎇ ${graphBranch || branch?.name || "HEAD"}`}
+                        {logScope === "all" ? "every branch" : <IconLabel icon={<BranchIcon size={ICON.xs} />}>{graphBranch || branch?.name || "HEAD"}</IconLabel>}
                       </span>
                       <div className="flex items-center gap-px rounded-md ml-1" style={{ background: "color-mix(in srgb, var(--border) 12%, transparent)" }}>
                         {([["head", "this branch"], ["all", "all branches"]] as const).map(([s, label]) => (
@@ -3449,7 +3450,7 @@ export function GitView({ active, onOpenChat }: { active: boolean; onOpenChat?: 
                         <button onClick={() => setOnlyGone((v) => !v)} className="text-[10.5px] px-2.5 py-1 rounded-lg transition-colors"
                           style={{ background: onlyGone ? "color-mix(in srgb, var(--error) 16%, transparent)" : "transparent", border: `1px solid color-mix(in srgb, var(--error) ${onlyGone ? 45 : 22}%, transparent)`, color: onlyGone ? "var(--text)" : "var(--text2)" }}
                           title="Branches whose remote branch no longer exists — usually a merged PR that was tidied up">
-                          {onlyGone ? "✕ show all branches" : `⌫ ${goneCount} gone`}
+                          {onlyGone ? <IconLabel icon={<CrossIcon size={ICON.xs} />}>show all branches</IconLabel> : <IconLabel icon={<BranchIcon size={ICON.xs} />}>{goneCount} gone</IconLabel>}
                         </button>
                         {onlyGone && (() => {
                           // Composed, not concatenated. Each piece used to carry
@@ -3553,11 +3554,11 @@ export function GitView({ active, onOpenChat }: { active: boolean; onOpenChat?: 
                     {writeEnabled && (
                       <>
                         <input value={snapshotLabel} onChange={(e) => setSnapshotLabel(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") snapshotNow(); }} placeholder="snapshot label (optional) — tree is not touched" className="px-3 py-1.5 rounded-lg text-[11.5px] outline-none min-w-0 w-56 shrink-0" style={{ background: "color-mix(in srgb, var(--text) 5%, transparent)", border: "1px solid color-mix(in srgb, var(--text) 9%, transparent)", color: "var(--text)" }} />
-                        <button onClick={snapshotNow} disabled={busy || tree?.clean} className={`${CHIP} font-medium`} style={{ background: "color-mix(in srgb, var(--info) 16%, transparent)", border: "1px solid color-mix(in srgb, var(--info) 35%, transparent)", color: "var(--text)", opacity: tree?.clean ? 0.5 : 1 }} title="Copy the current tree into refs/agx/wip — nothing moves, restore anytime">⟳ snapshot now</button>
+                        <button onClick={snapshotNow} disabled={busy || tree?.clean} className={`${CHIP} font-medium`} style={{ background: "color-mix(in srgb, var(--info) 16%, transparent)", border: "1px solid color-mix(in srgb, var(--info) 35%, transparent)", color: "var(--text)", opacity: tree?.clean ? 0.5 : 1 }} title="Copy the current tree into refs/agx/wip — nothing moves, restore anytime"><IconLabel icon={<RefreshIcon size={ICON.xs} />}>snapshot now</IconLabel></button>
                       </>
                     )}
                     {writeEnabled && (
-                      <button onClick={() => { setPartialOpen(!partialOpen); }} className={`${CHIP} font-medium`} style={{ background: "color-mix(in srgb, var(--primary) 12%, transparent)", border: "1px solid color-mix(in srgb, var(--primary) 30%, transparent)", color: "var(--text)" }}>▣ stash some files…</button>
+                      <button onClick={() => { setPartialOpen(!partialOpen); }} className={`${CHIP} font-medium`} style={{ background: "color-mix(in srgb, var(--primary) 12%, transparent)", border: "1px solid color-mix(in srgb, var(--primary) 30%, transparent)", color: "var(--text)" }}><IconLabel icon={<StashIcon size={ICON.xs} />}>stash some files…</IconLabel></button>
                     )}
                     {/* The search belongs in the same strip as the controls
                         above it: they are all "what do I do with work set

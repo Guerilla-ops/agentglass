@@ -11,6 +11,7 @@ import { Select } from "./Select.tsx";
 import { subscribe as subscribeChats, attentionCount } from "../lib/chatStore.ts";
 import { WorkspaceIcon } from "./workspace/icons.tsx";
 import { ICON } from "../lib/iconSize.ts";
+import { CrossIcon, HomeIcon, SparkleIcon } from "../lib/glyphIcons.tsx";
 
 // Sessions whose model never resolved carry the "unknown" provider value; it
 // stays lowercase everywhere it is compared (server sentinel, providerOf), but
@@ -259,7 +260,7 @@ export function Header({
             background: `color-mix(in srgb, var(--primary) ${workspace ? 14 : 7}%, transparent)`,
             border: `1px solid color-mix(in srgb, var(--primary) ${workspace ? 40 : 20}%, transparent)`,
           }}>
-          <span>⌂</span>
+          <span className="flex"><HomeIcon size={ICON.xs} /></span>
           <span className="truncate" style={{ maxWidth: 200 }}>{workspace ? workspace.split("/").pop() : "All repos/projects"}</span>
           <span className="opacity-60">▾</span>
         </button>
@@ -271,7 +272,7 @@ export function Header({
             {live && <span className="absolute inline-flex h-full w-full rounded-full opacity-70" style={{ background: "var(--success)", animation: "ping-ring 1.6s ease-out infinite" }} />}
             <span className="relative inline-flex rounded-full h-1.5 w-1.5" style={{ background: pillColor }} />
           </span>
-          {live ? "LIVE" : unauth ? "UNAUTHORIZED ⚿" : conn.toUpperCase()}
+          {live ? "LIVE" : unauth ? "UNAUTHORIZED" : conn.toUpperCase()}
         </span>
         {IS_DEMO && (
           <a
@@ -282,7 +283,7 @@ export function Header({
             className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold"
             style={{ color: "var(--warning)", background: "color-mix(in srgb, var(--warning) 14%, transparent)", border: "1px solid color-mix(in srgb, var(--warning) 40%, transparent)" }}
           >
-            ✦ DEMO<span className="hidden sm:inline"> · sample data</span>
+            <SparkleIcon size={ICON.xs} className="inline-block align-[-2px] mr-1" />DEMO<span className="hidden sm:inline"> · sample data</span>
           </a>
         )}
       </div>
@@ -337,7 +338,7 @@ export function Header({
       {providers.length > 1 && (
         <Select value={filter.provider} style={selStyle} options={[{ value: "", label: "All providers" }, ...providers.map((p) => ({ value: p, label: providerLabel(p) }))]} onChange={(v) => onFilter({ ...filter, provider: v })} />
       )}
-      {hasFilter && <button onClick={onClear} className="text-[11px] px-2 py-1 rounded-lg shrink-0 whitespace-nowrap" style={{ color: "var(--warning)", border: "1px solid color-mix(in srgb, var(--warning) 40%, transparent)" }}>Clear ✕</button>}
+      {hasFilter && <button onClick={onClear} className="text-[11px] px-2 py-1 rounded-lg shrink-0 whitespace-nowrap" style={{ color: "var(--warning)", border: "1px solid color-mix(in srgb, var(--warning) 40%, transparent)" }}><span className="inline-flex items-center gap-1">Clear<CrossIcon size={ICON.xs} /></span></button>}
       </div>{/* middle scroll zone */}
 
       <div className="shrink-0 flex items-center gap-1.5 sm:gap-2 ml-auto sm:ml-0 max-w-full overflow-x-auto agw-noscrollbar">

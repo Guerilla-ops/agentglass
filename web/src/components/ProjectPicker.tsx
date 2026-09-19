@@ -14,7 +14,7 @@
 // named and given rows of their own — browse for it, clone it, start an empty
 // one — with the typed path kept underneath for a browser tab, which has no
 // system folder chooser to offer.
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import type { GitRepoRef, FsEntry } from "../../../shared/types.ts";
 import { Portal } from "./Portal.tsx";
@@ -23,6 +23,9 @@ import { CAN_BROWSE_FOLDER, chooseFolder } from "../lib/desktop.ts";
 import { ContextMenu, MenuItem } from "./ContextMenu.tsx";
 import { SCROLLBAR_CSS } from "./diff/DiffLines.tsx";
 import { CloseButton } from "./CloseButton.tsx";
+import { FolderIcon, MonitorIcon, PlusIcon } from "../lib/glyphIcons.tsx";
+import { GitIcon } from "./workspace/icons.tsx";
+import { ICON } from "../lib/iconSize.ts";
 
 /** Set once the user has answered the startup question (either way), so an
  *  unscoped instance doesn't re-ask on every reload. */
@@ -136,7 +139,7 @@ function FolderField({
             <div key={e.path} onMouseDown={(ev) => { ev.preventDefault(); accept(e); }} onMouseEnter={() => setSel(i)}
               className="px-3 py-1 flex items-center gap-2 cursor-pointer text-[11px]"
               style={{ background: i === sel ? "color-mix(in srgb, var(--primary) 15%, transparent)" : "transparent", color: "var(--text)" }}>
-              <span className="text-[11px]">{e.repo ? "📁" : "🗀"}</span>
+              <span className="flex" style={{ color: "var(--text3)" }}>{e.repo ? <GitIcon size={ICON.xs} /> : <FolderIcon size={ICON.xs} />}</span>
               <span className="truncate">{e.name}</span>
               {e.repo && <span className="ml-auto shrink-0 text-[10px] px-1.5 py-0.5 rounded-full" style={{ color: "var(--primary-hover)", background: "color-mix(in srgb, var(--primary) 15%, transparent)" }}>git</span>}
             </div>
@@ -155,7 +158,7 @@ function FolderField({
 /** One of the "add a project" rows: an icon, what it does, and what that means.
  *  Big enough to read as a button from across the modal, which the old path box
  *  never did. */
-function AddRow({ icon, title, sub, onClick, disabled }: { icon: string; title: string; sub: string; onClick: () => void; disabled?: boolean }) {
+function AddRow({ icon, title, sub, onClick, disabled }: { icon: ReactNode; title: string; sub: string; onClick: () => void; disabled?: boolean }) {
   return (
     <button onClick={onClick} disabled={disabled}
       className="agx-btn w-full text-left px-2.5 py-2 rounded-xl flex items-center gap-3 disabled:opacity-50"
@@ -354,7 +357,7 @@ export function ProjectPicker({ open, workspace, onClose }: { open: boolean; wor
 
                     <div className="agx-scroll overflow-y-auto overflow-x-hidden flex-1 px-2 py-2" style={{ minHeight: 140 }}>
                       {/* machine-wide is a real choice, not just the absence of one */}
-                      <Row current={workspace === null} icon="🖥" title="All repos/projects" sub="Every repo/project — no scope" onClick={() => choose(null)} disabled={busy} />
+                      <Row current={workspace === null} icon={<MonitorIcon size={ICON.sm} />} title="All repos/projects" sub="Every repo/project — no scope" onClick={() => choose(null)} disabled={busy} />
 
                       {repos === null && <div className="px-3 py-3 text-[11px] t-dim2">Looking for repos…</div>}
                       {/* Two different empty states. A filter that matches nothing
@@ -377,7 +380,7 @@ export function ProjectPicker({ open, workspace, onClose }: { open: boolean; wor
                         </div>
                       ))}
                       {shown.map((r) => (
-                        <Row key={r.root} current={r.root === workspace} icon="📁" disabled={busy} onClick={() => choose(r.root)}
+                        <Row key={r.root} current={r.root === workspace} icon={<GitIcon size={ICON.sm} />} disabled={busy} onClick={() => choose(r.root)}
                           hidden={isHidden(r)}
                           // The open project has no menu: the only thing in it
                           // is "take this off the list", and hiding the one you
@@ -419,10 +422,10 @@ export function ProjectPicker({ open, workspace, onClose }: { open: boolean; wor
                       <div className="text-[9.5px] uppercase tracking-wider mb-1.5" style={{ color: "var(--text4)" }}>Add a project</div>
                       <div className="flex flex-col gap-1.5">
                         {CAN_BROWSE_FOLDER && (
-                          <AddRow icon="🗀" title="Browse folder…" sub="A project, a git repo, or a folder with many repos" onClick={() => void browse()} disabled={busy} />
+                          <AddRow icon={<FolderIcon size={ICON.sm} />} title="Browse folder…" sub="A project, a git repo, or a folder with many repos" onClick={() => void browse()} disabled={busy} />
                         )}
                         <AddRow icon="⌥" title="Clone from URL" sub="Clone a remote git repository onto this machine" onClick={() => { setMode("clone"); setError(""); }} disabled={busy} />
-                        <AddRow icon="＋" title="Create new project" sub="Start from an empty folder" onClick={() => { setMode("new"); setError(""); }} disabled={busy} />
+                        <AddRow icon={<PlusIcon size={ICON.sm} />} title="Create new project" sub="Start from an empty folder" onClick={() => { setMode("new"); setError(""); }} disabled={busy} />
                       </div>
 
                       {/* The typed path stays: a browser tab has no system
@@ -545,7 +548,7 @@ export function ProjectPicker({ open, workspace, onClose }: { open: boolean; wor
  * invalid HTML that browsers resolve by dropping the inner one.
  */
 function Row({ current, icon, title, sub, meta, right, onClick, disabled, hidden, onMenu }: {
-  current: boolean; icon: string; title: string; sub: string; meta?: string; right?: string;
+  current: boolean; icon: ReactNode; title: string; sub: string; meta?: string; right?: string;
   onClick: () => void; disabled?: boolean;
   /** Already off the list — drawn dimmed, and the menu offers the way back. */
   hidden?: boolean;
@@ -559,7 +562,7 @@ function Row({ current, icon, title, sub, meta, right, onClick, disabled, hidden
       className="agx-btn w-full text-left pl-3 pr-3 py-2 rounded-lg flex items-center gap-2.5 relative"
       style={{ background: current ? "color-mix(in srgb, var(--primary) 15%, transparent)" : "transparent", opacity: hidden ? 0.45 : 1 }}>
       {current && <span className="absolute left-0 top-1.5 bottom-1.5 rounded-full" style={{ width: 3, background: "var(--primary)" }} />}
-      <span className="text-[13px]">{icon}</span>
+      <span className="shrink-0 flex" style={{ color: "var(--text3)" }}>{icon}</span>
       <span className="min-w-0 flex-1">
         <span className="block text-[12px] truncate" style={{ color: "var(--text)", fontWeight: current ? 600 : 500 }}>
           {title}

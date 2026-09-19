@@ -11,6 +11,9 @@
 import { useEffect, useState } from "react";
 import { Portal } from "./Portal.tsx";
 import type { ZoomResult } from "../lib/zoomTarget.ts";
+import { ExpandIcon } from "../lib/glyphIcons.tsx";
+import { TerminalIcon } from "./workspace/icons.tsx";
+import { ICON } from "../lib/iconSize.ts";
 
 /** Long enough to read at a glance, short enough that holding the key down
  *  reads as one continuous adjustment rather than a stack of toasts. */
@@ -42,7 +45,7 @@ export function ZoomToast({ zoom }: { zoom: (ZoomResult & { n: number }) | null 
         }}
       >
         <span className="text-[11px]" style={{ color: "var(--text3)" }}>
-          {shown.what === "terminal" ? "⌗" : "⛶"}
+          {shown.what === "terminal" ? <TerminalIcon size={ICON.xs} /> : <ExpandIcon size={ICON.xs} />}
         </span>
         <span className="text-[12px] tabular-nums" style={{ color: "var(--text)" }}>{shown.label}</span>
       </div>

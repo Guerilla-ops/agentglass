@@ -69,7 +69,7 @@ export function SavedRepliesPane({ open }: { open: boolean }) {
       <div className="agx-settings-head">
         <div className="agx-settings-head-t">Saved replies</div>
         <div className="agx-settings-head-d">
-          Offered in every comment box in the pull request panel, under ⌸. Nothing ships in
+          Offered in every comment box in the pull request panel, under the quote button. Nothing ships in
           this list — these go out under your name.
         </div>
       </div>
