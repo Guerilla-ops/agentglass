@@ -174,6 +174,10 @@ A plugin declares where it draws, in its manifest, next to its scope:
   "contributes": {
     "panels": [{ "id": "main", "title": "Reviews", "icon": "review" }],
     "prNotes": true,
+    "prActions": [
+      { "id": "review", "label": "Local review" },
+      { "id": "review-full", "label": "Review from scratch" }
+    ],
     "settings": [
       { "key": "repos", "type": "list", "label": "Repositories" },
       { "key": "model", "type": "select", "label": "Model", "options": ["opus", "sonnet"] }
@@ -188,13 +192,14 @@ into the manifest hash, so a plugin that starts drawing somewhere new is asked
 about again. A manifest with no `contributes` hashes exactly as it did before
 drawing existed, so upgrading the app clears no approval.
 
-Three places a plugin can appear:
+Four places a plugin can appear:
 
 | Contribution | Where it shows | What the plugin sends |
 |---|---|---|
 | `panels` | A tab in the **Plugins** view, in the rail's bottom drawer | A tree of nodes (below), redrawn whenever it likes |
 | `settings` | A page of its own in **Settings**, under Connections | Nothing: the app draws the fields and stores the values |
 | `prNotes` | Inside a pull request: one entry per pass in the conversation's **Local** lane, and each note under its line in the Files tab | Runs and notes, with a severity, a path and a line |
+| `prActions` | A button in every pull request's header, in the plugin's own colour, with the rest of its actions under a caret | Nothing to draw: the button's state is read from the plugin's runs on that pull request |
 
 Everything goes through the plugin's own channel, `/plugin/self/…`, over its own
 token. That channel is open at any scope, because drawing is not a power over
@@ -210,6 +215,15 @@ plugin cannot draw into another's panel.
 | `POST /plugin/self/pr/run` | Start or finish a pass over a pull request |
 | `POST /plugin/self/pr/notes` `{notes}` | Add or update notes |
 
+**A button in a pull request** (`prActions`, at most five) is not a trigger
+with a spinner. The first one declared is the button and the rest hang off its
+caret, and what it says is the state of that plugin's latest run on that pull
+request: *Local review* when there is none, *Queued*, *Reviewing · 1:12*, or
+the counts it found, which open the findings. So a plugin posts its `queued`
+run the moment it accepts the press — before any work starts — or the press
+looks ignored. The event carries the action id and the pull request and
+nothing else; an id the manifest never declared is refused.
+
 **The vocabulary** ([shared/pluginUi.ts](../shared/pluginUi.ts)) is a closed set
 of nodes the app draws with its own parts:
 
@@ -223,6 +237,13 @@ current theme. A link is `https` or nothing. A tree is checked before it is kept
 with limits on depth, node count and string length, and an unknown node is
 refused rather than skipped. A click comes back as the action id and payload the
 plugin put on the control, and nothing else.
+
+**A row can point at a pull request.** A `list` or `timeline` item may carry
+`open: { repo, number, focus }`, and the app opens that pull request — from
+whichever project is open, borrowing the checkout that holds it and offering
+the way back. `focus: "local"` lands on the Local lane. It is the app's
+errand, not a message to the plugin: `action` is still the plugin's, and an
+item may carry both.
 
 **Notes on a pull request** are never sent anywhere. Each one is marked *local*,
 has no Reply, and offers Resolve, Dismiss, Reopen and Copy. The person's choice

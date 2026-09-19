@@ -276,3 +276,69 @@ export function groupByRun(local: LocalNotes): { run: LocalRun | null; notes: Lo
 function safeMs(v: number): number {
   return Number.isFinite(v) && Math.abs(v) <= 8.64e15 ? v : 0;
 }
+
+/**
+ * One line on the Overview: what the plugins have made of this pull request.
+ *
+ * The Overview answers "can this land", and until now a local review was not
+ * part of that answer — it was findings in a lane on another tab, which you
+ * had to know were there. The strip is the smallest thing that puts them in
+ * the answer: the latest run per plugin, what it found, and the way to read
+ * it. Nothing at all when no plugin has looked, because a row saying "no
+ * local review" on every pull request is a row nobody reads.
+ *
+ * The findings themselves stay where they are. This is a pointer, not a
+ * second copy of the lane — two places showing the same notes is two places
+ * that disagree the moment one is resolved.
+ */
+export function LocalStrip({ local, onShow }: { local: LocalNotes; onShow: () => void }) {
+  const rows = useMemo(() => {
+    const latest = new Map<string, LocalRun>();
+    for (const r of local.runs) {
+      const cur = latest.get(r.plugin);
+      if (!cur || r.startedAt > cur.startedAt) latest.set(r.plugin, r);
+    }
+    return [...latest.values()]
+      .sort((a, b) => b.startedAt - a.startedAt)
+      .map((run) => ({
+        run,
+        open: local.notes.filter((n) => n.plugin === run.plugin && n.status === "open" && (!n.runId || n.runId === run.id)),
+      }));
+  }, [local.runs, local.notes]);
+  if (rows.length === 0) return null;
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      {rows.map(({ run, open }) => {
+        const bySev = new Map<PrNote["severity"], number>();
+        for (const n of open) bySev.set(n.severity, (bySev.get(n.severity) ?? 0) + 1);
+        const running = run.state === "queued" || run.state === "running";
+        const edge = run.state === "failed" ? "var(--error)" : "var(--primary)";
+        return (
+          <div key={`${run.plugin}/${run.id}`} className="flex items-center gap-2 rounded-lg px-3 py-2 min-w-0 flex-wrap"
+            style={{ border: `1px solid color-mix(in srgb, ${edge} 32%, transparent)`, background: `color-mix(in srgb, ${edge} 7%, transparent)` }}>
+            <LocalMark />
+            <span className="text-[12px] truncate min-w-0" style={{ color: "var(--text)" }}>{run.title}</span>
+            {running && <Spinner className="px-0 py-0" />}
+            {run.state === "done" && open.length === 0 && (
+              <span className="text-[9.5px] uppercase tracking-wide shrink-0" style={{ color: "var(--success)" }}>nothing to fix</span>
+            )}
+            {[...bySev.entries()].sort((a, b) => SEV[a[0]].rank - SEV[b[0]].rank).map(([sev, n]) => (
+              <span key={sev} className="shrink-0 text-[9.5px] uppercase tracking-wide px-1.5 py-px rounded tabular-nums"
+                style={{ color: SEV[sev].color, background: `color-mix(in srgb, ${SEV[sev].color} 14%, transparent)` }}>
+                {n} {SEV[sev].label}
+              </span>
+            ))}
+            {run.meta && <span className="text-[10.5px] truncate shrink-0" style={{ color: "var(--text3)" }}>{run.meta}</span>}
+            <span className="text-[10.5px] shrink-0 ml-auto" style={{ color: "var(--text3)" }}>{ago(safeMs(run.finishedAt ?? run.startedAt))}</span>
+            <button type="button" onClick={onShow}
+              className="agx-btn rounded inline-flex items-center leading-none text-[10px] px-2 h-[22px] whitespace-nowrap shrink-0"
+              style={{ color: "var(--primary)", border: "1px solid color-mix(in srgb, var(--primary) 40%, transparent)" }}>
+              {open.length ? "Show findings" : "Show the run"}
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}

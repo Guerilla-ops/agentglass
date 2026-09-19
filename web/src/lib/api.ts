@@ -1733,6 +1733,8 @@ const realApi = {
     post<{ ok: boolean; error?: string }>("/plugins/pr-notes/status", { plugin, id, status }),
   pluginPrOpen: (repo: string, number: number) =>
     post<{ ok: boolean }>("/plugins/pr-open", { repo, number }),
+  pluginPrAction: (plugin: string, id: string, repo: string, number: number) =>
+    post<{ ok: boolean; error?: string }>("/plugins/pr-action", { plugin, id, repo, number }),
   /** Re-clones a git-backed install at its recorded URL/ref. Same review
    *  gate as a fresh install: an update that changes the declaration loses
    *  its approval rather than re-enabling itself. */
@@ -1879,6 +1881,10 @@ const realApi = {
   /** What this project's agents have spent, by branch and by checkout. One
    *  request for the whole repository — the board looks each row up in it. */
   prSpend: (root: string) => get<RepoSpend>(`/prs/spend?root=${encodeURIComponent(root)}`),
+  /** Which checkout on this machine is `owner/name` — so a link to a pull
+   *  request in another project opens instead of landing nowhere. */
+  prLocate: (repo: string) =>
+    get<{ ok: boolean; root?: string; error?: string }>(`/prs/locate?repo=${encodeURIComponent(repo)}`),
   prDetail: (root: string, number: number, force = false) =>
     get<{ ok: boolean; detail?: PrDetail; error?: string; stale?: boolean }>(`/prs/detail?root=${encodeURIComponent(root)}&number=${number}${force ? "&force=1" : ""}`),
   prDiff: (root: string, number: number, force = false) =>
@@ -2269,6 +2275,7 @@ const demoApi: typeof realApi = {
   pluginPrNotes: (_repo: string, _n: number) => D({ ok: true, runs: [], notes: [], publishers: {} } as PluginPrNotes),
   pluginNoteStatus: (_p: string, _id: string, _s: NoteStatus) => D({ ok: false, error: "not available in the demo" }),
   pluginPrOpen: (_repo: string, _n: number) => D({ ok: true }),
+  pluginPrAction: (_p: string, _id: string, _repo: string, _n: number) => D({ ok: false, error: "not available in the demo" }),
   pluginUpdate: (_name: string) => D({ ok: false, error: "not available in the demo" } as { ok: false; error: string }),
   pluginCatalogues: () => D({ catalogues: [] }),
   pluginCatalogueAdd: (_url: string) => D({ ok: false, error: "not available in the demo" }),
@@ -2357,6 +2364,7 @@ const demoApi: typeof realApi = {
   /* The demo has no local event history, and a spend chip invented for it would
      be the one number on the page that is a fiction. `ok: false` draws nothing. */
   prSpend: (_r: string) => D({ ok: false, error: "not available in the demo", since: 0, seamDay: null, beforeSeamUsd: 0, branches: [], worktrees: [] } as RepoSpend),
+  prLocate: (_repo: string) => D({ ok: false, error: "not available in the demo" }),
   prDetail: (_root: string, number: number, _force?: boolean) => D(demo.prDetail(number)),
   prDiff: (_root: string, number: number, _force?: boolean) => D(demo.prDiff(number)),
   prAssetUrl: (raw: string) => raw,

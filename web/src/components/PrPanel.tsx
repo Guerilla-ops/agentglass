@@ -19,7 +19,8 @@
 //
 // 4. Nothing waits on the network. `gh` costs a second or more per call and the
 //    server has one thread; every read is a cached answer with its age shown.
-import { useLocalNotes, groupByRun, RunCard, NoteCard, LocalMark, LocalGlyph, sortNotes, type LocalNotes, type LocalNote } from "./plugins/LocalReview.tsx";
+import { PluginPrActions } from "./plugins/PluginPrActions.tsx";
+import { useLocalNotes, groupByRun, RunCard, NoteCard, LocalMark, LocalGlyph, LocalStrip, sortNotes, type LocalNotes, type LocalNote } from "./plugins/LocalReview.tsx";
 import { createContext, Fragment, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from "react";
 import { handoffTo } from "../lib/handoffTo.ts";
 import { isBackButton } from "../lib/mouseBack.ts";
@@ -2051,30 +2052,67 @@ export function PrView({ active, onOpenChatWith, onReviewInTerminal, jumpTo }: {
    * — switching to it serves the request rather than losing it.
    */
   const jump = useSyncExternalStore(subscribePrJump, prJump, () => null);
+  /*
+   * A pull request from somewhere else, shown on top of this project.
+   *
+   * A link to `acme/orbit#42` arrives while `acme/billing` is the open
+   * project: from a plugin's list of reviews, from a notification, from a
+   * branch chip in a second checkout. The panel reads pull requests through a
+   * local checkout — that is where the remote, and so the repository's
+   * identity, comes from — and it used to answer a link it could not serve by
+   * searching for the number in the wrong repository, which finds either
+   * nothing or somebody else's pull request with the same number.
+   *
+   * So the panel borrows the other checkout for as long as you are reading
+   * it. Not the project: switching projects changes every other panel in the
+   * window, and a link to one pull request is not a decision to move house.
+   * `back` is what to return to, and the strip under the header is the way
+   * back — a panel quietly showing a repository nobody selected is the kind of
+   * wrong that takes a minute to notice.
+   */
+  const [away, setAway] = useState<{ root: string; repo: string; back: { root: string; repo: string } } | null>(null);
+  const awayRef = useRef(away);
+  awayRef.current = away;
+  /** The jump whose locate call is out, so a re-render does not start it
+   *  again while the first one is still walking the machine's checkouts. */
+  const locating = useRef("");
   useEffect(() => {
     if (!jump || !repo) return;
     if (jump.repo !== repo.nameWithOwner) {
-      /*
-       * A request this panel cannot serve, and it must not be left lying there.
-       *
-       * The panel binds to one repository and picks it once, from `repos[0]`.
-       * In a workspace with two, pressing the branch chip in Source control on
-       * the SECOND one sent a jump addressed to a repository this panel is not
-       * showing: the guard returned, the request stayed in the module slot, and
-       * nothing opened — no row, no message, no search. Worse, it stayed
-       * pending and would open that pull request later, whenever a panel
-       * happened to be bound to the right repository.
-       *
-       * So it is cleared and answered with the thing that always works: a
-       * search for the number. Less than opening it, and visibly something.
-       */
-      clearPrJump();
-      setQuery(String(jump.number));
-      setSelected(null);
-      flash(false, `#${jump.number} is in ${jump.repo}, and this panel is showing ${repo.nameWithOwner} — searching instead`);
+      const key = `${jump.repo}#${jump.number}/${jump.n}`;
+      if (locating.current === key) return;
+      locating.current = key;
+      void api.prLocate(jump.repo).then((r) => {
+        if (r.ok && r.root) {
+          /* The jump is deliberately left pending: this only points the panel
+             at the other checkout, and the effect runs again — with `repo`
+             now the one the link named — to open the pull request itself. */
+          setAway({ root: r.root, repo: jump.repo, back: away?.back ?? { root, repo: repo.nameWithOwner } });
+          setSelected(null);
+          setRoot(r.root);
+          return;
+        }
+        /*
+         * Nowhere to read it from, and the request must not be left lying
+         * there: it stayed pending and would open that pull request later,
+         * whenever a panel happened to be bound to the right repository.
+         * Answered with the thing that always works — a search for the
+         * number. Less than opening it, and visibly something.
+         */
+        clearPrJump();
+        setQuery(String(jump.number));
+        setSelected(null);
+        flash(false, `#${jump.number} is in ${jump.repo}, and there is no checkout of it on this machine — searching ${repo.nameWithOwner} instead`);
+      }).catch(() => { clearPrJump(); });
       return;
     }
     clearPrJump();
+    locating.current = "";
+    /* "Show me what the plugin wrote", carried by the link that opened this.
+       A row reading "2 high, 3 medium" that lands on the Overview has not
+       answered the press. Served once the pull request has loaded, like the
+       mention below it. */
+    if (jump.focus === "local") wantLocal.current = { number: jump.number, n: jump.n };
     /* "Take me to where I was named."
        The inbox knows THAT you were mentioned and nothing about where, so a
        mention notification used to land at the top of a conversation with forty
@@ -2215,6 +2253,15 @@ export function PrView({ active, onOpenChatWith, onReviewInTerminal, jumpTo }: {
 
   /** A mention asked for and not yet served, by pull request. */
   const wantMention = useRef<{ number: number; n: number } | null>(null);
+  /** Same, for a link that asked for the local lane — see the jump above. */
+  const wantLocal = useRef<{ number: number; n: number } | null>(null);
+  useEffect(() => {
+    const want = wantLocal.current;
+    if (!want || !detail || detail.number !== want.number) return;
+    wantLocal.current = null;
+    setConvWho("local");
+    setTab("conversation");
+  }, [detail]);
   useEffect(() => {
     const want = wantMention.current;
     if (!want || !detail || detail.number !== want.number) return;
@@ -2319,6 +2366,18 @@ export function PrView({ active, onOpenChatWith, onReviewInTerminal, jumpTo }: {
     api.gitRepos().then(({ repos }) => {
       setRepos(repos);
       setRoot((cur) => cur || repos[0]?.root || "");
+      /* The project changed under a borrowed repository: the way back points
+         at a checkout this window is no longer showing, so the loan ends
+         rather than leaving a strip offering a repository nobody can see.
+         Read through a ref rather than a state updater — an updater that
+         calls setState is a side effect inside a pure function, and React
+         runs those twice. */
+      const a = awayRef.current;
+      if (a && !repos.some((r) => r.root === a.back.root)) {
+        setAway(null);
+        setSelected(null);
+        setRoot(repos[0]?.root ?? "");
+      }
     }).catch(() => {});
   }, [active]);
 
@@ -3955,6 +4014,11 @@ export function PrView({ active, onOpenChatWith, onReviewInTerminal, jumpTo }: {
      the Conversation draws the runs, the Files tab draws the notes at their
      lines. */
   const local = useLocalNotes(repo?.nameWithOwner, selected);
+  /* "Show me what the plugin wrote", from the header button, from the strip on
+     the Overview, and from a link that opened this pull request asking for it.
+     One move — the Conversation, filtered to the local lane — because a button
+     that says "2 high" and lands anywhere else has not answered the press. */
+  const showLocal = useCallback(() => { setConvWho("local"); setTab("conversation"); }, []);
   const [held, setHeld] = useState<PendingLine[]>([]);
   useEffect(() => {
     if (!selected) { setHeld([]); return; }
@@ -4148,6 +4212,21 @@ export function PrView({ active, onOpenChatWith, onReviewInTerminal, jumpTo }: {
           }} disabled={busy} small>Refresh</Btn>
         </div>
       </div>
+
+      {/* Borrowed from elsewhere — see `away`. Under the header rather than
+          inside it: this is a state the whole panel is in, and it has to be
+          the thing you notice before you wonder why the list changed. */}
+      {away && (
+        <div className="flex items-center gap-2 px-2.5 py-1.5 shrink-0 text-[11px] border-b"
+          style={{ borderColor: "color-mix(in srgb, var(--warning) 30%, transparent)", background: "color-mix(in srgb, var(--warning) 8%, transparent)" }}>
+          <span style={{ color: "var(--warning)" }}>Showing {away.repo} on top of {away.back.repo}</span>
+          <span className="ml-auto">
+            <Btn onClick={() => { setAway(null); setSelected(null); setRoot(away.back.root); }} small>
+              Back to {away.back.repo}
+            </Btn>
+          </span>
+        </div>
+      )}
 
       {/* List or pull request, never both. The list used to live in a column
           narrow enough that a title was all it could fit, and everything worth
@@ -4434,7 +4513,7 @@ export function PrView({ active, onOpenChatWith, onReviewInTerminal, jumpTo }: {
                   it lands on a click handler, and a bare reference would hand
                   the MouseEvent in as the pull request number. */}
               <Masthead
-                d={d} busy={busy}
+                d={d} busy={busy} local={local} onShowLocal={showLocal}
                 onEditTitle={doEditTitle} onDraft={() => act(d.isDraft ? "Mark ready" : "Convert to draft", () => api.prDraft(root, d.number, !d.isDraft))}
                 onClose={doClose} onLocalReview={(recipe) => doLocalReview(undefined, recipe)}
                 onReviewInTerminal={onReviewInTerminal && d ? (recipe) => onReviewInTerminal(root, d.number, recipe, cardRef(d)?.label ?? "") : undefined}
@@ -4563,7 +4642,8 @@ export function PrView({ active, onOpenChatWith, onReviewInTerminal, jumpTo }: {
                     <div className="min-w-0 flex-1">
                       {tab === "overview" ? (
                         <Overview
-                          d={d} root={root} busy={busy} mergeWork={mergeWork} openThreads={openThreads.length}
+                          d={d} root={root} busy={busy} local={local} onShowLocal={showLocal}
+                          mergeWork={mergeWork} openThreads={openThreads.length}
                           conversationCount={d.comments.length + d.reviews.length + d.threads.length}
                           behind={behind} behindAsking={behindAsking} localHead={localHead} busyWhat={busyWhat}
                           conflictFiles={conflictFiles}
@@ -4988,12 +5068,16 @@ function ConflictActions({ root, number, branch, base, disabled }: {
   );
 }
 
-function Overview({ d, root, busy, busyWhat, mergeWork, openThreads, conversationCount, behind, behindAsking, localHead, conflictFiles, method, onMethod, onLocalReview, onReviewInTerminal, onMerge, onClose, onUpdateBranch, onRerun, onAutoMerge, onCancelAutoMerge, onDraft, onGoThreads, onGoReview, onGoMoved, movedSince, onEditRequest, onToggleTask, awaitingChecks }: {
+function Overview({ d, root, busy, local, onShowLocal, busyWhat, mergeWork, openThreads, conversationCount, behind, behindAsking, localHead, conflictFiles, method, onMethod, onLocalReview, onReviewInTerminal, onMerge, onClose, onUpdateBranch, onRerun, onAutoMerge, onCancelAutoMerge, onDraft, onGoThreads, onGoReview, onGoMoved, movedSince, onEditRequest, onToggleTask, awaitingChecks }: {
   d: PrDetail;
   /** The checkout this pull request is being read from — where a conflict would
    *  be prepared. */
   root: string;
   busy: boolean;
+  /** What plugins have written here: the strip above the description, and the
+   *  state of every plugin button in the row. */
+  local: LocalNotes;
+  onShowLocal: () => void;
   /** What the merge is doing, "" when it is not running. `busy` cannot answer
    *  this: it is true for every action on the panel, so a merge button reading
    *  it would say "Merging…" while a comment was being posted. */
@@ -5582,6 +5666,8 @@ function Overview({ d, root, busy, busyWhat, mergeWork, openThreads, conversatio
       </section>
       )}
 
+      <LocalStrip local={local} onShow={onShowLocal} />
+
       <Description d={d} busy={busy} onEdit={onEditRequest} onToggleTask={onToggleTask} />
 
       <div className="flex gap-1.5 flex-wrap items-center">
@@ -5596,6 +5682,7 @@ function Overview({ d, root, busy, busyWhat, mergeWork, openThreads, conversatio
             them. */}
         <ReviewMenu d={d} canTerm={!!onReviewInTerminal}
           onPick={(recipe, where) => (where === "term" ? onReviewInTerminal?.(recipe) : onLocalReview(recipe))} />
+        <PluginPrActions number={d.number} local={local} onShowLocal={onShowLocal} />
         {/* The panel's own Btn, like its neighbour. A hand-rolled anchor with
             its own padding beside a Btn is two heights in a row of two. */}
         {/* `small`, like the Menu it stands beside. Without it this was the
@@ -5857,7 +5944,7 @@ function BodyEditor({ prNumber, initial, busy, onSave, onCancel, onOpenGithub }:
  * something. All three, because a menu that only closes one of those ways is
  * the kind of thing you only notice when it is stuck open over the diff.
  */
-function Menu({ label, title, children, align = "right", primary }: {
+export function Menu({ label, title, children, align = "right", primary, bare }: {
   /** A node, not just a string: an icon-only trigger used to be a typographic
    *  character, and `⌸` is an APL glyph most fonts do not carry — it fell back
    *  to whatever was nearest, at about six pixels of actual mark. */
@@ -5865,6 +5952,10 @@ function Menu({ label, title, children, align = "right", primary }: {
   /** For a menu that is an action rather than an overflow — it has to read as
    *  the thing you came here to press, not as a place other things are kept. */
   primary?: boolean;
+  /** No frame of its own: the trigger is already inside somebody else's — a
+   *  plugin's button and its caret are one control with one border, and a Btn
+   *  inside that draws a second. */
+  bare?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
@@ -5883,7 +5974,15 @@ function Menu({ label, title, children, align = "right", primary }: {
   // were never where they looked like they were.
   return (
     <div className="relative shrink-0 flex" ref={box}>
-      <Btn onClick={() => setOpen((v) => !v)} title={title} small primary={primary}>{label}</Btn>
+      {bare
+        ? (
+          <button type="button" onClick={() => setOpen((v) => !v)} title={title} aria-haspopup="menu" aria-expanded={open}
+            className="inline-flex items-center justify-center px-1 hover:brightness-125"
+            style={{ color: "inherit", background: "transparent", border: 0, borderLeft: "1px solid color-mix(in srgb, currentColor 30%, transparent)" }}>
+            {label}
+          </button>
+        )
+        : <Btn onClick={() => setOpen((v) => !v)} title={title} small primary={primary}>{label}</Btn>}
       {open && (
         <div className="absolute z-50 mt-1.5 rounded-lg overflow-hidden agx-menu" style={{ [align]: 0, minWidth: 216 }}>
           {children(() => setOpen(false))}
@@ -5893,7 +5992,7 @@ function Menu({ label, title, children, align = "right", primary }: {
   );
 }
 
-function MenuItem({ children, onClick, danger, kbd, icon }: {
+export function MenuItem({ children, onClick, danger, kbd, icon }: {
   children: React.ReactNode; onClick: () => void; danger?: boolean; kbd?: string;
   /** Drawn before the words, in the words' own colour. */
   icon?: React.ReactNode;
@@ -7420,8 +7519,11 @@ function prStateBadge(d: { state: PrSummary["state"]; isDraft: boolean }): { tin
   return { tint: "var(--success)", state: "Open", glyph: <PrIcon size={ICON.xs} /> };
 }
 
-function Masthead({ d, busy, onEditTitle, onDraft, onClose, onLocalReview, onReviewInTerminal, onLabels, onReviewers, onCopyLink, onNudge, onEditField, condensed, viewed, threads, queued, awaitingChecks, localHead }: {
+function Masthead({ d, busy, local, onShowLocal, onEditTitle, onDraft, onClose, onLocalReview, onReviewInTerminal, onLabels, onReviewers, onCopyLink, onNudge, onEditField, condensed, viewed, threads, queued, awaitingChecks, localHead }: {
   d: PrDetail; busy: boolean;
+  /** What plugins have written here — what their buttons in this row say. */
+  local: LocalNotes;
+  onShowLocal: () => void;
   /**
    * This branch on THIS machine — which checkout has it, and whether that tree is
    * dirty. Null while the question is out, and the cell is simply absent then:
@@ -7573,6 +7675,7 @@ function Masthead({ d, busy, onEditTitle, onDraft, onClose, onLocalReview, onRev
             read, not because it is the better place to send somebody. */}
         <ReviewMenu d={d} canTerm={!!onReviewInTerminal}
           onPick={(recipe, where) => (where === "term" ? onReviewInTerminal?.(recipe) : onLocalReview(recipe))} />
+        <PluginPrActions number={d.number} local={local} onShowLocal={onShowLocal} />
         {/* Out of the overflow, because it is the most-pressed thing in it.
             "Open on GitHub" is what you reach for whenever this panel does not
             do the thing — and burying the escape hatch two clicks deep is the
