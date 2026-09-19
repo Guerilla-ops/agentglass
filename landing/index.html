@@ -954,6 +954,56 @@ body:not([data-route="home"]) .page{padding-top:calc(118px + var(--safe))}
  .appbar{gap:12px;white-space:nowrap}
  .appbar span:nth-child(4),.appbar span:nth-child(5){display:none}
  .kick{font-size:11px;letter-spacing:.14em}}
+/* The plugins page. Cards read from plugins.json — the same file the app adds
+   as a catalogue, so what is listed here and what installs in one click there
+   cannot drift apart. */
+.pl-bar{margin-top:30px;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.pl-q{flex:1 1 320px;display:flex;align-items:center;gap:10px;padding:0 14px;height:46px;border-radius:12px;
+ background:rgba(167,139,250,.06);border:1px solid var(--line2)}
+.pl-q:focus-within{border-color:var(--vio);box-shadow:0 0 0 3px rgba(167,139,250,.14)}
+.pl-q input{flex:1;min-width:0;background:none;border:0;outline:0;color:var(--txt);font:15px var(--mono)}
+.pl-q input::placeholder{color:var(--dim2)}
+.pl-q kbd{font:11px var(--mono);color:var(--dim);border:1px solid var(--line2);border-radius:6px;padding:2px 6px}
+.pl-sort{height:46px;border-radius:12px;background:rgba(167,139,250,.06);border:1px solid var(--line2);color:var(--txt);
+ font:13px var(--mono);padding:0 12px}
+.pl-chips{margin-top:14px;display:flex;flex-wrap:wrap;gap:8px}
+.pl-chip{font:12px var(--mono);color:var(--dim);background:none;border:1px solid var(--line2);border-radius:999px;
+ padding:6px 12px;cursor:pointer;transition:color .15s,border-color .15s,background .15s}
+.pl-chip:hover{color:var(--txt)}
+.pl-chip[aria-pressed="true"]{color:var(--void);background:var(--vio);border-color:var(--vio)}
+.pl-count{margin-top:22px;font:12px var(--mono);letter-spacing:.08em;color:var(--dim2);text-transform:uppercase}
+.pl-grid{margin-top:14px;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(300px,100%),1fr));gap:16px}
+.pl-card{min-width:0;display:flex;flex-direction:column;gap:12px;padding:20px;border-radius:16px;
+ background:linear-gradient(180deg,rgba(167,139,250,.07),rgba(167,139,250,.02));border:1px solid var(--line);
+ transition:border-color .2s,transform .2s}
+.pl-card:hover{border-color:var(--line2);transform:translateY(-2px)}
+.pl-top{display:flex;align-items:flex-start;gap:12px}
+.pl-ic{flex:none;width:40px;height:40px;border-radius:11px;display:grid;place-items:center;
+ background:rgba(167,139,250,.14);color:var(--vio)}
+.pl-name{font-size:17px;font-weight:650;color:var(--txt);line-height:1.25}
+.pl-by{margin-top:3px;font:12px var(--mono);color:var(--dim)}
+.pl-ok{color:var(--run)}
+.pl-desc{color:var(--dim);font-size:14px;line-height:1.6;flex:1;margin:0}
+.pl-tags{display:flex;flex-wrap:wrap;gap:6px}
+.pl-tag{font:11px var(--mono);color:var(--dim);border:1px solid var(--line);border-radius:6px;padding:3px 7px}
+.pl-tag.d{color:var(--vio);border-color:rgba(167,139,250,.35)}
+.pl-tag.s{color:var(--run);border-color:rgba(52,211,153,.35)}
+.pl-tag.w{color:var(--wait);border-color:rgba(251,191,36,.35)}
+.pl-inst{display:flex;align-items:center;gap:8px;margin-top:2px;padding:8px 8px 8px 12px;border-radius:10px;
+ background:rgba(7,6,13,.55);border:1px solid var(--line)}
+.pl-inst code{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:12px var(--mono);color:var(--txt)}
+.pl-copy{flex:none;font:12px var(--mono);color:var(--void);background:var(--vio);border:0;border-radius:7px;
+ padding:6px 10px;cursor:pointer}
+.pl-copy.done{background:var(--run)}
+.pl-links{display:flex;gap:14px;font:12px var(--mono);color:var(--dim2)}
+.pl-links a{color:var(--dim);text-decoration:none}
+.pl-links a:hover{color:var(--txt)}
+.pl-none{margin-top:18px;padding:40px 20px;text-align:center;color:var(--dim);border:1px dashed var(--line2);border-radius:16px}
+.pl-steps{margin-top:18px;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}
+.pl-step{padding:18px;border-radius:14px;border:1px solid var(--line)}
+.pl-step b{display:block;font:12px var(--mono);color:var(--vio);letter-spacing:.1em;margin-bottom:8px}
+.pl-step p{margin-top:0;font-size:14px}
+@media (max-width:560px){.pl-sort{flex:1 1 100%}}
 </style>
 <!-- The deploy writes a cookieless page counter between these when one is
      configured as a repository variable, and nothing at all when it is not,
@@ -979,7 +1029,7 @@ body:not([data-route="home"]) .page{padding-top:calc(118px + var(--safe))}
 <div class="hd-ring"><svg viewBox="0 0 220 220"><g><ellipse cx="110" cy="110" rx="100" ry="100" fill="none" stroke="#a78bfa" stroke-opacity=".2" stroke-width="1" vector-effect="non-scaling-stroke"/></g></svg></div>
 <div class="hd-rule"></div>
 <div class="hd-sweep"></div>
-<header class="hd"><div class="hd-bar"></div><a class="hd-lock" href="#"><svg class="mk" viewBox="0 0 64 64" aria-hidden="true"><defs><radialGradient id="hsheen" cx=".34" cy=".28" r=".82"><stop offset="0" stop-color="#fff" stop-opacity=".72"/><stop offset=".5" stop-color="#fff" stop-opacity=".15"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient></defs><path d="M14.1 54.9 A29 8 -52 0 1 49.9 9.1" fill="none" stroke="#a78bfa" stroke-opacity=".4" stroke-width="3.2" stroke-linecap="round"/><g opacity="0"><animate attributeName="opacity" values="0;1" keyTimes="0;.5" dur="16s" calcMode="discrete" repeatCount="indefinite"/><animateMotion dur="16s" repeatCount="indefinite" path="M49.9 9.1 A29 8 -52 0 1 14.1 54.9 A29 8 -52 0 1 49.9 9.1"/><circle r="6.8" fill="#34d399" fill-opacity=".18"/><circle r="3.6" fill="#34d399"/></g><circle cx="30" cy="34" r="12.5" fill="#a78bfa"/><circle cx="30" cy="34" r="12.5" fill="url(#hsheen)"/><g fill="none" stroke="#fff" stroke-opacity=".2" stroke-width="1.1"><ellipse cx="30" cy="34" rx="12.5" ry="4.5"/><ellipse cx="30" cy="34" rx="6" ry="12.1"/></g><path d="M30 21.5 A12.5 12.5 0 0 1 30 46.5 A17 17 0 0 0 30 21.5 Z" fill="#1b0b38" fill-opacity=".42"/><path d="M49.9 9.1 A29 8 -52 0 1 14.1 54.9" fill="none" stroke="#a78bfa" stroke-width="3.2" stroke-linecap="round"/><g><animate attributeName="opacity" values="1;0" keyTimes="0;.5" dur="16s" calcMode="discrete" repeatCount="indefinite"/><animateMotion dur="16s" repeatCount="indefinite" path="M49.9 9.1 A29 8 -52 0 1 14.1 54.9 A29 8 -52 0 1 49.9 9.1"/><circle r="6.8" fill="#34d399" fill-opacity=".18"/><circle r="3.6" fill="#34d399"/></g></svg><span class="wd">agentglass</span></a><nav class="hd-nav"><a href="#/" data-r="home">Home</a><a href="#/guide" data-r="guide">Guide</a><a href="#/faq" data-r="faq">Questions</a><a class="dl" href="#/#get">Get it →</a></nav></header>
+<header class="hd"><div class="hd-bar"></div><a class="hd-lock" href="#"><svg class="mk" viewBox="0 0 64 64" aria-hidden="true"><defs><radialGradient id="hsheen" cx=".34" cy=".28" r=".82"><stop offset="0" stop-color="#fff" stop-opacity=".72"/><stop offset=".5" stop-color="#fff" stop-opacity=".15"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient></defs><path d="M14.1 54.9 A29 8 -52 0 1 49.9 9.1" fill="none" stroke="#a78bfa" stroke-opacity=".4" stroke-width="3.2" stroke-linecap="round"/><g opacity="0"><animate attributeName="opacity" values="0;1" keyTimes="0;.5" dur="16s" calcMode="discrete" repeatCount="indefinite"/><animateMotion dur="16s" repeatCount="indefinite" path="M49.9 9.1 A29 8 -52 0 1 14.1 54.9 A29 8 -52 0 1 49.9 9.1"/><circle r="6.8" fill="#34d399" fill-opacity=".18"/><circle r="3.6" fill="#34d399"/></g><circle cx="30" cy="34" r="12.5" fill="#a78bfa"/><circle cx="30" cy="34" r="12.5" fill="url(#hsheen)"/><g fill="none" stroke="#fff" stroke-opacity=".2" stroke-width="1.1"><ellipse cx="30" cy="34" rx="12.5" ry="4.5"/><ellipse cx="30" cy="34" rx="6" ry="12.1"/></g><path d="M30 21.5 A12.5 12.5 0 0 1 30 46.5 A17 17 0 0 0 30 21.5 Z" fill="#1b0b38" fill-opacity=".42"/><path d="M49.9 9.1 A29 8 -52 0 1 14.1 54.9" fill="none" stroke="#a78bfa" stroke-width="3.2" stroke-linecap="round"/><g><animate attributeName="opacity" values="1;0" keyTimes="0;.5" dur="16s" calcMode="discrete" repeatCount="indefinite"/><animateMotion dur="16s" repeatCount="indefinite" path="M49.9 9.1 A29 8 -52 0 1 14.1 54.9 A29 8 -52 0 1 49.9 9.1"/><circle r="6.8" fill="#34d399" fill-opacity=".18"/><circle r="3.6" fill="#34d399"/></g></svg><span class="wd">agentglass</span></a><nav class="hd-nav"><a href="#/" data-r="home">Home</a><a href="#/guide" data-r="guide">Guide</a><a href="#/plugins" data-r="plugins">Plugins</a><a href="#/faq" data-r="faq">Questions</a><a class="dl" href="#/#get">Get it →</a></nav></header>
 <main id="home"><section class="one">
  <div class="kick">Everything you alt-tab to</div>
  <div class="field"><div class="chip" data-k="diff" style="--cx:-344px;--cy:-198px"><svg class="ci" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M12 11.5v5M9.5 14h5"/><path d="M9.5 18.4h5"/></svg><span>nvim</span></div><div class="chip" data-k="terminal" style="--cx:322px;--cy:-208px"><svg class="ci" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 10l2.5 2.5L7 15"/><path d="M12.5 15.5H17"/></svg><span>tmux</span></div><div class="chip" data-k="git" style="--cx:-408px;--cy:-52px"><svg class="ci" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="5" r="2.6"/><circle cx="7" cy="19" r="2.6"/><circle cx="17.5" cy="12" r="2.6"/><path d="M7 7.6v8.8"/><path d="M9.6 5h3.4a2 2 0 0 1 2 2v2.6"/></svg><span>lazygit</span></div><div class="chip" data-k="docker" style="--cx:386px;--cy:-46px"><svg class="ci" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="9.5" width="3.2" height="3.2" rx=".5"/><rect x="7.4" y="9.5" width="3.2" height="3.2" rx=".5"/><rect x="11.8" y="9.5" width="3.2" height="3.2" rx=".5"/><rect x="7.4" y="5.8" width="3.2" height="3.2" rx=".5"/><rect x="11.8" y="5.8" width="3.2" height="3.2" rx=".5"/><rect x="11.8" y="2.1" width="3.2" height="3.2" rx=".5"/><path d="M2 14.2c.4 3.4 2.8 5.6 7.2 5.6 5.2 0 8.8-2.6 10-6.6 1.4.2 2.6-.3 3.2-1.3-1.2-.9-2.5-.8-3.5-.2"/></svg><span>lazydocker</span></div><div class="chip" data-k="issues" style="--cx:-366px;--cy:106px"><svg class="ci" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 6.5l2 2 3.5-3.5"/><path d="M12 7h9"/><path d="M3.5 15.5l2 2 3.5-3.5"/><path d="M12 16h9"/></svg><span>ClickUp</span></div><div class="chip" data-k="pr" style="--cx:346px;--cy:94px"><svg class="ci" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><path d="M6 9v12"/><circle cx="18" cy="18" r="3"/><path d="M18 15V8a2 2 0 0 0-2-2h-4.5"/><path d="M13.5 3.5 11 6l2.5 2.5"/></svg><span>GitHub PRs</span></div><div class="chip" data-k="browser" style="--cx:-266px;--cy:218px"><svg class="ci" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18Z"/></svg><span>Chrome</span></div><div class="chip" data-k="chat" style="--cx:272px;--cy:224px"><svg class="ci" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 4.5h-17v12h5v4l5-4h7z"/></svg><span>Claude</span></div>
@@ -1238,7 +1288,7 @@ body:not([data-route="home"]) .page{padding-top:calc(118px + var(--safe))}
   <div><b>Docker<em>per feature</em></b><span>Containers, images, volumes, logs.</span></div>
  </div>
 
- <h3 id="plugins">Plugins</h3>
+ <h3 id="guide-plugins">Plugins</h3>
  <p>A plugin is a program somebody else wrote that watches or drives agentglass
   over HTTP. It is a folder with a <code>plugin.json</code>, and installing it, reading
   what it asks for, and switching it on are three separate acts you perform in
@@ -1249,6 +1299,9 @@ body:not([data-route="home"]) .page{padding-top:calc(118px + var(--safe))}
   <code>HOME</code>, <code>AGENTGLASS_URL</code> and <code>AGENTGLASS_READ_TOKEN</code>. Nothing is
   loaded into the server or the desktop window. Disabling it kills the process and
   revokes the token; tokens live in memory and are never written to disk.</p>
+ <p>A plugin can also draw: a panel in the Plugins view, a page in Settings, notes
+  in a pull request. It sends what to show as data, and agentglass draws it with its
+  own parts. <a href="#/plugins" style="color:var(--vio)">Browse the plugins</a>.</p>
  <div class="grid2">
   <div><b>read</b><span>Every GET route, including <code>/stream</code>: live output, costs,
    diffs, pull requests, the board. Cannot write anything.</span></div>
@@ -1345,13 +1398,47 @@ body:not([data-route="home"]) .page{padding-top:calc(118px + var(--safe))}
    path.</p></div></details>
  </div>
 </div></section></main>
+<main id="plugins" hidden><section class="page"><div class="w">
+ <div class="eb">Plugins</div>
+ <h1>Plugins that draw in agentglass.</h1>
+ <p class="lead">Each one is its own git repository. It runs as its own process with a token scoped to
+  what you approve, and it draws with agentglass's own parts: a panel, a settings page, notes in a
+  pull request. None of its code runs inside the window.</p>
+ <div class="pl-bar">
+  <label class="pl-q"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" style="color:var(--dim)"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+   <input id="pl-q" type="search" placeholder="Search plugins, tags, authors" autocomplete="off" aria-label="Search plugins"><kbd>/</kbd></label>
+  <select id="pl-sort" class="pl-sort" aria-label="Sort"><option value="new">Recently added</option><option value="az">A–Z</option></select>
+ </div>
+ <div class="pl-chips" id="pl-chips" role="group" aria-label="Filter"></div>
+ <div class="pl-count" id="pl-count"></div>
+ <div class="pl-grid" id="pl-grid"></div>
+ <div class="pl-none" id="pl-none" hidden>Nothing matches. <a href="https://github.com/SirAllap/agentglass/blob/main/docs/PLUGINS.md" style="color:var(--vio)">Write it?</a></div>
+
+ <h3 id="publish">Publish one</h3>
+ <div class="pl-steps">
+  <div class="pl-step"><b>01 · WRITE</b><p>A repository with <code>plugin.json</code> at its root: a name, what it runs,
+   the scope it needs, and where it draws. <a href="https://github.com/SirAllap/agentglass/blob/main/docs/PLUGINS.md" style="color:var(--vio)">The guide</a>
+   has the manifest, the routes and the vocabulary.</p></div>
+  <div class="pl-step"><b>02 · PUSH</b><p>Any host <code>git clone</code> reaches. The URL is the publication:
+   pasting it into Settings → Plugins installs it, with no account or registry in between.</p></div>
+  <div class="pl-step"><b>03 · LIST IT</b><p>Open a pull request that adds it to <code>landing/plugins.json</code>.
+   Once it is merged, the plugin shows here and in the app's catalogue.</p></div>
+ </div>
+ <h3>Install one</h3>
+ <p>In agentglass, open Settings → Plugins and add this page's catalogue,
+  <code>https://sirallap.github.io/agentglass/plugins.json</code>. Or paste a plugin's URL
+  straight in. Nothing runs at install. You read what it asks for, then switch it on, and an update
+  that changes what it asks for is asked about again.</p>
+ <p>Verified means a maintainer read that plugin at the listed source. It does not vouch for
+  later changes, which is why an update always asks again.</p>
+</div></section></main>
 
 <footer class="foot2">
  <div class="fw">
   <div class="me2"><span class="lock2"><!-- logo:mark:start --><svg class="mark" viewBox="0 0 64 64" width="20" height="20" aria-hidden="true"><path d="M14.1 54.9 A29 8.5 -52 0 1 49.9 9.1" fill="none" stroke="currentColor" stroke-opacity=".45" stroke-width="6" stroke-linecap="round"/><circle cx="30" cy="34" r="15" fill="currentColor"/><circle cx="30" cy="34" r="15" fill="#fff" fill-opacity=".34"/><path d="M30 19 A15 15 0 0 1 30 49 A21.0 21.0 0 0 0 30 19 Z" fill="#1b0b38" fill-opacity=".52"/><path d="M49.9 9.1 A29 8.5 -52 0 1 14.1 54.9" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round"/><circle cx="50.7" cy="10.4" r="6" fill="var(--success)"/></svg><!-- logo:mark:end --><b>agentglass</b></span>
    <p>Built by <a href="https://github.com/SirAllap">SirAllap</a>. It runs on your own machine — no account, no cloud, no telemetry.</p>
   </div>
-  <div><h4>Product</h4><nav><a href="#/">Home</a><a href="#/guide">Guide</a><a href="#/faq">Questions</a><a href="#/#get">Download</a><a href="https://sirallap.github.io/agentglass/demo/">Live demo</a></nav></div>
+  <div><h4>Product</h4><nav><a href="#/">Home</a><a href="#/guide">Guide</a><a href="#/plugins">Plugins</a><a href="#/faq">Questions</a><a href="#/#get">Download</a><a href="https://sirallap.github.io/agentglass/demo/">Live demo</a></nav></div>
   <div><h4>Docs</h4><nav><a href="https://github.com/SirAllap/agentglass/blob/main/docs/INSTALL.md">Install</a><a href="https://github.com/SirAllap/agentglass/blob/main/docs/WORKSPACE.md">Every view</a><a href="https://github.com/SirAllap/agentglass/blob/main/docs/CONFIG.md">Config & API</a><a href="https://github.com/SirAllap/agentglass/blob/main/docs/PLUGINS.md">Plugins</a><a href="https://github.com/SirAllap/agentglass/blob/main/SECURITY.md">Security</a></nav></div>
   <div><h4>Project</h4><nav><a href="https://github.com/SirAllap/agentglass">Source</a><a href="https://github.com/SirAllap/agentglass/releases">Releases</a><a href="https://github.com/SirAllap/agentglass/blob/main/CHANGELOG.md">Changelog</a><a href="https://github.com/SirAllap/agentglass/discussions">Discussions</a><a href="https://github.com/SirAllap/agentglass/issues">Issues</a></nav></div>
  </div>
@@ -1479,12 +1566,98 @@ new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){g.classList.add
   'On an Intel one take <a href="#get">the x64 build</a>.';
 })();
 
-/* Three pages out of one hash. `#/guide` and `#/faq` are pages; anything else,
+/* The plugins page, from plugins.json. Fetched the first time the page is
+   shown, and drawn with textContent only: the catalogue is a file other people
+   send pull requests to, so nothing in it is ever treated as markup. */
+(() => {
+ const DRAW = { "panel": "adds a panel", "settings": "settings page", "pr-notes": "notes in pull requests" };
+ const SCOPE = { read: ["reads only", "s"], answer: ["can answer chats", "w"], full: ["full access", "w"] };
+ let all = null, cat = "all";
+ const $ = (id) => document.getElementById(id);
+ const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+ const safe = (u) => { try { const x = new URL(u); return x.protocol === "https:" ? x.href : null; } catch { return null; } };
+ const PIECE = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M9 4h4v2.2a1.8 1.8 0 0 0 3 1.3 1.8 1.8 0 0 1 3 1.3V13h-2.2a1.8 1.8 0 0 0 0 3.6H19v4h-4v-2.2a1.8 1.8 0 0 0-3.6 0V21H9v-4.5H6.8a1.8 1.8 0 0 1 0-3.6H9V9H6.8a1.8 1.8 0 0 1-1.3-3 1.8 1.8 0 0 1 3-1.3V4z"/></svg>';
+ const card = (p) => {
+  const c = el("article", "pl-card");
+  const top = el("div", "pl-top");
+  const ic = el("div", "pl-ic");
+  ic.innerHTML = PIECE;
+  const who = el("div");
+  who.append(el("div", "pl-name", p.title || p.id));
+  const by = el("div", "pl-by", "by " + (p.publisher || "unknown"));
+  if (p.verified) by.append(el("span", "pl-ok", " · verified"));
+  who.append(by);
+  top.append(ic, who);
+  const tags = el("div", "pl-tags");
+  const sc = SCOPE[p.scope];
+  if (sc) tags.append(el("span", "pl-tag " + sc[1], sc[0]));
+  (p.draws || []).forEach((d) => { if (DRAW[d]) tags.append(el("span", "pl-tag d", DRAW[d])); });
+  (p.categories || []).forEach((t) => tags.append(el("span", "pl-tag", "#" + t)));
+  const url = safe(p.source && p.source.url);
+  const inst = el("div", "pl-inst");
+  const btn = el("button", "pl-copy", "Copy");
+  btn.type = "button";
+  btn.onclick = () => {
+   if (!navigator.clipboard || !url) return;
+   navigator.clipboard.writeText(url).then(() => {
+    btn.textContent = "Copied"; btn.classList.add("done");
+    setTimeout(() => { btn.textContent = "Copy"; btn.classList.remove("done"); }, 1400);
+   });
+  };
+  inst.append(el("code", null, url || ""), btn);
+  const links = el("div", "pl-links");
+  if (url) { const a = el("a", null, "Source ↗"); a.href = url; a.target = "_blank"; a.rel = "noopener"; links.append(a); }
+  if (p.added) links.append(el("span", null, "added " + p.added));
+  c.append(top, el("p", "pl-desc", p.description || ""), tags, inst, links);
+  return c;
+ };
+ const render = () => {
+  if (!all) return;
+  const q = $("pl-q").value.trim().toLowerCase();
+  let rows = all.filter((p) => cat === "all" || (p.categories || []).includes(cat) || (p.draws || []).includes(cat));
+  if (q) rows = rows.filter((p) => [p.id, p.title, p.publisher, p.description, ...(p.categories || [])].join(" ").toLowerCase().includes(q));
+  rows.sort($("pl-sort").value === "az"
+   ? (a, b) => (a.title || a.id).localeCompare(b.title || b.id)
+   : (a, b) => String(b.added || "").localeCompare(String(a.added || "")));
+  $("pl-grid").replaceChildren(...rows.map(card));
+  $("pl-count").textContent = rows.length + (rows.length === 1 ? " plugin" : " plugins") + (rows.length !== all.length ? " of " + all.length : "");
+  $("pl-none").hidden = rows.length > 0;
+ };
+ const chips = () => {
+  const cats = new Map([["all", "All"], ["panel", "Draws a panel"], ["pr-notes", "Notes in pull requests"]]);
+  all.forEach((p) => (p.categories || []).forEach((t) => { if (!cats.has(t)) cats.set(t, t); }));
+  $("pl-chips").replaceChildren(...[...cats].map(([k, label]) => {
+   const b = el("button", "pl-chip", label);
+   b.type = "button";
+   b.setAttribute("aria-pressed", String(k === cat));
+   b.onclick = () => { cat = k; chips(); render(); };
+   return b;
+  }));
+ };
+ const load = () => {
+  if (all) return;
+  all = [];
+  fetch("plugins.json", { cache: "no-cache" }).then((r) => r.json()).then((d) => {
+   all = Array.isArray(d.plugins) ? d.plugins.filter((p) => p && typeof p.id === "string") : [];
+   chips(); render();
+  }).catch(() => { $("pl-count").textContent = "The list could not be loaded."; });
+ };
+ $("pl-q").addEventListener("input", render);
+ $("pl-sort").addEventListener("change", render);
+ addEventListener("keydown", (e) => {
+  if (e.key === "/" && document.body.dataset.route === "plugins" && document.activeElement !== $("pl-q")) { e.preventDefault(); $("pl-q").focus(); }
+ });
+ const check = () => { if (location.hash.replace(/^#\/?/, "").split("#")[0] === "plugins") load(); };
+ addEventListener("hashchange", check);
+ check();
+})();
+
+/* Four pages out of one hash. `#/guide`, `#/faq` and `#/plugins` are pages; anything else,
    including a bare `#get`, is the home — a hash that names a section on the
    home must still land on the home and then jump, which is what `#/#get` from
    another page relies on. */
 (() => {
- const pages = ["home", "guide", "faq"];
+ const pages = ["home", "guide", "faq", "plugins"];
  const go = () => {
   const h = location.hash.replace(/^#\/?/, "");
   const r = pages.includes(h.split("#")[0]) ? h.split("#")[0] : "home";

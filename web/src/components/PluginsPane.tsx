@@ -287,6 +287,11 @@ function CatalogueRow({
 /** Add a catalogue by URL and keep the ones already added — a catalogue is
  *  somebody else's list; he collects the ones he trusts, the way he
  *  collects anything else. Adding never installs anything on its own. */
+/** The list this project publishes on its own site, the same file its plugins
+ *  page is drawn from. Offered, never added on its own: fetching somebody's
+ *  list is a request to their host, and that stays a choice. */
+const PROJECT_CATALOGUE = "https://sirallap.github.io/agentglass/plugins.json";
+
 function CataloguesSection({ plugins, onInstalled }: { plugins: PublicPlugin[]; onInstalled: () => void }) {
   const [catalogues, setCatalogues] = useState<string[]>([]);
   const [open, setOpen] = useState(false);
@@ -313,6 +318,15 @@ function CataloguesSection({ plugins, onInstalled }: { plugins: PublicPlugin[]; 
   const remove = async (u: string) => {
     await api.pluginCatalogueRemove(u);
     load();
+  };
+
+  const addProject = async () => {
+    setBusy(true);
+    setError(null);
+    const r = await api.pluginCatalogueAdd(PROJECT_CATALOGUE);
+    setBusy(false);
+    if (r.ok) load();
+    else setError(r.error ?? "Could not add that catalogue");
   };
 
   return (
@@ -353,6 +367,22 @@ function CataloguesSection({ plugins, onInstalled }: { plugins: PublicPlugin[]; 
             <span aria-hidden>+</span> Add a catalogue
           </button>
         )}
+        {!catalogues.includes(PROJECT_CATALOGUE) && (
+          <div className="rounded-xl p-3 flex items-center gap-3" style={CARD_STYLE}>
+            <div className="min-w-0 flex-1">
+              <div className="text-[12.5px] font-medium" style={{ color: "var(--text)" }}>The agentglass catalogue</div>
+              <div className="text-[11px] t-dim mt-0.5">
+                The plugins listed on this project's site. Adding it fetches that list from GitHub Pages when you browse it; nothing installs until you pick one.
+              </div>
+            </div>
+            <button onClick={addProject} disabled={busy}
+              className="text-[12px] px-2.5 py-1 rounded-lg whitespace-nowrap hover:opacity-80 disabled:opacity-50"
+              style={{ color: "var(--primary)", border: "1px solid color-mix(in srgb, var(--primary) 45%, transparent)" }}>
+              Add
+            </button>
+          </div>
+        )}
+        {!open && error && <Alert tone="error">{error}</Alert>}
         {catalogues.length === 0 ? (
           <div className="py-2 text-[12px] t-dim">No catalogues added yet.</div>
         ) : (
