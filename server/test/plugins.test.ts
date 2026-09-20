@@ -147,6 +147,40 @@ describe("consent does not survive an update", () => {
     await disablePlugin("watcher");
   });
 
+  test("a caller that cannot show the declaration may not approve it", async () => {
+    /*
+     * Switching a plugin on IS the approval, and the window earns the right
+     * to do it by drawing the scope and every place the plugin draws first.
+     * A terminal draws nothing, so `agentglass-plugin enable` was one line
+     * that granted a new manifest's scope with nobody having read it.
+     *
+     * `approved` is the caller saying it showed the declaration. Passing
+     * false is refused while there is something new to read, and accepted
+     * once the approval on file matches what is installed — a plugin already
+     * approved is not re-approved by being switched on again.
+     */
+    const src = fixture();
+    await installPlugin(src);
+    const cold = await enablePlugin("watcher", false);
+    expect(cold.ok).toBe(false);
+    if (!cold.ok) expect(cold.error).toContain("--approve");
+    expect(listPlugins()[0]!.enabled).toBe(false);
+
+    expect((await enablePlugin("watcher", true)).ok).toBe(true);
+    await disablePlugin("watcher");
+    // Nothing has changed since it was approved, so this one goes through.
+    expect((await enablePlugin("watcher", false)).ok).toBe(true);
+    await disablePlugin("watcher");
+
+    // Now it asks for more than it did, and the terminal is turned away again.
+    writeFileSync(join(src, MANIFEST_NAME), JSON.stringify({ ...okManifest, scope: "full" }));
+    await installPlugin(src);
+    const changed = await enablePlugin("watcher", false);
+    expect(changed.ok).toBe(false);
+    if (!changed.ok) expect(changed.error).toContain("has changed");
+    expect(listPlugins()[0]!.enabled).toBe(false);
+  });
+
   test("a scope change on reinstall clears the old approval and disables it", async () => {
     await installPlugin(fixture());
     await enablePlugin("watcher");

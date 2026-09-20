@@ -1318,11 +1318,12 @@ body:not([data-route="home"]) .page{padding-top:calc(118px + var(--safe))}
   loaded into the server or the desktop window. Disabling it kills the process and
   revokes the token; tokens live in memory and are never written to disk.</p>
  <p>A plugin can also draw: a panel in the Plugins view, a page in Settings, notes
-  in a pull request. It sends what to show as data, and agentglass draws it with its
-  own parts. <a href="#/plugins" style="color:var(--vio)">Browse the plugins</a>.</p>
+  in a pull request and a button in its header. It sends what to show as data, and agentglass draws it
+  with its own parts. <a href="#/plugins" style="color:var(--vio)">Browse the plugins</a>.</p>
  <div class="grid2">
-  <div><b>read</b><span>Every GET route, including <code>/stream</code>: live output, costs,
-   diffs, pull requests, the board. Cannot write anything.</span></div>
+  <div><b>read</b><span>Almost every GET route, including <code>/stream</code>: live output, costs,
+   diffs, pull requests, the board. Cannot write anything, and cannot read another plugin's settings or
+   screen.</span></div>
   <div><b>answer</b><span>Everything read gets, plus replying to a session already
    running. It cannot release a gate.</span></div>
   <div><b>full</b><span>Everything this machine can do: a terminal, git writes,
@@ -1399,14 +1400,14 @@ body:not([data-route="home"]) .page{padding-top:calc(118px + var(--safe))}
    itself: a paired phone's, or a person at the desktop.</p></div></details>
 
   <details><summary>Can a plugin add a panel to the window?</summary>
-   <div class="an"><p>Not today, and that is a boundary rather than a missing
-   feature. The desktop window is the privileged surface — it holds the API token
-   and can open a shell — so anything drawn inside it lives inside that trust.</p>
-   <p>A plugin that needs a screen opens its own: it is a separate process and can
-   start a window, a terminal UI or a web page of its own, talking over the same
-   HTTP. A sandboxed surface with its own capability grants is a real design
-   problem, and the maintainer says plainly it is undesigned and deliberately not
-   shipped under cover of "plugins".</p></div></details>
+   <div class="an"><p>Yes, within a closed vocabulary. A plugin declares where it draws — a panel in
+   the Plugins view, a page in Settings, notes inside a pull request, a button in a pull request's
+   header — and sends what to show as data. agentglass draws it with its own parts: there is no HTML,
+   no stylesheet, no image by URL and no script. A tone is a word the app maps onto the current theme.</p>
+   <p>What is still not there is a surface of its own: an iframe with its own capability grants, where a
+   plugin could draw anything it liked. That is a real design problem and it is undesigned, so it is not
+   shipped under cover of "plugins". A plugin that needs one opens its own window today — it is a
+   separate process and can start a terminal UI or a web page, talking over the same HTTP.</p></div></details>
 
   <details><summary>Is Windows supported?</summary>
    <div class="an"><p>It builds and passes CI, and nobody has run it on real
@@ -1421,7 +1422,7 @@ body:not([data-route="home"]) .page{padding-top:calc(118px + var(--safe))}
  <h1>Plugins that draw in agentglass.</h1>
  <p class="lead">Each one is its own git repository. It runs as its own process with a token scoped to
   what you approve, and it draws with agentglass's own parts: a panel, a settings page, notes in a
-  pull request. None of its code runs inside the window.</p>
+  pull request and a button in its header. None of its code runs inside the window.</p>
  <div class="pl-bar">
   <label class="pl-q"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" style="color:var(--dim)"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
    <input id="pl-q" type="search" placeholder="Search plugins, tags, authors" autocomplete="off" aria-label="Search plugins"><kbd>/</kbd></label>

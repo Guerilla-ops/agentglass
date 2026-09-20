@@ -4704,7 +4704,10 @@ const server = Bun.serve<WsData>({
       let b: { name?: unknown };
       try { b = (await req.json()) as { name?: unknown }; } catch { return json({ ok: false, error: "invalid json" }, 400); }
       if (typeof b.name !== "string" || !b.name) return json({ ok: false, error: "name is required" }, 400);
-      const r = await enablePlugin(b.name);
+      // `approved` is the caller saying it showed the declaration. The window
+      // always has; a script has to say so, and the CLI only says it for
+      // `--approve`, which prints the declaration first.
+      const r = await enablePlugin(b.name, (b as { approved?: unknown }).approved !== false);
       return json(r, r.ok ? 200 : 400);
     }
 

@@ -41,7 +41,7 @@ export interface UiBadge { text: string; tone?: Tone }
  * remember which project it lived in and go there by hand. `action` cannot
  * serve this — it is a message to the plugin, and what has to happen is the
  * app's. The pull request is opened wherever it lives, whatever project is
- * open (see `/pr/locate`), and `focus` says which lane to land on.
+ * open (see `/prs/locate`), and `focus` says which lane to land on.
  */
 export interface UiOpenPr { repo: string; number: number; focus?: "local" }
 

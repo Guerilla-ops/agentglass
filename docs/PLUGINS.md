@@ -61,9 +61,19 @@ never written to disk.
 | `description` | 1–500 characters. Shown to the reviewer; not verified. |
 | `entrypoint` | a shell command, 1–500 characters, no control characters; run through `bash -c` with the install directory as its working directory. |
 | `scope` | `read`, `answer` or `full` — what the plugin *asks for*. See below. |
+| `contributes` | optional; where it draws. See [Drawing in the app](#drawing-in-the-app). |
+| `icon` | optional; a relative path inside the folder to an `.svg`, `.png` or `.webp`, at most 256 KB, served to the window with `nosniff` and a sandbox policy. Named and not shipped is the mistake `agentglass-plugin validate` warns about. |
+| `color` | optional `#rrggbb`; the tint of its mark and of the button it puts in a pull request. |
 
 A manifest that fails any rule is refused with the sentence naming the rule;
 nothing is coerced into a wider shape than what was declared.
+
+The folder itself is refused before the manifest is read when it holds more
+than 2000 files, a file over 10 MB, or more than 50 MB in total, and when any
+symlink in it resolves outside the folder — an install is a copy, and a copy
+that follows a link out is a copy of something else. A local install takes an
+absolute path; a relative one is refused rather than resolved against whatever
+directory the server happens to be in.
 
 ## Scopes, in reviewer language
 
@@ -71,9 +81,14 @@ The three scopes are the same three the server already uses for paired devices
 (`server/src/auth.ts`), so no new permission language had to be invented and
 nothing new has to be kept in step with the route table.
 
-- **`read`** — every `GET` route, including `/stream`: a session's live output as
-  it happens, the same prompts and replies shown on screen, costs, diffs, pull
-  requests, the Lantern's board. Cannot write anything.
+- **`read`** — almost every `GET` route, including `/stream`: a session's live
+  output as it happens, the same prompts and replies shown on screen, costs,
+  diffs, pull requests, the Lantern's board. Cannot write anything. Four reads
+  need `full` rather than `read`, because each one hands over something that is
+  not this plugin's: `/terminal/pty`, `/browser/places/all`, and
+  `/plugins/settings` and `/plugins/panels`, which are another plugin's settings
+  and another plugin's screen. A plugin reads and writes its own through
+  `/plugin/self/…` at any scope.
 - **`answer`** — everything `read` gets, plus replying to a session that is
   already running (`/chat/send`, `/chat/pane/key`). It does **not** include
   releasing a permission gate — see the next paragraph.
@@ -147,12 +162,27 @@ exactly that, never as an empty list.
 
 | field | rule |
 |---|---|
-| `name` | same rule as a plugin name |
+| `name` | A heading: 1-60 printable characters, no control characters. Not a plugin name — this one never becomes a path |
 | `owner` | 1–200 characters; shown, not verified |
 | `plugins[].id` | 1–120 characters; the handle an install-from-catalogue names |
 | `plugins[].source` | `{ "kind": "git", "url": "https://…", "ref": null \| "<branch, tag or commit>" }`; a missing `ref` installs the default branch |
 | `plugins[].description` | 1–500 characters |
-| `plugins[].categories` | optional list of short strings |
+| `plugins[].categories` | optional list of short strings, at most 20 |
+| `plugins[].title` | optional, ≤80; the card's heading when there is one, otherwise the id |
+| `plugins[].publisher` | optional, ≤80; the card's byline, otherwise the catalogue's owner |
+| `plugins[].draws` | optional list of at most 8 short words — `panel`, `settings`, `pr-notes`, `pr-button` — so a card can say what installing gets you before anything is installed |
+| `plugins[].added` | optional ISO date; the only ordering a catalogue offers that its author cannot game by rewriting the file |
+
+A document may list more than the 500 entries the server keeps; it answers with
+those and with `total`, the number the document held, and the window says so
+rather than becoming a shorter catalogue. A card is drawn a page at a time, in
+the app and on the site: a list this long is one a catalogue should publish in
+pages of its own.
+
+Fields the app does not read are dropped, which includes `verified` on this
+project's own catalogue — that mark exists on the website and means a
+maintainer read the plugin at the listed source. It is not a promise about
+later changes, which is why an update asks again.
 
 One malformed entry drops that entry, not the catalogue. Fetching a catalogue
 goes through the same guarded fetch the server uses for any address it did not
@@ -199,7 +229,7 @@ Four places a plugin can appear:
 
 | Contribution | Where it shows | What the plugin sends |
 |---|---|---|
-| `panels` | A tab in the **Plugins** view, in the rail's bottom drawer | A tree of nodes (below), redrawn whenever it likes |
+| `panels` | A tab in the **Plugins** view, in the rail's bottom drawer | A tree of nodes (below), redrawn whenever it likes. At most 8, each with an `id`, a `title` of at most 40 characters, and optionally one `icon` from `puzzle`, `review`, `check`, `chart`, `list`, `bell`, `bug`, `book`, `bolt`, `eye` — a word the app maps to its own set, so a plugin ships no image for it |
 | `settings` | A page of its own in **Settings**, under Connections | Nothing: the app draws the fields and stores the values |
 | `prNotes` | Inside a pull request: one entry per pass in the conversation's **Local** lane, and each note under its line in the Files tab | Runs and notes, with a severity, a path and a line |
 | `prActions` | A button in every pull request's header, in the plugin's own colour, with the rest of its actions under a caret | Nothing to draw: the button's state is read from the plugin's runs on that pull request |
@@ -216,6 +246,11 @@ plugin cannot draw into another's panel.
 | `POST /plugin/self/panel` `{id, tree}` | Draw a declared panel |
 | `POST /plugin/self/options` `{key, options}` | Choices for a `select` it could only find at run time |
 | `POST /plugin/self/settings` `{values}` | Fill in its own declared settings — for a box the person edits that has to arrive with something in it |
+
+`~/.config/agentglass/plugins.json` (mode 0600) is the whole record: what is
+installed and where it came from, the approval on file, the master switch, the
+catalogues added, and the settings values the person typed — which is why a
+prompt written in a settings box never travels with the plugin.
 | `POST /plugin/self/pr/run` | Start or finish a pass over a pull request |
 | `POST /plugin/self/pr/notes` `{notes}` | Add or update notes |
 
@@ -242,6 +277,16 @@ with limits on depth, node count and string length, and an unknown node is
 refused rather than skipped. A click comes back as the action id and payload the
 plugin put on the control, and nothing else.
 
+**What a plugin may hold**, because a plugin that writes in a loop is a plugin
+that fills a disk: at most 8 panels and 60 settings fields (each with at most
+200 options); 500 notes in one `POST`, 2000 notes on a pull request and 20 000
+in total per plugin; 100 runs on a pull request and 5000 per plugin; 40 MB of
+notes and runs per plugin. Past a limit the oldest go first and the write still
+succeeds. The event queue holds 200: a plugin that stops polling for its events
+loses the oldest ones rather than growing a queue nobody reads. And a run older
+than a day stops speaking for the button in a pull request's header — a review
+from last week is history, not the state of that pull request.
+
 **A row can point at a pull request.** A `list` or `timeline` item may carry
 `open: { repo, number, focus }`, and the app opens that pull request — from
 whichever project is open, borrowing the checkout that holds it and offering
@@ -256,7 +301,7 @@ it again, and the plugin hears the change as an event, so its next pass can take
 it into account. Removing a plugin removes its notes; disabling it keeps them
 readable.
 
-A worked plugin that uses all three is
+A worked plugin that uses all four is
 [local-review](https://github.com/SirAllap/agentglass-local-review): it reviews
 your labelled pull requests with the agent you choose, inside a sandbox, and
 keeps the findings in the pull request view.
@@ -266,10 +311,31 @@ keeps the findings in the pull request view.
 `agentglass-plugin` does what the Plugins pane does, for a script:
 
     agentglass-plugin validate ~/code/my-plugin     # needs no running app
-    agentglass-plugin add https://github.com/you/my-plugin --enable
+    agentglass-plugin add https://github.com/you/my-plugin --approve
     agentglass-plugin list                          # name, state, scope, what it draws
-    agentglass-plugin enable | disable | update | remove <name>
+    agentglass-plugin list --json
+    agentglass-plugin enable <name> --approve
+    agentglass-plugin disable | update | remove <name>
+    agentglass-plugin settings <name>               # what it holds
     agentglass-plugin settings <name> style=security
+
+It is installed beside the app on Linux (`~/.local/bin/agentglass-plugin`); it
+is one file with no dependencies beyond `python3`, so anywhere else — CI, a
+machine with no agentglass — fetching `bin/agentglass-plugin` from this
+repository is the whole installation.
+
+Everything but `validate` talks to a running app: `AGENTGLASS_SERVER` (default
+`http://localhost:4000`) and `AGENTGLASS_TOKEN`, which is read from
+`~/.config/agentglass/token` when it is not set. The token is sent over https
+anywhere, and over plain http only to this machine.
+
+**`enable` asks to be told that somebody read the declaration.** Switching a
+plugin on IS the approval, and the window earns the right to do it by drawing
+the scope and every place the plugin draws first. A terminal draws nothing, so
+`--approve` is how a caller says it showed them; it prints the declaration
+before it enables. Without it, a plugin whose declaration is new or has changed
+since it was approved is refused and told where to read it. A plugin already
+approved is not re-approved by being switched on again.
 
 `validate` is the one that works with nothing running: it reads a folder's
 `plugin.json` and applies the rules the app applies at install, so a plugin's
@@ -279,7 +345,7 @@ later — an icon named and not shipped, a missing README.
 
 It carries its own copy of those rules, because CI has no agentglass to ask.
 `server/test/plugin-cli-validate.test.ts` runs the app's validator and the
-CLI's over the same thirty cases, so the two cannot drift apart quietly.
+CLI's over the same cases, so the two cannot drift apart quietly.
 
 ## Being listed
 
@@ -300,7 +366,7 @@ The machinery, because the shape of it is the security argument:
 | Stage | What happens | Where it runs |
 |---|---|---|
 | The issue | The form asks for the repository, a category, what it costs, and a checklist | — |
-| `read` | Clones it shallow, validates the manifest, scans the source for a short list of patterns, writes a report | `contents: read`, **no token**, checkout without credentials |
+| `read` | Clones it shallow, validates the manifest, scans the source for a short list of patterns, writes a report | `contents: read` and nothing else, a checkout that keeps no credentials, and no write anywhere |
 | `say` | Re-reads the live issue, then posts the report and sets `ready for listing` or `changes needed` | `issues: write`, never looks at the submitted code |
 | `approved for listing` | A maintainer's label. Re-checks that the actor still has write access and the issue still qualifies, clones and validates **again**, and opens a pull request adding the entry | `contents: write` |
 | The merge | A person reads the diff and merges. The site and the app read the file | — |
@@ -327,6 +393,12 @@ So when a plugin needs to talk to another, prefer the app's own shapes over a
 private channel: notes on a pull request, a panel, settings. A contract the
 app already draws is one an author can join by producing data, without
 touching anybody's code.
+
+**A blocklist**, `~/.config/agentglass/blocklist.json`, refuses a plugin by
+name with a reason and an optional link. It is checked when one is switched on,
+when it is started, and again when the app comes back up, so a plugin named
+there cannot be running by the time anybody reads the list. It is the person's
+own file; nothing writes it for them.
 
 ## What a plugin cannot do
 

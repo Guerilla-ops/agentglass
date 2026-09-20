@@ -2,9 +2,9 @@
 """Install, switch on and check agentglass plugins, without the window.
 
     agentglass-plugin validate ~/code/my-plugin     # offline; 0 clean, 1 not
-    agentglass-plugin add https://github.com/you/my-plugin --enable
+    agentglass-plugin add https://github.com/you/my-plugin --approve
     agentglass-plugin list --json
-    agentglass-plugin enable my-plugin
+    agentglass-plugin enable my-plugin --approve
     agentglass-plugin disable my-plugin
     agentglass-plugin update my-plugin
     agentglass-plugin remove my-plugin
@@ -16,12 +16,18 @@ Every answer is one JSON object on stdout — {"ok": true, ...} or
 branch on either. `list` without --json prints a line per plugin instead,
 because that is the one people read rather than parse.
 
+On a machine with agentglass installed this is on PATH as `agentglass-plugin`;
+everywhere else it is one file with no dependencies beyond python3, which is
+why the CI recipe below fetches it rather than installing anything.
+
 `validate` IS THE ONE THAT WORKS WITH NO AGENTGLASS RUNNING. It reads a folder
 and checks its `plugin.json` against the rules the app applies at install, so a
 plugin's own CI can refuse a manifest before anybody tries to install it:
 
     - name: check the manifest
-      run: pipx run --spec agentglass agentglass-plugin validate .
+      run: |
+        curl -fsSL https://raw.githubusercontent.com/SirAllap/agentglass/main/bin/agentglass-plugin -o /tmp/agentglass-plugin
+        python3 /tmp/agentglass-plugin validate .
 
 It cannot check what a plugin DOES — see `enable`, which is where a person
 approves that. The rules it mirrors live in server/src/plugins.ts and
@@ -275,12 +281,41 @@ def cmd_validate(args):
 
 # -------------------------------------------------------------- the app's API
 
+def declaration(plugin):
+    """What switching it on approves, in the words the card uses."""
+    c = plugin.get("contributes") or {}
+    draws = []
+    if c.get("panels"):
+        draws += [f'a panel, "{p.get("title")}", in the Plugins view' for p in c["panels"]]
+    if c.get("settings"):
+        draws.append(f'a settings page with {len(c["settings"])} fields')
+    if c.get("prNotes"):
+        draws.append("notes inside pull requests, never sent to GitHub")
+    for a in c.get("prActions") or []:
+        draws.append(f'a button, "{a.get("label")}", in every pull request')
+    return {"scope": plugin.get("scope"), "runs": plugin.get("entrypoint"), "draws": draws}
+
+
+def enable_with_approval(name, approve):
+    """`approved` is the caller saying somebody read the declaration.
+
+    The window can say it because its card shows the scope and every place
+    the plugin draws. A terminal cannot, so this prints them and says it only
+    for `--approve` — otherwise the server refuses and says where to look."""
+    if not approve:
+        return emit(call("/plugins/enable", {"name": name, "approved": False}))
+    r = call("/plugins", method="GET")
+    p = next((x for x in (r.get("plugins") or []) if x.get("name") == name), None)
+    if p:
+        print(json.dumps({"approving": declaration(p)}), file=sys.stderr)
+    return emit(call("/plugins/enable", {"name": name, "approved": True}))
+
+
 def cmd_add(args):
     r = call("/plugins/install", {"source": args.source})
-    if not r.get("ok") or not args.enable:
+    if not r.get("ok") or not args.approve:
         return emit(r)
-    name = (r.get("plugin") or {}).get("name")
-    return emit(call("/plugins/enable", {"name": name}))
+    return enable_with_approval((r.get("plugin") or {}).get("name"), True)
 
 
 def cmd_list(args):
@@ -321,15 +356,20 @@ def main():
 
     a = sub.add_parser("add", help="install from a git URL or a local folder")
     a.add_argument("source")
-    a.add_argument("--enable", action="store_true", help="switch it on if the install is approved")
+    a.add_argument("--approve", action="store_true",
+                   help="print what it declares and switch it on; without this it is installed and left off")
     a.set_defaults(fn=cmd_add)
 
     ls = sub.add_parser("list", help="what is installed, and what each one draws")
     ls.add_argument("--json", action="store_true")
     ls.set_defaults(fn=cmd_list)
 
+    en = sub.add_parser("enable", help="switch one on; needs --approve when what it declares is new or changed")
+    en.add_argument("name")
+    en.add_argument("--approve", action="store_true", help="you have read what it declares")
+    en.set_defaults(fn=lambda args: enable_with_approval(args.name, args.approve))
+
     for name, path, help_text in (
-        ("enable", "/plugins/enable", "switch one on"),
         ("disable", "/plugins/disable", "switch one off; its notes stay readable"),
         ("remove", "/plugins/remove", "uninstall it and drop what it wrote"),
         ("update", "/plugins/update", "re-clone a git-backed install at its recorded ref"),
