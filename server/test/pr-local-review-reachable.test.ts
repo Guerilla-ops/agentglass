@@ -84,3 +84,16 @@ describe("a link to a pull request in another project", () => {
     expect(click, "the app's errand must not wait for the plugin's").toMatch(/openPr\([^)]*\);[\s\S]*ctx\.onAction/);
   });
 });
+
+describe("a catalogue with a thousand plugins in it", () => {
+  test("is searched and read a page at a time, rather than drawn all at once", async () => {
+    const pane = await Bun.file(new URL("../../web/src/components/PluginsPane.tsx", import.meta.url)).text();
+    const shelf = between(pane, "function CatalogueShelf(", "\n/** One catalogue");
+    expect(shelf, "a page, not the whole document").toContain("PAGE");
+    expect(shelf).toContain("slice(here * PAGE");
+    expect(shelf, "and a way to narrow it before paging through it").toContain("toLowerCase().includes(needle)");
+    // What the server kept back has to be said, or a catalogue past the cap
+    // quietly becomes a shorter catalogue.
+    expect(shelf).toContain("catalogue.total");
+  });
+});

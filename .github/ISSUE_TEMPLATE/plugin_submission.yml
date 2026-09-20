@@ -1,0 +1,73 @@
+name: List a plugin
+description: Ask for your plugin to be listed in the catalogue agentglass installs from.
+title: "plugin: <owner>/<repo>"
+labels: ["plugin-submission"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Listing is not auditing. A plugin in the catalogue has been checked for
+        the things a machine can check — a public repository, a manifest the
+        app accepts, a README, a licence — and for nothing else. Whoever
+        installs it still approves what it declares and the scope it asks for,
+        and a plugin runs as a process on their machine with a token of its
+        own. Read the code before you install anything, listed or not.
+
+        You do not need to be listed to be installed: anybody can install your
+        plugin from its git URL today. The catalogue is for being found.
+  - type: input
+    id: repo
+    attributes:
+      label: Repository
+      description: The public git URL. It must hold `plugin.json` at its root.
+      placeholder: https://github.com/you/agentglass-your-plugin
+    validations:
+      required: true
+  - type: dropdown
+    id: category
+    attributes:
+      label: Category
+      options:
+        - review
+        - github
+        - agents
+        - terminal
+        - git
+        - notifications
+        - other
+    validations:
+      required: true
+  - type: input
+    id: tags
+    attributes:
+      label: Tags
+      description: A few words people would search for, comma separated.
+      placeholder: pull requests, sandbox, claude
+  - type: textarea
+    id: what
+    attributes:
+      label: What it does, in two or three sentences
+      description: >
+        What a person gets, and what it costs them — a paid model, a daemon
+        that keeps running, a folder it writes. Say the cost; the catalogue
+        card will.
+    validations:
+      required: true
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: The minimum
+      description: A check runs on this issue and says which of these hold.
+      options:
+        - label: The repository is public and holds `plugin.json` at its root.
+          required: true
+        - label: "`agentglass-plugin validate .` passes on it."
+          required: true
+        - label: It has a README that says what it does and a licence file.
+          required: true
+        - label: It asks for the smallest scope it can do its job with.
+          required: true
+        - label: It says in its README what leaves the machine — a model, an API, a server of yours — and what does not.
+          required: true
+        - label: I maintain it, or I have the maintainer's agreement to list it.
+          required: true

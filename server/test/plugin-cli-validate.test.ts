@@ -1,0 +1,135 @@
+/*
+ * `agentglass-plugin validate` and the app must agree about what a manifest is.
+ *
+ * The CLI carries its own copy of the rules, in Python, and it has to: a
+ * plugin's CI runs it with no agentglass anywhere, which is the whole point of
+ * having it. Two copies of a rule set drift — quietly, and in the direction
+ * that lets a broken plugin through a green check.
+ *
+ * So both are run over the same cases here. The app's `validateManifest` is
+ * the original; the CLI is the copy; a case where they disagree fails this
+ * test, whichever one is right.
+ */
+import { describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { validateManifest } from "../src/plugins.ts";
+
+const CLI = new URL("../../bin/agentglass-plugin", import.meta.url).pathname;
+
+/** A manifest that installs, as the base every case bends. */
+const OK = {
+  name: "orbit-reviewer",
+  publisher: "acme",
+  description: "Reviews pull requests and keeps the findings local.",
+  entrypoint: "python3 -u reviewer.py",
+  scope: "read",
+};
+
+const CASES: { what: string; manifest: unknown }[] = [
+  { what: "the plain one", manifest: OK },
+  { what: "everything it can declare", manifest: {
+    ...OK, icon: "icon.svg", color: "#8B5CF6",
+    contributes: {
+      panels: [{ id: "main", title: "Reviews", icon: "review" }],
+      prNotes: true,
+      prActions: [{ id: "review", label: "Local review" }, { id: "cancel", label: "Stop" }],
+      settings: [{ key: "repos", type: "multi", label: "Repositories", options: ["acme/orbit"] }],
+    },
+  } },
+  { what: "no name", manifest: { ...OK, name: undefined } },
+  { what: "a name that walks out of the folder", manifest: { ...OK, name: "../elsewhere" } },
+  { what: "a name that is a dot", manifest: { ...OK, name: "." } },
+  { what: "a hidden name", manifest: { ...OK, name: ".secret" } },
+  { what: "an empty publisher", manifest: { ...OK, publisher: "   " } },
+  { what: "no description", manifest: { ...OK, description: "" } },
+  { what: "a description of 501 characters", manifest: { ...OK, description: "x".repeat(501) } },
+  { what: "an entrypoint with a newline in it", manifest: { ...OK, entrypoint: "python3 x.py\nrm -rf /" } },
+  { what: "a scope nobody offers", manifest: { ...OK, scope: "root" } },
+  { what: "contributes as a list", manifest: { ...OK, contributes: [] } },
+  { what: "nine panels", manifest: { ...OK, contributes: { panels: Array.from({ length: 9 }, (_, i) => ({ id: `p${i}`, title: "P" })) } } },
+  { what: "a panel id with a capital in it", manifest: { ...OK, contributes: { panels: [{ id: "Main", title: "Reviews" }] } } },
+  { what: "the same panel twice", manifest: { ...OK, contributes: { panels: [{ id: "a", title: "A" }, { id: "a", title: "B" }] } } },
+  { what: "a panel with no title", manifest: { ...OK, contributes: { panels: [{ id: "a" }] } } },
+  { what: "prNotes as a string", manifest: { ...OK, contributes: { prNotes: "yes" } } },
+  { what: "six pull request actions", manifest: { ...OK, contributes: { prActions: Array.from({ length: 6 }, (_, i) => ({ id: `a${i}`, label: "Go" })) } } },
+  { what: "an action label of 29 characters", manifest: { ...OK, contributes: { prActions: [{ id: "a", label: "x".repeat(29) }] } } },
+  { what: "the same action twice", manifest: { ...OK, contributes: { prActions: [{ id: "a", label: "A" }, { id: "a", label: "B" }] } } },
+  { what: "a settings field with no type", manifest: { ...OK, contributes: { settings: [{ key: "k", label: "K" }] } } },
+  { what: "a settings key starting with a digit", manifest: { ...OK, contributes: { settings: [{ key: "1k", type: "string", label: "K" }] } } },
+  { what: "the same settings key twice", manifest: { ...OK, contributes: { settings: [{ key: "k", type: "string", label: "A" }, { key: "k", type: "number", label: "B" }] } } },
+  { what: "sixty-one settings fields", manifest: { ...OK, contributes: { settings: Array.from({ length: 61 }, (_, i) => ({ key: `k${i}`, type: "string", label: "K" })) } } },
+  { what: "an icon outside the folder", manifest: { ...OK, icon: "../../etc/passwd.svg" } },
+  { what: "an icon that is a script", manifest: { ...OK, icon: "icon.js" } },
+  { what: "a colour that is a word", manifest: { ...OK, color: "purple" } },
+  { what: "a colour in three digits", manifest: { ...OK, color: "#abc" } },
+];
+
+function cliSays(manifest: unknown): { ok: boolean; error?: string } {
+  const dir = mkdtempSync(join(tmpdir(), "agx-plugin-cli-"));
+  try {
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "plugin.json"), JSON.stringify(manifest ?? {}));
+    const r = Bun.spawnSync(["python3", CLI, "validate", dir]);
+    const out = r.stdout.toString().trim();
+    const parsed = JSON.parse(out || "{}") as { ok?: boolean; error?: string };
+    // The exit code is the half a CI job reads, so it is checked too: a
+    // validator that prints a refusal and exits 0 is a green check over a
+    // broken plugin.
+    expect(r.exitCode, `exit code disagrees with its own answer for ${out}`).toBe(parsed.ok ? 0 : 1);
+    return { ok: !!parsed.ok, error: parsed.error };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+describe("the CLI's copy of the manifest rules", () => {
+  for (const c of CASES) {
+    test(`agrees with the app about ${c.what}`, () => {
+      const app = validateManifest(c.manifest);
+      const cli = cliSays(c.manifest);
+      const appOk = typeof app !== "string";
+      expect(cli.ok, `the app ${appOk ? "accepts" : `refuses (${app})`} this one`).toBe(appOk);
+      // The words differ only where the app's message is about a field this
+      // one reports by a different name; same verdict is the contract, and a
+      // message that shares no word with the app's is a message about
+      // something else.
+      if (!appOk && typeof app === "string") {
+        const shared = app.toLowerCase().split(/[^a-z]+/).filter((w) => w.length > 4);
+        expect(shared.some((w) => (cli.error ?? "").toLowerCase().includes(w)),
+          `app: ${app}\ncli: ${cli.error}`).toBe(true);
+      }
+    });
+  }
+
+  test("says what is missing around the manifest without refusing the plugin", () => {
+    const dir = mkdtempSync(join(tmpdir(), "agx-plugin-cli-"));
+    try {
+      writeFileSync(join(dir, "plugin.json"), JSON.stringify({ ...OK, icon: "icon.svg" }));
+      const r = Bun.spawnSync(["python3", CLI, "validate", dir]);
+      const out = JSON.parse(r.stdout.toString()) as { ok: boolean; warnings: string[] };
+      expect(out.ok).toBe(true);
+      expect(r.exitCode).toBe(0);
+      expect(out.warnings.join(" ")).toContain("icon.svg");
+      expect(out.warnings.join(" ")).toContain("README");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("a folder with no manifest, and one that is not JSON, are both refusals with a reason", () => {
+    const dir = mkdtempSync(join(tmpdir(), "agx-plugin-cli-"));
+    try {
+      const empty = Bun.spawnSync(["python3", CLI, "validate", dir]);
+      expect(empty.exitCode).toBe(1);
+      expect(JSON.parse(empty.stdout.toString()).error).toContain("no plugin.json");
+      writeFileSync(join(dir, "plugin.json"), "{ not json");
+      const broken = Bun.spawnSync(["python3", CLI, "validate", dir]);
+      expect(broken.exitCode).toBe(1);
+      expect(JSON.parse(broken.stdout.toString()).error).toContain("not valid JSON");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

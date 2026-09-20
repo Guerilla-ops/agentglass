@@ -24,6 +24,26 @@ describe("validateCatalogue", () => {
     expect(c.plugins[0]!.id).toBe("someone.watcher");
   });
 
+  test("a catalogue longer than the cap says how long it really was", () => {
+    /* A shelf that silently shows the first five hundred of three thousand is
+       a shelf that lies about what is on it — and the window draws the
+       difference rather than the count it received. */
+    const many = Array.from({ length: 640 }, (_, i) => ({ ...okPlugin, id: `someone.w${i}` }));
+    const c = validateCatalogue({ ...okCatalogue, plugins: many });
+    if (typeof c === "string") throw new Error(c);
+    expect(c.plugins.length).toBe(500);
+    expect(c.total).toBe(640);
+  });
+
+  test("what a card needs rides along when the catalogue carries it, and its absence lists anyway", () => {
+    const rich = { ...okPlugin, title: "Local review", publisher: "acme", draws: ["panel", "pr-button"], added: "2026-09-20" };
+    const c = validateCatalogue({ ...okCatalogue, plugins: [rich, okPlugin] });
+    if (typeof c === "string") throw new Error(c);
+    expect(c.plugins[0]).toMatchObject({ title: "Local review", publisher: "acme", draws: ["panel", "pr-button"], added: "2026-09-20" });
+    expect(c.plugins[1]!.title).toBeUndefined();
+    expect(c.total).toBe(2);
+  });
+
   test("not an object is refused", () => {
     expect(validateCatalogue(null)).toContain("object");
     expect(validateCatalogue([1, 2])).toContain("object");

@@ -237,6 +237,12 @@ if [ -f "$APP/resources/bin/agentglass-agent" ]; then
   chmod +x "$APP/resources/bin/agentglass-agent" 2>/dev/null || true
   ln -sf "$APP/resources/bin/agentglass-agent" "$BIN/agentglass-agent"
 fi
+# The plugin CLI. `validate` runs with no app at all, which is the point: a
+# plugin's own CI checks its manifest with the same rules the app applies.
+if [ -f "$APP/resources/bin/agentglass-plugin" ]; then
+  chmod +x "$APP/resources/bin/agentglass-plugin" 2>/dev/null || true
+  ln -sf "$APP/resources/bin/agentglass-plugin" "$BIN/agentglass-plugin"
+fi
 
 # The skill that tells an agent the CLI exists.
 #

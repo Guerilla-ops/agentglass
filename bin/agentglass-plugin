@@ -1,0 +1,351 @@
+#!/usr/bin/env python3
+"""Install, switch on and check agentglass plugins, without the window.
+
+    agentglass-plugin validate ~/code/my-plugin     # offline; 0 clean, 1 not
+    agentglass-plugin add https://github.com/you/my-plugin --enable
+    agentglass-plugin list --json
+    agentglass-plugin enable my-plugin
+    agentglass-plugin disable my-plugin
+    agentglass-plugin update my-plugin
+    agentglass-plugin remove my-plugin
+    agentglass-plugin settings my-plugin            # what it holds
+    agentglass-plugin settings my-plugin style=security
+
+Every answer is one JSON object on stdout — {"ok": true, ...} or
+{"ok": false, "error": "..."} — and the exit code follows it, so a shell can
+branch on either. `list` without --json prints a line per plugin instead,
+because that is the one people read rather than parse.
+
+`validate` IS THE ONE THAT WORKS WITH NO AGENTGLASS RUNNING. It reads a folder
+and checks its `plugin.json` against the rules the app applies at install, so a
+plugin's own CI can refuse a manifest before anybody tries to install it:
+
+    - name: check the manifest
+      run: pipx run --spec agentglass agentglass-plugin validate .
+
+It cannot check what a plugin DOES — see `enable`, which is where a person
+approves that. The rules it mirrors live in server/src/plugins.ts and
+shared/pluginUi.ts, and server/test/plugin-cli-validate.test.ts runs both over
+the same cases so the two cannot drift apart quietly.
+
+Everything else talks to the app over its HTTP API, with the same token the
+other CLIs here use.
+
+Environment:
+    AGENTGLASS_SERVER   base url (default http://localhost:4000)
+    AGENTGLASS_TOKEN    the server's token; read from ~/.config/agentglass/token
+                        when unset, which is where the app keeps it
+"""
+import argparse
+import ipaddress
+import json
+import os
+import re
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+from urllib.parse import urlsplit
+
+
+def _server_or_die(url):
+    """Where the Bearer token goes. https anywhere, http only to this machine:
+    over plain http to a remote host the token travels in the clear."""
+    u = urlsplit(url)
+    host = (u.hostname or "").lower()
+    if u.scheme == "https" and host:
+        return url
+    if u.scheme == "http" and host:
+        loop = host == "localhost"
+        if not loop:
+            try:
+                loop = ipaddress.ip_address(host).is_loopback
+            except ValueError:
+                loop = False
+        if loop:
+            return url
+        print(f"agentglass: refusing plain http to {host}: the token would travel in the clear. "
+              f"Use https://, or http:// only to localhost/127.0.0.1/::1 (AGENTGLASS_SERVER={url})", file=sys.stderr)
+        sys.exit(2)
+    print(f"agentglass: AGENTGLASS_SERVER must be https://<host> or http://<loopback>, got {url!r}", file=sys.stderr)
+    sys.exit(2)
+
+
+SERVER = _server_or_die(os.environ.get("AGENTGLASS_SERVER", "http://localhost:4000").rstrip("/"))
+
+
+def token():
+    t = os.environ.get("AGENTGLASS_TOKEN", "").strip()
+    if t:
+        return t
+    base = os.environ.get("XDG_CONFIG_HOME") or os.path.join(os.path.expanduser("~"), ".config")
+    try:
+        with open(os.path.join(base, "agentglass", "token"), encoding="utf-8") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+def call(path, body=None, method="POST", timeout=180):
+    req = urllib.request.Request(
+        f"{SERVER}{path}",
+        data=None if body is None else json.dumps(body).encode(),
+        method=method,
+        headers={"Content-Type": "application/json", "Origin": SERVER},
+    )
+    t = token()
+    if t:
+        req.add_header("Authorization", f"Bearer {t}")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.loads(r.read() or b"{}")
+    except urllib.error.HTTPError as e:
+        try:
+            return json.loads(e.read() or b"{}")
+        except json.JSONDecodeError:
+            return {"ok": False, "error": f"server said {e.code}"}
+    except urllib.error.URLError as e:
+        return {"ok": False, "error": f"no agentglass at {SERVER} ({e.reason})"}
+
+
+def emit(res):
+    print(json.dumps(res))
+    return 0 if res.get("ok") else 1
+
+
+# ----------------------------------------------------------------- validate
+#
+# The app's rules, in Python, because a plugin's CI has no agentglass to ask.
+# Kept in step with the originals by a test that runs both over the same cases.
+
+MAX_TEXT = 500
+NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,60}$")
+CONTROL = re.compile(r"[\x00-\x1f\x7f]")
+ICON_RE = re.compile(r"^[A-Za-z0-9._-][A-Za-z0-9._/-]{0,99}\.(svg|png|webp)$")
+COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+ID_RE = re.compile(r"^[a-z][a-z0-9-]{0,39}$")
+KEY_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]*$")
+PANEL_ICONS = ("puzzle", "review", "check", "chart", "list", "bell", "bug", "book", "bolt", "eye")
+FIELD_TYPES = ("string", "text", "number", "boolean", "select", "list", "multi")
+SHORT = 400
+
+
+def _text(v, limit):
+    return isinstance(v, str) and bool(v.strip()) and len(v) <= limit
+
+
+def check_fields(fields):
+    if not isinstance(fields, list):
+        return "fields must be a list"
+    if len(fields) > 60:
+        return "at most 60 fields"
+    seen = set()
+    for f in fields:
+        if not isinstance(f, dict):
+            return "a field must be an object"
+        key = f.get("key")
+        if not isinstance(key, str) or len(key) > 60 or not key.strip():
+            return "field.key must be 1-60 characters"
+        if not KEY_RE.match(key):
+            return f'field key "{key}" must start with a letter and hold only letters, digits, . _ -'
+        if f.get("type") not in FIELD_TYPES:
+            return f'field "{key}" has an unknown type'
+        if not _text(f.get("label"), 120):
+            return f'field "{key}" label must be 1-120 characters'
+        for name, limit in (("description", SHORT), ("placeholder", 120)):
+            v = f.get(name)
+            if v is not None and (not isinstance(v, str) or len(v) > limit):
+                return f'field "{key}" {name} must be at most {limit} characters'
+        if key in seen:
+            return f'field key "{key}" appears twice'
+        seen.add(key)
+    return None
+
+
+def check_contributes(c):
+    if c is None:
+        return None
+    if not isinstance(c, dict):
+        return "contributes must be an object"
+    if "settings" in c:
+        why = check_fields(c["settings"])
+        if why:
+            return f"contributes.settings: {why}"
+    if "panels" in c:
+        panels = c["panels"]
+        if not isinstance(panels, list) or len(panels) > 8:
+            return "contributes.panels must be a list of at most 8"
+        seen = set()
+        for p in panels:
+            if not isinstance(p, dict):
+                return "a panel must be an object"
+            pid = p.get("id")
+            if not isinstance(pid, str) or not ID_RE.match(pid):
+                return "panel id must be 1-40 of a-z, 0-9, - and start with a letter"
+            if pid in seen:
+                return f'panel id "{pid}" appears twice'
+            seen.add(pid)
+            if not _text(p.get("title"), 40):
+                return "panel title must be 1-40 characters"
+            if p.get("icon") is not None and p["icon"] not in PANEL_ICONS:
+                # The app drops an icon it does not know rather than refusing,
+                # so this is a warning's worth of wrong — but a manifest that
+                # names one it does not have is a typo worth catching here.
+                return f'panel icon must be one of {", ".join(PANEL_ICONS)}'
+    if "prNotes" in c and not isinstance(c["prNotes"], bool):
+        return "contributes.prNotes must be true or false"
+    if "prActions" in c:
+        actions = c["prActions"]
+        if not isinstance(actions, list) or len(actions) > 5:
+            return "contributes.prActions must be a list of at most 5"
+        seen = set()
+        for a in actions:
+            if not isinstance(a, dict):
+                return "a pull request action must be an object"
+            aid = a.get("id")
+            if not isinstance(aid, str) or not ID_RE.match(aid):
+                return "action id must be 1-40 of a-z, 0-9, - and start with a letter"
+            if aid in seen:
+                return f'action id "{aid}" appears twice'
+            seen.add(aid)
+            label = a.get("label")
+            if not isinstance(label, str) or not label.strip() or len(label) > 28:
+                return "action label must be 1-28 characters"
+    return None
+
+
+def check_manifest(m):
+    """The manifest rules, in the order the app applies them. Returns the
+    first reason it is not installable, or None."""
+    if not isinstance(m, dict):
+        return "manifest must be a JSON object"
+    name = m.get("name")
+    if not isinstance(name, str) or not NAME_RE.match(name) or name in (".", "..") or name.startswith("."):
+        return ("name must be 1-60 characters: letters, numbers, dots, dashes or underscores, "
+                "and may not start with a dot")
+    if not _text(m.get("publisher"), 200):
+        return "publisher must be 1-200 characters"
+    if not _text(m.get("description"), MAX_TEXT):
+        return f"description must be 1-{MAX_TEXT} characters"
+    entry = m.get("entrypoint")
+    if not isinstance(entry, str) or not entry.strip() or len(entry) > MAX_TEXT or CONTROL.search(entry):
+        return "entrypoint must be a non-empty command with no control characters"
+    if m.get("scope") not in ("read", "answer", "full"):
+        return "scope must be one of read, answer, full"
+    why = check_contributes(m.get("contributes"))
+    if why:
+        return why
+    icon = m.get("icon")
+    if icon is not None and (not isinstance(icon, str) or not ICON_RE.match(icon) or ".." in icon.split("/")):
+        return "icon must be a relative path to an .svg, .png or .webp file in the plugin folder"
+    color = m.get("color")
+    if color is not None and (not isinstance(color, str) or not COLOR_RE.match(color)):
+        return "color must be a hex colour like #7c5cf5"
+    return None
+
+
+def cmd_validate(args):
+    folder = os.path.abspath(os.path.expanduser(args.folder))
+    path = os.path.join(folder, "plugin.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            raw = f.read()
+    except OSError as e:
+        return emit({"ok": False, "error": f"no plugin.json in {folder} ({e.strerror or e})"})
+    try:
+        manifest = json.loads(raw)
+    except json.JSONDecodeError as e:
+        return emit({"ok": False, "error": f"plugin.json is not valid JSON: {e}"})
+    why = check_manifest(manifest)
+    if why:
+        return emit({"ok": False, "error": why})
+    # Things the app finds out at install, which a repository can get wrong
+    # long before then: an icon named and not shipped is the common one.
+    warnings = []
+    icon = manifest.get("icon")
+    if icon and not os.path.isfile(os.path.join(folder, icon)):
+        warnings.append(f"icon {icon} is named in the manifest and not in the folder")
+    for expected in ("README.md", "LICENSE"):
+        if not any(os.path.isfile(os.path.join(folder, expected + ext)) for ext in ("", ".md", ".txt")):
+            warnings.append(f"no {expected} — a catalogue will ask for one")
+    draws = sorted(k for k in (manifest.get("contributes") or {}))
+    return emit({"ok": True, "name": manifest["name"], "publisher": manifest["publisher"],
+                 "scope": manifest["scope"], "draws": draws, "warnings": warnings})
+
+
+# -------------------------------------------------------------- the app's API
+
+def cmd_add(args):
+    r = call("/plugins/install", {"source": args.source})
+    if not r.get("ok") or not args.enable:
+        return emit(r)
+    name = (r.get("plugin") or {}).get("name")
+    return emit(call("/plugins/enable", {"name": name}))
+
+
+def cmd_list(args):
+    r = call("/plugins", method="GET")
+    if args.json or not r.get("plugins"):
+        return emit(r)
+    for p in r["plugins"]:
+        state = "running" if p.get("running") else ("enabled" if p.get("enabled") else "off")
+        draws = ", ".join(sorted(p.get("contributes") or {})) or "nothing"
+        print(f"{p['name']:<24} {state:<8} {p.get('scope', '?'):<7} draws {draws}")
+    return 0
+
+
+def cmd_simple(path, args):
+    return emit(call(path, {"name": args.name}))
+
+
+def cmd_settings(args):
+    if not args.set:
+        return emit(call(f"/plugins/settings?name={urllib.parse.quote(args.name)}", method="GET"))
+    values = {}
+    for pair in args.set:
+        if "=" not in pair:
+            return emit({"ok": False, "error": f"expected key=value, got {pair!r}"})
+        k, v = pair.split("=", 1)
+        values[k] = v
+    return emit(call("/plugins/settings", {"name": args.name, "values": values}))
+
+
+def main():
+    p = argparse.ArgumentParser(prog="agentglass-plugin", description=__doc__,
+                                formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    v = sub.add_parser("validate", help="check a plugin folder's manifest; needs no running agentglass")
+    v.add_argument("folder")
+    v.set_defaults(fn=cmd_validate)
+
+    a = sub.add_parser("add", help="install from a git URL or a local folder")
+    a.add_argument("source")
+    a.add_argument("--enable", action="store_true", help="switch it on if the install is approved")
+    a.set_defaults(fn=cmd_add)
+
+    ls = sub.add_parser("list", help="what is installed, and what each one draws")
+    ls.add_argument("--json", action="store_true")
+    ls.set_defaults(fn=cmd_list)
+
+    for name, path, help_text in (
+        ("enable", "/plugins/enable", "switch one on"),
+        ("disable", "/plugins/disable", "switch one off; its notes stay readable"),
+        ("remove", "/plugins/remove", "uninstall it and drop what it wrote"),
+        ("update", "/plugins/update", "re-clone a git-backed install at its recorded ref"),
+    ):
+        s = sub.add_parser(name, help=help_text)
+        s.add_argument("name")
+        s.set_defaults(fn=lambda args, path=path: cmd_simple(path, args))
+
+    st = sub.add_parser("settings", help="read or write a plugin's settings")
+    st.add_argument("name")
+    st.add_argument("set", nargs="*", metavar="key=value")
+    st.set_defaults(fn=cmd_settings)
+
+    args = p.parse_args()
+    sys.exit(args.fn(args))
+
+
+if __name__ == "__main__":
+    main()

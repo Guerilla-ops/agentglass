@@ -4573,6 +4573,10 @@ export interface CataloguePlugin {
   source: { kind: "git"; url: string; ref: string | null };
   description: string;
   categories: string[];
+  title?: string;
+  publisher?: string;
+  draws?: string[];
+  added?: string;
 }
 
 /** A fetched catalogue document. Mirrors `Catalogue` in
@@ -4582,4 +4586,7 @@ export interface Catalogue {
   name: string;
   owner: string;
   plugins: CataloguePlugin[];
+  /** What the document listed, which is more than `plugins` when it listed
+   *  more than the server's cap. */
+  total: number;
 }

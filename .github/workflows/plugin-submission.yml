@@ -1,0 +1,191 @@
+# Somebody asked for their plugin to be listed.
+#
+# The issue is the door; this is the porter. It reads the repository they
+# named, checks the things a machine can check, and writes what it found on
+# the issue — so the decision to list is made by a person who already has the
+# facts rather than by a person opening twelve tabs.
+#
+# TWO JOBS, AND THE SPLIT IS THE POINT. `read` clones a stranger's repository
+# and scans it; it has no token, no write permission and checks this repo out
+# without persisting credentials, so there is nothing in its environment worth
+# stealing and nothing it could write if it were. It hands its answer on as an
+# artifact. `say` never looks at the submitted code: it takes that answer and
+# writes the comment and the labels, which is the only step that needs to be
+# trusted with `issues: write`.
+#
+# Nothing from the submitted repository is executed anywhere here, and nothing
+# from the issue body reaches a shell: the body is read in Python out of an
+# environment variable, and the repository name is matched against a narrow
+# pattern before it is ever used.
+name: Plugin submission
+
+on:
+  issues:
+    types: [opened, edited, labeled]
+
+permissions: {}
+
+concurrency:
+  group: plugin-submission-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  read:
+    if: contains(github.event.issue.labels.*.name, 'plugin-submission')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out this repository, without keeping its credentials
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Find the repository the issue names
+        id: named
+        env:
+          BODY: ${{ github.event.issue.body }}
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import os, re
+          body = os.environ.get("BODY", "")
+          m = re.search(r"https://github\.com/([A-Za-z0-9._-]+)/([A-Za-z0-9._-]+)", body)
+          print(f"repo={m.group(1)}/{m.group(2).removesuffix('.git')}" if m else "repo=")
+          PY
+
+      - name: Clone it, shallow, and read it
+        env:
+          REPO: ${{ steps.named.outputs.repo }}
+        run: |
+          set -o pipefail
+          mkdir -p report
+          printf '%s' "$REPO" > report/repo
+          if [ -z "$REPO" ]; then echo "false" > report/reachable; exit 0; fi
+          if ! git clone --depth 1 "https://github.com/$REPO.git" /tmp/plugin 2>/dev/null; then
+            echo "false" > report/reachable
+            exit 0
+          fi
+          echo "true" > report/reachable
+          git -C /tmp/plugin rev-parse --short HEAD > report/sha
+          # Neither of these runs a line of what was cloned: one reads a JSON
+          # manifest, the other reads text files and matches patterns.
+          python3 bin/agentglass-plugin validate /tmp/plugin > report/validate.json || true
+          python3 scripts/plugin-baseline.py /tmp/plugin > report/baseline.json || true
+
+      - name: Write what was found, without saying it anywhere yet
+        run: |
+          python3 - <<'PY' > report/comment.md
+          import json, os
+          def read(name, default=""):
+              try:
+                  return open(f"report/{name}").read().strip()
+              except OSError:
+                  return default
+          def load(name, default):
+              try:
+                  return json.load(open(f"report/{name}"))
+              except Exception:
+                  return default
+          repo, sha = read("repo"), read("sha")
+          reachable = read("reachable") == "true"
+          v = load("validate.json", {"ok": False, "error": "the check did not run"})
+          b = load("baseline.json", {"outcome": "unreadable", "findings": [], "capabilities": []})
+          out = ["<!-- agentglass-plugin-submission -->", "## What the catalogue check found", ""]
+          if not repo:
+              out.append("❌ No repository URL in this issue. Edit it to name one and the check runs again.")
+          elif not reachable:
+              out.append(f"❌ `{repo}` could not be cloned — is it public?")
+          else:
+              out.append(f"✅ Public and cloned: [{repo}](https://github.com/{repo}) at `{sha}`")
+              if v.get("ok"):
+                  draws = ", ".join(v.get("draws") or []) or "nothing"
+                  out.append(f"✅ `plugin.json` is one agentglass accepts — **{v['name']}** by {v['publisher']}, "
+                             f"scope `{v['scope']}`, declares: {draws}")
+              else:
+                  out.append(f"❌ `plugin.json`: {v.get('error')}")
+              for w in v.get("warnings") or []:
+                  out.append(f"⚠️ {w}")
+              caps = b.get("capabilities") or []
+              if caps:
+                  out += ["", "**What installing it costs**, from its own source:"]
+                  out += [f"- {c['says']}" for c in caps]
+              findings = b.get("findings") or []
+              out.append("")
+              if findings:
+                  out.append(f"**{len(findings)} line(s) worth a human's eye.** These are patterns, not verdicts — "
+                             "a plugin that HIDES a credential path names it too:")
+                  out += [f"- `{f['where']}` — {f['says']}\n  ```\n  {f['line']}\n  ```" for f in findings[:12]]
+              else:
+                  out.append("✅ None of the patterns this scan knows about appear in its source.")
+          out += [
+              "",
+              "---",
+              "Listing is not auditing. This check reads a repository's structure and looks for a short list of "
+              "patterns; it does not run the plugin, and it is not a security review, a certification or an "
+              "endorsement. Whoever installs this still approves the scope and the places it draws, and runs it "
+              "on their own machine.",
+          ]
+          print("\n".join(out))
+          marker = {"repository": repo, "commit": sha, "manifest": bool(v.get("ok")),
+                    "baseline": b.get("outcome"), "findings": len(b.get("findings") or [])}
+          print(f"\n<!-- agentglass-plugin-submission-result {json.dumps(marker, separators=(',', ':'))} -->")
+          open("report/verdict", "w").write("READY" if (v.get("ok") and reachable) else "NOT-READY")
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: submission-report-${{ github.event.issue.number }}
+          path: report/
+          retention-days: 7
+
+  say:
+    needs: read
+    if: always() && needs.read.result != 'skipped'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: submission-report-${{ github.event.issue.number }}
+          path: report
+        continue-on-error: true
+
+      - name: Say it on the issue
+        env:
+          ISSUE: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # The issue as it is NOW, not as the payload photographed it: a
+          # submission closed or unlabelled while the check was running must
+          # not be commented on as if it were still waiting.
+          state=$(gh api "repos/$REPO/issues/$ISSUE" --jq '.state')
+          labels=$(gh api "repos/$REPO/issues/$ISSUE" --jq '[.labels[].name] | join(",")')
+          case ",$labels," in *,plugin-submission,*) still=yes ;; *) still=no ;; esac
+          if [ "$state" != "open" ] || [ "$still" = no ]; then
+            echo "issue #$ISSUE is $state and carries [$labels] — saying nothing"
+            exit 0
+          fi
+          # The labels this writes, made once and quietly if they are missing:
+          # `gh issue edit` refuses a label that does not exist, and a check
+          # whose verdict silently fails to stick is a check nobody can read.
+          gh label create "ready for listing" --repo "$REPO" --color 0E8A16 --description "The catalogue check passed; a maintainer decides" 2>/dev/null || true
+          gh label create "changes needed" --repo "$REPO" --color D93F0B --description "The catalogue check found something to fix" 2>/dev/null || true
+          gh label create "approved for listing" --repo "$REPO" --color 5319E7 --description "Applied by a maintainer; opens the catalogue pull request" 2>/dev/null || true
+          # The report is the only thing that crosses from the job that read a
+          # stranger's code. If it is missing, the check failed rather than
+          # passed, and the issue is told that rather than left silent.
+          if [ ! -s report/comment.md ]; then
+            printf '%s\n' "<!-- agentglass-plugin-submission -->" \
+              "## The catalogue check could not run" "" \
+              "Nothing was read, so nothing is known about this submission yet. Editing the issue runs it again." \
+              > report/comment.md
+            echo "NOT-READY" > report/verdict
+          fi
+          gh issue comment "$ISSUE" --repo "$REPO" --body-file report/comment.md
+          if [ "$(cat report/verdict 2>/dev/null)" = "READY" ]; then
+            gh issue edit "$ISSUE" --repo "$REPO" --add-label "ready for listing" --remove-label "changes needed" || true
+          else
+            gh issue edit "$ISSUE" --repo "$REPO" --add-label "changes needed" --remove-label "ready for listing" || true
+          fi

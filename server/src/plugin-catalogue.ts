@@ -14,12 +14,27 @@ export interface CataloguePlugin {
   source: { kind: "git"; url: string; ref: string | null };
   description: string;
   categories: string[];
+  /** What the card says when there is one. A catalogue that carries none of
+   *  these still lists: the id and the description are the contract, and the
+   *  rest is what a shelf needs to be read rather than parsed. */
+  title?: string;
+  publisher?: string;
+  /** Where it draws, as the manifest's own words — so a card can say "a
+   *  button in pull requests" before anybody installs anything. */
+  draws?: string[];
+  /** ISO date it was listed. The only ordering a catalogue can offer that
+   *  its author cannot game by rewriting the file. */
+  added?: string;
 }
 
 export interface Catalogue {
   name: string;
   owner: string;
   plugins: CataloguePlugin[];
+  /** How many the document listed, which is not how many came back when it
+   *  listed more than the cap. A shelf that silently shows the first five
+   *  hundred of three thousand is a shelf that lies about what is on it. */
+  total: number;
 }
 
 const NAME_RE = /^[A-Za-z0-9._-]{1,60}$/;
@@ -44,11 +59,20 @@ function validateCataloguePlugin(raw: unknown): CataloguePlugin | null {
   const categories = Array.isArray(p.categories)
     ? p.categories.filter((c) => typeof c === "string" && c.trim()).slice(0, MAX_CATEGORIES).map((c) => String(c).trim())
     : [];
+  const short = (v: unknown, limit: number): string | undefined =>
+    typeof v === "string" && v.trim() ? v.trim().slice(0, limit) : undefined;
+  const draws = Array.isArray(p.draws)
+    ? p.draws.filter((d) => typeof d === "string" && d.trim()).slice(0, 8).map((d) => String(d).trim().slice(0, 40))
+    : undefined;
   return {
     id: p.id.trim(),
     source: { kind: "git", url: (url as string).trim(), ref: ref === null ? null : (ref as string).trim() },
     description: p.description.trim().slice(0, MAX_TEXT),
     categories,
+    ...(short(p.title, 80) ? { title: short(p.title, 80) } : {}),
+    ...(short(p.publisher, 80) ? { publisher: short(p.publisher, 80) } : {}),
+    ...(draws?.length ? { draws } : {}),
+    ...(short(p.added, 40) ? { added: short(p.added, 40) } : {}),
   };
 }
 
@@ -64,7 +88,7 @@ export function validateCatalogue(raw: unknown): Catalogue | string {
   if (typeof c.owner !== "string" || !c.owner.trim() || c.owner.length > 200) return "catalogue owner must be 1-200 characters";
   if (!Array.isArray(c.plugins)) return "catalogue plugins must be an array";
   const plugins = c.plugins.slice(0, MAX_PLUGINS).map(validateCataloguePlugin).filter((p): p is CataloguePlugin => p !== null);
-  return { name: c.name, owner: c.owner.trim().slice(0, 200), plugins };
+  return { name: c.name, owner: c.owner.trim().slice(0, 200), plugins, total: c.plugins.length };
 }
 
 const FETCH_TIMEOUT_MS = 15_000;

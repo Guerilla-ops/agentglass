@@ -1,0 +1,157 @@
+# The maintainer said yes: put the plugin in the catalogue.
+#
+# The submission check (plugin-submission.yml) says what a machine can tell.
+# This is the other half: one label, applied by somebody with write access,
+# turns a validated submission into an entry in `landing/plugins.json`.
+#
+# IT OPENS A PULL REQUEST RATHER THAN PUSHING. A bot that can write to `main`
+# needs an apparatus around it — re-read the label event, re-check the actor,
+# compare the body hash, recompute the diff and compare it byte for byte —
+# and all of that exists to replace a person looking at a diff. At one
+# maintainer and a handful of plugins, the person looking at the diff is
+# cheaper, and it is the only reviewer this catalogue has.
+#
+# The guards that remain are the ones a pull request does not give you: the
+# label has to be the event that started this run, the actor has to still
+# have write access when the run reaches the API, and the issue has to still
+# be open and still carry the submission label. A label applied and removed
+# while the queue was busy must not list anything.
+name: Plugin approval
+
+on:
+  issues:
+    types: [labeled]
+
+permissions: {}
+
+concurrency:
+  group: plugin-approve-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  list:
+    if: github.event.label.name == 'approved for listing'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Is the person who labelled it allowed to?
+        env:
+          ACTOR: ${{ github.event.sender.login }}
+          REPO: ${{ github.repository }}
+          ISSUE: ${{ github.event.issue.number }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Live, not from the payload: permission is a thing that changes,
+          # and the payload is a photograph of when the label was clicked.
+          level=$(gh api "repos/$REPO/collaborators/$ACTOR/permission" --jq '.permission' 2>/dev/null || echo none)
+          case "$level" in
+            admin|write|maintain) ;;
+            *) echo "::error::$ACTOR has $level access; only write access lists a plugin"; exit 1 ;;
+          esac
+          state=$(gh api "repos/$REPO/issues/$ISSUE" --jq '.state')
+          labels=$(gh api "repos/$REPO/issues/$ISSUE" --jq '[.labels[].name] | join(",")')
+          [ "$state" = "open" ] || { echo "::error::issue is $state"; exit 1; }
+          case ",$labels," in
+            *,plugin-submission,*) ;;
+            *) echo "::error::issue no longer carries the plugin-submission label"; exit 1 ;;
+          esac
+          case ",$labels," in
+            *,"approved for listing",*) ;;
+            *) echo "::error::the label was removed again before this run reached it"; exit 1 ;;
+          esac
+
+      - uses: actions/checkout@v4
+
+      - name: Read the submission, and check it again from scratch
+        id: entry
+        env:
+          BODY: ${{ github.event.issue.body }}
+          ISSUE: ${{ github.event.issue.number }}
+        run: |
+          set -euo pipefail
+          repo=$(python3 - <<'PY'
+          import os, re
+          m = re.search(r"https://github\.com/([A-Za-z0-9._-]+)/([A-Za-z0-9._-]+)", os.environ.get("BODY", ""))
+          print(f"{m.group(1)}/{m.group(2).removesuffix('.git')}" if m else "")
+          PY
+          )
+          [ -n "$repo" ] || { echo "::error::no repository URL in the issue"; exit 1; }
+          # Never the validation job's word for it: that ran against whatever
+          # the repository held then, and a submission can change between the
+          # check and the label. This clones again and validates again.
+          git clone --depth 1 "https://github.com/$repo.git" /tmp/plugin
+          python3 bin/agentglass-plugin validate /tmp/plugin > /tmp/validate.json
+          echo "repo=$repo" >> "$GITHUB_OUTPUT"
+          echo "name=$(python3 -c 'import json;print(json.load(open("/tmp/validate.json"))["name"])')" >> "$GITHUB_OUTPUT"
+
+      - name: Write the entry
+        env:
+          BODY: ${{ github.event.issue.body }}
+          REPO_URL: https://github.com/${{ steps.entry.outputs.repo }}
+        run: |
+          python3 - <<'PY'
+          import json, os, re, datetime
+          body = os.environ.get("BODY", "")
+          v = json.load(open("/tmp/validate.json"))
+          def field(label):
+              m = re.search(rf"###\s+{label}\s*\n+(.+?)(?:\n###|\Z)", body, re.S)
+              return (m.group(1).strip() if m else "")
+          # The manifest's key names, in the words the catalogue and the site
+          # use. Without this an entry says "prActions" on a card whose
+          # legend only knows "a button in pull requests".
+          WORD = {"panels": "panel", "settings": "settings", "prNotes": "pr-notes", "prActions": "pr-button"}
+          cat = json.load(open("landing/plugins.json"))
+          entry = {
+              "id": v["name"],
+              "title": v["name"].replace("-", " ").title(),
+              "publisher": v["publisher"],
+              "verified": False,
+              "scope": v["scope"],
+              "draws": [WORD.get(d, d) for d in (v.get("draws") or [])],
+              "source": {"kind": "git", "url": os.environ["REPO_URL"], "ref": None},
+              "description": (field("What it does, in two or three sentences") or "")[:500],
+              "categories": [c for c in [field("Category").lower()] if c and c != "_no response_"]
+                            + [t.strip().lower() for t in field("Tags").split(",") if t.strip() and t.strip() != "_No response_"][:5],
+              "added": datetime.date.today().isoformat(),
+          }
+          # `verified` is the catalogue's own word for "this project wrote it",
+          # never something a submission can ask for.
+          others = [p for p in cat["plugins"] if p["id"] != entry["id"]]
+          cat["plugins"] = sorted(others + [entry], key=lambda p: p["id"])
+          json.dump(cat, open("landing/plugins.json", "w"), indent=2)
+          open("landing/plugins.json", "a").write("\n")
+          PY
+          python3 -c "import json;json.load(open('landing/plugins.json'))"
+
+      - name: Open a pull request with it
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: ${{ github.event.issue.number }}
+          NAME: ${{ steps.entry.outputs.name }}
+          SOURCE: ${{ steps.entry.outputs.repo }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          branch="list-$NAME-$ISSUE"
+          git checkout -b "$branch"
+          git add landing/plugins.json
+          git commit -m "catalogue: list $NAME
+
+          From #$ISSUE. The submission check ran on the repository and the
+          manifest was validated again here, from a fresh clone, so this entry
+          describes what $SOURCE holds now rather than what it held when the
+          issue was opened.
+
+          Listing is not auditing: this says the repository is public, the
+          manifest is one the app accepts, and somebody with write access said
+          yes. It says nothing about what the plugin does."
+          git push -u origin "$branch"
+          gh pr create --title "catalogue: list $NAME" --body "Closes #$ISSUE
+
+          Adds \`$NAME\` to \`landing/plugins.json\` from https://github.com/$SOURCE.
+
+          The manifest was validated again from a fresh clone in this run. Read the submission check on the issue before merging — it says what installing this costs and which lines are worth an eye." --base main --head "$branch"

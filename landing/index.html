@@ -1011,6 +1011,8 @@ body:not([data-route="home"]) .page{padding-top:calc(118px + var(--safe))}
 .pl-links{display:flex;gap:14px;font:12px var(--mono);color:var(--dim2)}
 .pl-links a{color:var(--dim);text-decoration:none}
 .pl-links a:hover{color:var(--txt)}
+.pl-more{margin:18px auto 0;display:block;padding:9px 18px;font:12.5px var(--mono);color:var(--dim);background:transparent;border:1px solid var(--line2);border-radius:10px;cursor:pointer}
+.pl-more:hover{color:var(--fg);border-color:var(--vio)}
 .pl-none{margin-top:18px;padding:40px 20px;text-align:center;color:var(--dim);border:1px dashed var(--line2);border-radius:16px}
 .pl-steps{margin-top:18px;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}
 .pl-step{padding:18px;border-radius:14px;border:1px solid var(--line)}
@@ -1425,12 +1427,15 @@ body:not([data-route="home"]) .page{padding-top:calc(118px + var(--safe))}
  <div class="pl-chips" id="pl-chips" role="group" aria-label="Filter"></div>
  <div class="pl-count" id="pl-count"></div>
  <div class="pl-grid" id="pl-grid"></div>
+ <button class="pl-more" id="pl-more" type="button" hidden></button>
  <div class="pl-none" id="pl-none" hidden>Nothing matches. <a href="https://github.com/SirAllap/agentglass/blob/main/docs/PLUGINS.md" style="color:var(--vio)">Write it?</a></div>
 
  <h3 id="publish">Publish one</h3>
  <div class="pl-steps">
   <div class="pl-step"><b>01 · WRITE</b><p>A repository with <code>plugin.json</code> at its root: a name, what it runs,
-   the scope it needs, and where it draws. <a href="https://github.com/SirAllap/agentglass/blob/main/docs/PLUGINS.md" style="color:var(--vio)">The guide</a>
+   the scope it needs, and where it draws. Listing is not auditing: a plugin here has a public
+   repository, a manifest the app accepts, a README and a licence — that is what a machine can tell, and
+   whoever installs it still approves what it asks for. <a href="https://github.com/SirAllap/agentglass/blob/main/docs/PLUGINS.md" style="color:var(--vio)">The guide</a>
    has the manifest, the routes and the vocabulary.</p></div>
   <div class="pl-step"><b>02 · PUSH</b><p>Any host <code>git clone</code> reaches. The URL is the publication:
    pasting it into Settings → Plugins installs it, with no account or registry in between.</p></div>
@@ -1583,7 +1588,7 @@ new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){g.classList.add
    shown, and drawn with textContent only: the catalogue is a file other people
    send pull requests to, so nothing in it is ever treated as markup. */
 (() => {
- const DRAW = { "panel": "adds a panel", "settings": "settings page", "pr-notes": "notes in pull requests", "pr-button": "a button in pull requests" };
+ const DRAW = { "panel": "adds a panel", "panels": "adds a panel", "settings": "settings page", "pr-notes": "notes in pull requests", "prNotes": "notes in pull requests", "pr-button": "a button in pull requests", "prActions": "a button in pull requests" };
  const SCOPE = { read: ["reads only", "s"], answer: ["can answer chats", "w"], full: ["full access", "w"] };
  let all = null, cat = "all";
  const $ = (id) => document.getElementById(id);
@@ -1624,6 +1629,8 @@ new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){g.classList.add
   c.append(top, el("p", "pl-desc", p.description || ""), tags, inst, links);
   return c;
  };
+ const PAGE = 24;
+ let shown = PAGE;
  const render = () => {
   if (!all) return;
   const q = $("pl-q").value.trim().toLowerCase();
@@ -1632,18 +1639,28 @@ new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){g.classList.add
   rows.sort($("pl-sort").value === "az"
    ? (a, b) => (a.title || a.id).localeCompare(b.title || b.id)
    : (a, b) => String(b.added || "").localeCompare(String(a.added || "")));
-  $("pl-grid").replaceChildren(...rows.map(card));
+  /* A page at a time. The whole list is in memory either way — it arrived in
+     one fetch — but building three thousand cards blocks the thread that is
+     scrolling, and nobody reads past the second screen. "Show more" rather
+     than numbered pages: this is a shelf you browse, not a table you page
+     through, and a page number is one more thing to put in the URL. */
+  if (shown > rows.length) shown = PAGE;
+  $("pl-grid").replaceChildren(...rows.slice(0, shown).map(card));
+  const more = rows.length - shown;
+  $("pl-more").hidden = more <= 0;
+  $("pl-more").textContent = more > 0 ? "Show " + Math.min(more, PAGE) + " more" : "";
   $("pl-count").textContent = rows.length + (rows.length === 1 ? " plugin" : " plugins") + (rows.length !== all.length ? " of " + all.length : "");
   $("pl-none").hidden = rows.length > 0;
  };
  const chips = () => {
   const cats = new Map([["all", "All"], ["panel", "Draws a panel"], ["pr-notes", "Notes in pull requests"]]);
   all.forEach((p) => (p.categories || []).forEach((t) => { if (!cats.has(t)) cats.set(t, t); }));
+  $("pl-more").onclick = () => { shown += PAGE; render(); };
   $("pl-chips").replaceChildren(...[...cats].map(([k, label]) => {
    const b = el("button", "pl-chip", label);
    b.type = "button";
    b.setAttribute("aria-pressed", String(k === cat));
-   b.onclick = () => { cat = k; chips(); render(); };
+   b.onclick = () => { cat = k; shown = PAGE; chips(); render(); };
    return b;
   }));
  };
@@ -1655,7 +1672,7 @@ new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){g.classList.add
    chips(); render();
   }).catch(() => { $("pl-count").textContent = "The list could not be loaded."; });
  };
- $("pl-q").addEventListener("input", render);
+ $("pl-q").addEventListener("input", () => { shown = PAGE; render(); });
  $("pl-sort").addEventListener("change", render);
  addEventListener("keydown", (e) => {
   if (e.key === "/" && document.body.dataset.route === "plugins" && document.activeElement !== $("pl-q")) { e.preventDefault(); $("pl-q").focus(); }

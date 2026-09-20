@@ -10,7 +10,7 @@ import { PluginMark } from "./plugins/PluginMark.tsx";
 import { emitControl } from "../lib/controlBus.ts";
 import { openSettings } from "../lib/openSettings.ts";
 import { useDialogs } from "./ConfirmDialog.tsx";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useMemo } from "react";
 import { Fold, SettingRow, Switch } from "./SettingRow.tsx";
 import { api } from "../lib/api.ts";
 import { fmtAgo } from "../lib/format.ts";
@@ -133,6 +133,15 @@ function isInstalled(entry: Catalogue["plugins"][number], plugins: PublicPlugin[
  *  next to a row. Installing runs the same review-then-enable path as any
  *  other install — installFromCatalogue on the server still only copies a
  *  folder and reads its manifest. */
+/** The manifest's own words for where a plugin draws, in the catalogue's
+ *  shorthand. A card says what installing gets you before it is installed. */
+const DRAWS_WORD: Record<string, string> = {
+  panel: "adds a panel", panels: "adds a panel",
+  settings: "settings page",
+  "pr-notes": "notes in pull requests", prNotes: "notes in pull requests",
+  "pr-button": "a button in pull requests", prActions: "a button in pull requests",
+};
+
 function CatalogueEntryRow({
   entry, owner, catalogueUrl, installed, onInstalled,
 }: { entry: Catalogue["plugins"][number]; owner: string; catalogueUrl: string; installed: boolean; onInstalled: () => void }) {
@@ -156,10 +165,17 @@ function CatalogueEntryRow({
       <div className="flex items-start gap-2.5">
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-2 flex-wrap">
-            <span className="text-[13.5px]" style={{ color: "var(--text)" }}>{entry.id}</span>
-            <span className="text-[11.5px] t-dim">by {owner}</span>
+            <span className="text-[13.5px]" style={{ color: "var(--text)" }}>{entry.title || entry.id}</span>
+            <span className="text-[11.5px] t-dim">by {entry.publisher || owner}</span>
           </div>
           <div className="flex items-center gap-1 flex-wrap mt-1">
+            {(entry.draws ?? []).map((d) => (
+              <span key={`d-${d}`} className="chip text-[9.5px]" style={{
+                color: "var(--primary)",
+                background: "color-mix(in srgb, var(--primary) 12%, transparent)",
+                borderColor: "color-mix(in srgb, var(--primary) 30%, transparent)",
+              }}>{DRAWS_WORD[d] ?? d}</span>
+            ))}
             {entry.categories.map((c) => (
               <span key={c} className="chip text-[9.5px]" style={{
                 color: "var(--text3)",
@@ -183,6 +199,82 @@ function CatalogueEntryRow({
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * The plugins in one catalogue, searched and read a page at a time.
+ *
+ * A catalogue is a list somebody else keeps, and it grows. Drawing all of it
+ * was fine at one entry and is a thousand cards at a thousand — every one of
+ * them a card with its own state, laid out on the thread the settings page
+ * is scrolling on. So: a box that narrows it, and a page of two dozen.
+ *
+ * The filter is done here rather than asked of the server, because the whole
+ * document is already in hand — it arrived in one fetch, which is what a
+ * catalogue IS. The ceiling that matters is upstream: the server keeps the
+ * first five hundred entries of a document and says how many it held, so a
+ * catalogue past that says so rather than quietly becoming shorter.
+ */
+const PAGE = 24;
+
+function CatalogueShelf({
+  catalogue, url, plugins, onInstalled,
+}: { catalogue: Catalogue; url: string; plugins: PublicPlugin[]; onInstalled: () => void }) {
+  const [q, setQ] = useState("");
+  const [page, setPage] = useState(0);
+  const found = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    if (!needle) return catalogue.plugins;
+    return catalogue.plugins.filter((e) => [e.id, e.title, e.publisher, e.description, ...(e.categories ?? [])]
+      .some((f) => (f ?? "").toLowerCase().includes(needle)));
+  }, [catalogue.plugins, q]);
+  const pages = Math.max(1, Math.ceil(found.length / PAGE));
+  const here = Math.min(page, pages - 1);
+  const shown = found.slice(here * PAGE, here * PAGE + PAGE);
+  const held = catalogue.total > catalogue.plugins.length;
+
+  return (
+    <div className="mt-2">
+      <div className="flex items-center gap-2 flex-wrap">
+        <input value={q} onChange={(e) => { setQ(e.target.value); setPage(0); }}
+          placeholder={`Search ${catalogue.plugins.length} plugins`} spellCheck={false}
+          className="agx-input text-[12px] px-2 py-1 rounded-lg min-w-[180px] flex-1" />
+        <span className="text-[11px] t-dim whitespace-nowrap">
+          {found.length === catalogue.plugins.length
+            ? `${catalogue.plugins.length} listed`
+            : `${found.length} of ${catalogue.plugins.length}`}
+          {held ? ` · the document lists ${catalogue.total}` : ""}
+        </span>
+      </div>
+      {found.length === 0 ? (
+        <div className="py-3 text-[11.5px] t-dim">Nothing in this catalogue matches “{q}”.</div>
+      ) : (
+        <div className="grid gap-3 mt-2" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))" }}>
+          {shown.map((entry) => (
+            <CatalogueEntryRow key={entry.id} entry={entry} owner={catalogue.owner} catalogueUrl={url}
+              installed={isInstalled(entry, plugins)} onInstalled={onInstalled} />
+          ))}
+        </div>
+      )}
+      {pages > 1 && (
+        <div className="flex items-center justify-center gap-2 mt-3 text-[11.5px]">
+          <button onClick={() => setPage(here - 1)} disabled={here === 0}
+            className="px-2 py-0.5 rounded-lg disabled:opacity-40 hover:opacity-80"
+            style={{ color: "var(--text2)", border: "1px solid var(--surface-line)" }}>Previous</button>
+          <span className="t-dim tabular-nums">{here + 1} of {pages}</span>
+          <button onClick={() => setPage(here + 1)} disabled={here >= pages - 1}
+            className="px-2 py-0.5 rounded-lg disabled:opacity-40 hover:opacity-80"
+            style={{ color: "var(--text2)", border: "1px solid var(--surface-line)" }}>Next</button>
+        </div>
+      )}
+      {held && (
+        <div className="mt-2 text-[11px] t-dim">
+          This catalogue lists {catalogue.total} plugins and {catalogue.plugins.length} of them were read. A list this
+          long is one the catalogue should publish in pages.
+        </div>
+      )}
     </div>
   );
 }
@@ -237,12 +329,7 @@ function CatalogueRow({
           result.catalogue.plugins.length === 0 ? (
             <div className="py-2 text-[11.5px] t-dim">This catalogue lists no plugins.</div>
           ) : (
-            <div className="grid gap-3 mt-2" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))" }}>
-              {result.catalogue.plugins.map((entry) => (
-                <CatalogueEntryRow key={entry.id} entry={entry} owner={result.catalogue.owner} catalogueUrl={url}
-                  installed={isInstalled(entry, plugins)} onInstalled={refetch} />
-              ))}
-            </div>
+            <CatalogueShelf catalogue={result.catalogue} url={url} plugins={plugins} onInstalled={refetch} />
           )
         ) : null
       )}

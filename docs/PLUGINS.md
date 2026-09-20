@@ -12,6 +12,9 @@ the worked example, is [§6 of EXTENDING.md](EXTENDING.md#6-publish-a-plugin).
 - [Install, review, enable](#install-review-enable)
 - [Catalogues](#catalogues)
 - [Drawing in the app](#drawing-in-the-app)
+- [From the terminal](#from-the-terminal)
+- [Being listed](#being-listed)
+- [One plugin's output is another's input](#one-plugins-output-is-anothers-input)
 - [What a plugin cannot do](#what-a-plugin-cannot-do)
 - [Publishing one](#publishing-one)
 - [A worked example](#a-worked-example)
@@ -258,6 +261,73 @@ A worked plugin that uses all three is
 your labelled pull requests with the agent you choose, inside a sandbox, and
 keeps the findings in the pull request view.
 
+## From the terminal
+
+`agentglass-plugin` does what the Plugins pane does, for a script:
+
+    agentglass-plugin validate ~/code/my-plugin     # needs no running app
+    agentglass-plugin add https://github.com/you/my-plugin --enable
+    agentglass-plugin list                          # name, state, scope, what it draws
+    agentglass-plugin enable | disable | update | remove <name>
+    agentglass-plugin settings <name> style=security
+
+`validate` is the one that works with nothing running: it reads a folder's
+`plugin.json` and applies the rules the app applies at install, so a plugin's
+own CI refuses a broken manifest before anybody tries to install it. It exits
+0 or 1 and prints one JSON object, and it warns about what the app finds out
+later — an icon named and not shipped, a missing README.
+
+It carries its own copy of those rules, because CI has no agentglass to ask.
+`server/test/plugin-cli-validate.test.ts` runs the app's validator and the
+CLI's over the same thirty cases, so the two cannot drift apart quietly.
+
+## Being listed
+
+Anybody can install a plugin from its git URL without asking anybody. The
+catalogue is for being found: open the **List a plugin** issue on this
+repository, and a check clones what you named, validates the manifest, reads
+the source for a short list of patterns, and writes what it found on the
+issue. Then a person decides.
+
+**Listing is not auditing**, and the catalogue says so where people read it. A
+listed plugin has a public repository, a manifest the app accepts, a README
+and a licence — that is all a machine can tell. It still runs as a process on
+the installer's machine, it still asks them to approve its scope and where it
+draws, and the check never executes a line of it. Read the code.
+
+The machinery, because the shape of it is the security argument:
+
+| Stage | What happens | Where it runs |
+|---|---|---|
+| The issue | The form asks for the repository, a category, what it costs, and a checklist | — |
+| `read` | Clones it shallow, validates the manifest, scans the source for a short list of patterns, writes a report | `contents: read`, **no token**, checkout without credentials |
+| `say` | Re-reads the live issue, then posts the report and sets `ready for listing` or `changes needed` | `issues: write`, never looks at the submitted code |
+| `approved for listing` | A maintainer's label. Re-checks that the actor still has write access and the issue still qualifies, clones and validates **again**, and opens a pull request adding the entry | `contents: write` |
+| The merge | A person reads the diff and merges. The site and the app read the file | — |
+
+The split between the first two is the point: the job that touches a
+stranger's repository has nothing in its environment worth stealing and no
+permission to write anything, and what crosses to the job that does is a
+report. Nothing submitted is ever executed, and the scan follows no symlink
+out of the folder it was handed.
+
+The pull request at the end is deliberate. A bot that writes to `main` needs
+an apparatus to replace the person reading the diff; at this size the person
+reading the diff is cheaper, and they are the catalogue's only reviewer.
+
+## One plugin's output is another's input
+
+The most useful thing a plugin can do is write something another one can read.
+A reviewer does not own "findings on a pull request": it writes runs and notes
+through `prNotes`, the app draws them, and a second reviewer — a different
+model, a linter, a policy check — writes into the same lane beside it. The
+person resolves a note once and every plugin hears it.
+
+So when a plugin needs to talk to another, prefer the app's own shapes over a
+private channel: notes on a pull request, a panel, settings. A contract the
+app already draws is one an author can join by producing data, without
+touching anybody's code.
+
 ## What a plugin cannot do
 
 **Run code in the window.** A plugin draws in the app ([Drawing in the
@@ -283,7 +353,8 @@ it is enabled.** Install is a copy.
    would sit on disk from then on and is refused; plain `http://` is refused
    too, since it would hand whatever the URL carries to anyone on the wire.
 3. The URL is the publication. Pasting it into "Install a plugin" is enough. A
-   catalogue is for when there is more than one plugin to list.
+   catalogue is for when there is more than one plugin to list — see
+   [Being listed](#being-listed) for how one gets into this repository's.
 
 There is no build step, no registration and no account.
 
