@@ -167,7 +167,13 @@ jobs:
           Listing is not auditing: this says the repository is public, the
           manifest is one the app accepts, and somebody with write access said
           yes. It says nothing about what the plugin does."
-          git push -u origin "$branch"
+          # Pushed with the same token that opens the pull request, not with
+          # this job's. A ref pushed by GITHUB_TOKEN does not trigger a
+          # workflow run — GitHub's guard against a workflow feeding itself —
+          # so `build` never reported on the pull request and the required
+          # check sat "Expected" for ever. Pushing as a real identity is what
+          # makes CI run, and CI is what auto-merge is waiting for.
+          git push "https://x-access-token:${CATALOGUE_PR_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/$branch"
           # A repository can forbid Actions from opening pull requests, and
           # this one does: the switch that would allow it is the same one that
           # lets a bot approve reviews, and a catalogue whose only reviewer is
