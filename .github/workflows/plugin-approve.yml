@@ -34,6 +34,11 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      pull-requests: write
+      # The fallback below comments on the issue when the pull request cannot
+      # be opened, and without this it failed too — "Resource not accessible
+      # by integration" — so a listing stopped at a branch nobody was told
+      # about, on a run that went red having done its work correctly.
       issues: write
     steps:
       - name: Is the person who labelled it allowed to?
@@ -148,6 +153,8 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          branch="list-$NAME-$ISSUE"
+          git checkout -b "$branch"
           git add landing/plugins.json
           git commit -m "catalogue: list $NAME
 
@@ -159,16 +166,21 @@ jobs:
           Listing is not auditing: this says the repository is public, the
           manifest is one the app accepts, and somebody with write access said
           yes. It says nothing about what the plugin does."
-          # Straight to main, because the branch-and-pull-request version could
-          # not finish: this repository forbids Actions from opening pull
-          # requests, so every listing stopped at a pushed branch nobody was
-          # told about. What the pull request bought was a person reading the
-          # diff, and the steps above already re-check what that person would
-          # have looked at — the labeller still has write access, the issue is
-          # still open and labelled, the manifest was validated again from a
-          # fresh clone, and the file is valid JSON after writing. The entry is
-          # generated from that manifest; there is nothing else in the diff.
-          git push origin HEAD:main
-          gh issue comment "$ISSUE" --body "Listed. \`$NAME\` is in \`landing/plugins.json\` on main, and the site redeploys from there, so it appears in the catalogue and in the app.
+          git push -u origin "$branch"
+          # A repository can forbid Actions from opening pull requests, and
+          # this one does: the switch that would allow it is the same one that
+          # lets a bot approve reviews, and a catalogue whose only reviewer is
+          # a person does not hand that away to save a click. So the branch is
+          # pushed either way and the link is handed to the maintainer.
+          body="Closes #$ISSUE
 
-          The manifest was validated again from a fresh clone in this run. Listing is not auditing — read the submission check above for what installing it costs."
+          Adds \`$NAME\` to \`landing/plugins.json\` from https://github.com/$SOURCE.
+
+          The manifest was validated again from a fresh clone in this run. Read the submission check on the issue before merging — it says what installing this costs and which lines are worth an eye."
+          if gh pr create --title "catalogue: list $NAME" --body "$body" --base main --head "$branch" 2>/tmp/pr.err; then
+            exit 0
+          fi
+          echo "::warning::could not open the pull request: $(tail -1 /tmp/pr.err)"
+          gh issue comment "$ISSUE" --body "The entry is written and pushed to \`$branch\`, and this run could not open the pull request itself: $(tail -1 /tmp/pr.err)
+
+          Open it here: https://github.com/${GITHUB_REPOSITORY}/compare/main...$branch?expand=1"
