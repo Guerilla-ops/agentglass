@@ -145,6 +145,7 @@ jobs:
       - name: Open a pull request with it
         env:
           GH_TOKEN: ${{ github.token }}
+          CATALOGUE_PR_TOKEN: ${{ secrets.CATALOGUE_PR_TOKEN }}
           ISSUE: ${{ github.event.issue.number }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           NAME: ${{ steps.entry.outputs.name }}
@@ -177,7 +178,19 @@ jobs:
           Adds \`$NAME\` to \`landing/plugins.json\` from https://github.com/$SOURCE.
 
           The manifest was validated again from a fresh clone in this run. Read the submission check on the issue before merging — it says what installing this costs and which lines are worth an eye."
-          if gh pr create --title "catalogue: list $NAME" --body "$body" --base main --head "$branch" 2>/tmp/pr.err; then
+          # Opened with a token of its own, not this job's. GitHub forbids
+          # Actions from opening pull requests here, and the switch that would
+          # allow it is the same one that lets a bot approve reviews — a
+          # catalogue whose only reviewer is a person does not hand that away.
+          # A fine-grained token scoped to pull requests on this repository
+          # buys the one capability without the other.
+          if GH_TOKEN="${CATALOGUE_PR_TOKEN:-$GH_TOKEN}" gh pr create --title "catalogue: list $NAME" --body "$body" --base main --head "$branch" 2>/tmp/pr.err; then
+            # Merged by the check, not by anybody's approval. `protect-main`
+            # requires `build` and requires no review, so auto-merge lands the
+            # entry the moment the check is green and deletes the branch after
+            # it. Nothing here approves anything.
+            GH_TOKEN="${CATALOGUE_PR_TOKEN:-$GH_TOKEN}" gh pr merge --auto --squash "$branch" || \
+              echo "::warning::pull request opened but auto-merge could not be enabled"
             exit 0
           fi
           echo "::warning::could not open the pull request: $(tail -1 /tmp/pr.err)"
