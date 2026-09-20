@@ -10,6 +10,7 @@
 // Finishing removes the worktree, deletes the branch and kills the window. The
 // second half is the half nobody builds, and it is the reason a machine ends up
 // with fourteen checkouts nobody can name.
+import { CheckoutPicker } from "./CheckoutPicker.tsx";
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { BlockedIcon, CheckboxIcon, CircleIcon, ClockIcon, CommentIcon, CopyIcon, CrossIcon, DoneIcon, DotIcon, IconLabel, KeyboardIcon, LockIcon, MonitorIcon, NoteIcon, PlusIcon, RefreshIcon, SearchIcon } from "../lib/glyphIcons.tsx";
 import { api } from "../lib/api.ts";
@@ -195,6 +196,12 @@ export function TasksView({ active, onOpenChatWith, cardJump, issueJump }: {
       setRoot((cur) => (cur && r.some((x) => x.root === cur) ? cur : (r[0]?.root ?? "")));
     }).catch(() => {});
   }, [active]);
+  /** A project is a remote; its worktrees are the same one — see the header. */
+  const projects = useMemo(() => repos.filter((r) => !r.worktreeOf), [repos]);
+  const projectRoot = useMemo(
+    () => repos.find((r) => r.root === root)?.worktreeOf ?? root,
+    [repos, root],
+  );
 
   /* Somebody asked for a ClickUp card, so show them the ClickUp tab. Only the
      tab is decided here — WHICH card is the board's business, and it is handed
@@ -238,14 +245,20 @@ export function TasksView({ active, onOpenChatWith, cardJump, issueJump }: {
           ))}
         </nav>
         {/*
-          * No repo picker. Switching checkout here never changed which issues
-          * you saw: they come from the GitHub remote, and every worktree of a
-          * project shares that one remote — so the control offered a dozen ways
-          * to look at the same list. All it really moved was the directory `gh`
-          * ran in and where `issueStart` would cut a worktree, and for both of
-          * those the answer that is always right is the project itself, which
-          * is what `repos[0]` already is under an open project.
+          * WHICH repository, and only when there is a choice to make.
+          *
+          * Checkouts are still not offered: issues come from the GitHub remote,
+          * and every worktree of a project shares that one remote, so a list of
+          * them would be a dozen ways to read the same list. PROJECTS are a
+          * different question, and the old answer — "`repos[0]` is the project"
+          * — only holds while a project is open. Under "All repos/projects" it
+          * is whichever repo sorted first, and nothing on screen moved it.
           */}
+        {source === "github" && projects.length > 1 && (
+          <CheckoutPicker repos={projects} value={projectRoot} onPick={setRoot}
+            placeholder="Pick a repository" triggerMaxWidth={220} branchLabel={null}
+            title="Which repository's issues" />
+        )}
       </ViewHeader>
       {source === "local" ? <LocalBody active={active} repos={repos} here={root} onOpenChatWith={onOpenChatWith} />
       : source === "clickup" ? <ClickUpBody active={active} repos={repos} here={root} onOpenChatWith={onOpenChatWith} jump={cardJump} />
