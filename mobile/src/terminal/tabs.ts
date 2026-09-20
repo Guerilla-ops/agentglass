@@ -67,10 +67,28 @@ export function paneTabs(panes: readonly AgentPane[]): Tab[] {
   const windows = new Map<string, AgentPane[]>();
   for (const pane of panes) {
     if (OURS.test(pane.session)) continue;
-    // A scratchpad is not a destination: it is the thing you open over your
-    // work and dismiss, and offering it beside the windows you keep is
-    // offering to go somewhere nobody meant to be.
-    if (pane.popup) continue;
+    /*
+     * A scratchpad is not a destination — while nobody is in it.
+     *
+     * It used to be dropped outright, and the rule read well: you open it over
+     * your work and dismiss it, so offering it beside the windows you keep is
+     * offering to go somewhere nobody meant to be. What it missed is the one
+     * case the phone exists for. The popup is open on the desk, with something
+     * in it, and you are not at the desk — and the companion was the only way
+     * to read it, except this was the line that made that impossible. Reported
+     * from a phone, with the scratch up on the computer at the time.
+     *
+     * `attached` is what tells the two apart, and it is exact rather than a
+     * heuristic: the scratch is `display-popup -E "tmux attach -t scratch"`, so
+     * a client is on that session for precisely as long as the popup is up.
+     * Closed, it goes back to being a session nobody is looking at and drops
+     * out again — by this rule, not by a second one.
+     *
+     * `!== true` and not `=== false`: absent is a third answer, as it is
+     * everywhere else on this wire, and a build too old to say is one that
+     * keeps the behaviour it had.
+     */
+    if (pane.popup && pane.attached !== true) continue;
     /*
      * A session on somebody else's tmux server is not in this list.
      *
