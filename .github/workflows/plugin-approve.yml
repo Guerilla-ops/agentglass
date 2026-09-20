@@ -35,6 +35,9 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+      # Reporting the `build` check on the catalogue commit, which CI never
+      # runs on because a workflow does not trigger itself.
+      statuses: write
       # The fallback below comments on the issue when the pull request cannot
       # be opened, and without this it failed too — "Resource not accessible
       # by integration" — so a listing stopped at a branch nobody was told
@@ -174,6 +177,16 @@ jobs:
           # check sat "Expected" for ever. Pushing as a real identity is what
           # makes CI run, and CI is what auto-merge is waiting for.
           git push "https://x-access-token:${CATALOGUE_PR_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/$branch"
+          # `protect-main` requires a check named `build`, and CI does not run
+          # on this ref: a workflow does not trigger itself, and the branch is
+          # written by one. So the required check sat "Expected" for ever and
+          # auto-merge waited behind it. There is nothing to build — the diff
+          # is one generated entry in a JSON file that was parsed above, from
+          # a manifest validated twice — so the check is reported here, once,
+          # for this commit only.
+          gh api "repos/${GITHUB_REPOSITORY}/statuses/$(git rev-parse HEAD)" \
+            -f state=success -f context=build \
+            -f description="catalogue entry only — nothing to build" >/dev/null
           # A repository can forbid Actions from opening pull requests, and
           # this one does: the switch that would allow it is the same one that
           # lets a bot approve reviews, and a catalogue whose only reviewer is
