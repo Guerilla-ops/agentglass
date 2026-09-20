@@ -1016,6 +1016,9 @@ body:not([data-route="home"]) .page{padding-top:calc(118px + var(--safe))}
 .pl-links a:hover{color:var(--txt)}
 .pl-more{margin:18px auto 0;display:block;padding:9px 18px;font:12.5px var(--mono);color:var(--dim);background:transparent;border:1px solid var(--line2);border-radius:10px;cursor:pointer}
 .pl-more:hover{color:var(--fg);border-color:var(--vio)}
+.pl-go{padding:5px 12px;font:12px var(--mono);color:var(--bg);background:var(--vio);border:0;border-radius:8px;cursor:pointer;white-space:nowrap}
+.pl-go:hover{filter:brightness(1.12)}
+.pl-go.miss{background:transparent;color:var(--dim);border:1px solid var(--line2)}
 .pl-none{margin-top:18px;padding:40px 20px;text-align:center;color:var(--dim);border:1px dashed var(--line2);border-radius:16px}
 .pl-steps{margin-top:18px;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}
 .pl-step{padding:18px;border-radius:14px;border:1px solid var(--line)}
@@ -1625,6 +1628,7 @@ new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){g.classList.add
   (p.draws || []).forEach((d) => { if (DRAW[d]) tags.append(el("span", "pl-tag d", DRAW[d])); });
   (p.categories || []).forEach((t) => tags.append(el("span", "pl-tag", "#" + t)));
   const url = safe(p.source && p.source.url);
+  if (p.minApp) tags.append(el("span", "pl-tag", "needs " + p.minApp + "+"));
   const inst = el("div", "pl-inst");
   const btn = el("button", "pl-copy", "Copy");
   btn.type = "button";
@@ -1635,7 +1639,38 @@ new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){g.classList.add
     setTimeout(() => { btn.textContent = "Copy"; btn.classList.remove("done"); }, 1400);
    });
   };
-  inst.append(el("code", null, url || ""), btn);
+  /*
+   * "Install", which is a link the app claims rather than anything this page
+   * can do. agentglass registers `agentglass://`, and the click hands over a
+   * URL: the app opens its install box with it and the person approves what
+   * the plugin declares, exactly as they would for a URL they pasted. This
+   * page never installs anything and cannot.
+   *
+   * A browser cannot be asked whether an application is installed — it either
+   * hands the link over or does nothing at all, silently. So: if this page
+   * still has the focus a moment later, nothing took it, and the button says
+   * so and offers the thing that always works.
+   */
+  const go = el("button", "pl-go", "Install");
+  go.type = "button";
+  go.title = "Opens agentglass and fills its install box — nothing installs until you approve it";
+  go.onclick = () => {
+   if (!url) return;
+   let answered = false;
+   const away = () => { answered = true; };
+   window.addEventListener("blur", away, { once: true });
+   document.addEventListener("visibilitychange", away, { once: true });
+   window.location.href = "agentglass://plugin/install?url=" + encodeURIComponent(url);
+   setTimeout(() => {
+    window.removeEventListener("blur", away);
+    document.removeEventListener("visibilitychange", away);
+    if (answered) return;
+    go.textContent = "No agentglass here — copy instead";
+    go.classList.add("miss");
+    setTimeout(() => { go.textContent = "Install"; go.classList.remove("miss"); }, 4000);
+   }, 1500);
+  };
+  inst.append(el("code", null, url || ""), go, btn);
   const links = el("div", "pl-links");
   if (url) { const a = el("a", null, "Source ↗"); a.href = url; a.target = "_blank"; a.rel = "noopener"; links.append(a); }
   if (p.added) links.append(el("span", null, "added " + p.added));

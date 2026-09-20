@@ -21,7 +21,7 @@ import { AlarmCard } from "./components/AlarmCard.tsx";
 import { currentScale } from "./lib/uiScale.ts";
 import { zoomAtPointer, type ZoomResult } from "./lib/zoomTarget.ts";
 import { zoomTaken } from "./lib/zoomOwner.ts";
-import { toggleFullscreen } from "./lib/desktop.ts";
+import { toggleFullscreen, followDeepLinks } from "./lib/desktop.ts";
 import { useAlertSound } from "./lib/useSound.ts";
 import { TopBar } from "./components/TopBar.tsx";
 /*
@@ -74,6 +74,7 @@ import { SessionModal } from "./components/SessionModal.tsx";
 import { ProjectPicker, PICKER_ANSWERED_KEY } from "./components/ProjectPicker.tsx";
 import { NeedsPopover, type NeedsItem } from "./components/NeedsPopover.tsx";
 import { requestPrJump } from "./lib/prJump.ts";
+import { requestPluginInstall } from "./lib/installPlugin.ts";
 import { subscribeGates, listGates } from "./lib/gateStore.ts";
 
 /** The last segment of a path — a project's name as anyone says it out loud. */
@@ -213,6 +214,14 @@ export default function App() {
   /* The other half: a sender that knows exactly which pull request it means
      gets the panel's jump, which selects and opens, instead of a search. */
   useEffect(() => onOpenPr(({ repo, number, mention, focus }) => { requestPrJump(repo, number, { mention, focus }); toBoard("pr"); }), [toBoard]);
+  /* A link clicked on the catalogue's web page. It opens the install box with
+     the URL in it — the approval is the person's, exactly as it is for a URL
+     they pasted. See lib/installPlugin.ts. */
+  useEffect(() => followDeepLinks((link) => {
+    if (link.kind !== "plugin-install") return;
+    requestPluginInstall(link.url);
+    openSettings("plugins");
+  }), []);
   useEffect(() => onOpenCard((j) => { setCardJump(j); toBoard("tasks"); }), [toBoard]);
   useEffect(() => onOpenIssue((j) => { setIssueJump(j); toBoard("tasks"); }), [toBoard]);
   /** Which machine tab is open, or none. One piece of state for both surfaces:

@@ -40,3 +40,26 @@ describe("the plugins page", () => {
     }
   });
 });
+
+describe("the Install button on a card", () => {
+  test("hands the app a link and installs nothing itself", () => {
+    const card = SECTION.slice(SECTION.indexOf("const card ="), SECTION.indexOf("const render ="));
+    expect(card).toContain("agentglass://plugin/install?url=");
+    expect(card).toContain("encodeURIComponent(url)");
+    // A page that could install would be a page that installs for anybody who
+    // can get a link in front of you.
+    expect(card).not.toContain("fetch(");
+    expect(card).not.toContain("/plugins/install");
+  });
+
+  test("says so when nothing answered, because a browser cannot be asked", () => {
+    const card = SECTION.slice(SECTION.indexOf("const card ="), SECTION.indexOf("const render ="));
+    expect(card).toContain("visibilitychange");
+    expect(card).toContain("copy instead");
+  });
+
+  test("warns about a version this app may be too old for, before the press", () => {
+    const card = SECTION.slice(SECTION.indexOf("const card ="), SECTION.indexOf("const render ="));
+    expect(card).toContain("p.minApp");
+  });
+});

@@ -14,7 +14,7 @@ import { join } from "node:path";
 import {
   validateManifest, validPluginName, manifestHash, installPlugin, updatePlugin, enablePlugin, disablePlugin,
   removePlugin, listPlugins, masterEnabled, setMaster, __resetPlugins,
-  MANIFEST_NAME, pluginsConfigDir, pluginsPath,
+  MANIFEST_NAME, pluginsConfigDir, pluginsPath, appVersion, versionAtLeast,
   listCatalogues, addCatalogue, removeCatalogue,
 } from "../src/plugins.ts";
 import { callerFor, pluginTokenCount } from "../src/auth.ts";
@@ -130,6 +130,43 @@ describe("install = copy, no code runs", () => {
     expect(r.ok).toBe(false);
     expect(existsSync(sentinel)).toBe(true);
     expect(listPlugins()).toHaveLength(0);
+  });
+});
+
+describe("a plugin that needs a newer app", () => {
+  test("is refused at install, with what it needs and what this is", async () => {
+    /* Refused rather than installed and left off: half of what a plugin
+       declares is where it draws, and a surface this app does not have is not
+       a setting somebody can switch on — it is a panel that never appears
+       with nothing saying why. */
+    const src = fixture({ ...okManifest, minApp: "9.9.9" } as never);
+    const r = await installPlugin(src);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error).toContain("9.9.9");
+      expect(r.error).toContain(appVersion());
+    }
+    expect(listPlugins()).toHaveLength(0);
+  });
+
+  test("installs when the app is that old or newer, and a version that is not one is refused", async () => {
+    const src = fixture({ ...okManifest, minApp: "0.0.1" } as never);
+    expect((await installPlugin(src)).ok).toBe(true);
+    await removePlugin("watcher");
+    expect(validateManifest({ ...okManifest, minApp: "0.18" })).not.toBe("minApp must be a version like 0.18.0");
+    for (const bad of ["latest", "v1.2.3", "1.2.3.4", "", 3]) {
+      expect(validateManifest({ ...okManifest, minApp: bad })).toContain("minApp");
+    }
+  });
+
+  test("older, newer and equal are told apart, with the parts that are missing read as zero", () => {
+    expect(versionAtLeast("0.18.0", "0.18.0")).toBe(true);
+    expect(versionAtLeast("0.18", "0.18.0")).toBe(true);
+    expect(versionAtLeast("0.18.1", "0.18.0")).toBe(true);
+    expect(versionAtLeast("1.0.0", "0.99.99")).toBe(true);
+    expect(versionAtLeast("0.17.9", "0.18.0")).toBe(false);
+    // 0.9 is older than 0.10, whatever a string comparison would say.
+    expect(versionAtLeast("0.9.0", "0.10.0")).toBe(false);
   });
 });
 
