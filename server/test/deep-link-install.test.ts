@@ -87,3 +87,20 @@ describe("what happens to it in the window", () => {
     expect(ready).toContain("setAsDefaultProtocolClient");
   });
 });
+
+const SH = await Bun.file(new URL("../../electron/install-local.sh", import.meta.url)).text();
+
+describe("the desktop entry the installer writes", () => {
+  const entry = SH.slice(SH.indexOf("[Desktop Entry]"), SH.indexOf("EOF", SH.indexOf("[Desktop Entry]")));
+
+  test("claims the scheme and takes the URL", () => {
+    /* On Linux `setAsDefaultProtocolClient` is not enough on its own: a
+       browser consults the desktop database, which only knows what a .desktop
+       file declares — and without `%u` the URL never reaches the process that
+       was launched for it. This was found by installing the app and asking
+       `xdg-mime`, which named nothing. */
+    expect(entry).toContain("MimeType=x-scheme-handler/agentglass;");
+    expect(entry).toMatch(/Exec=.*agentglass %u/);
+    expect(SH).toContain("xdg-mime default agentglass.desktop x-scheme-handler/agentglass");
+  });
+});

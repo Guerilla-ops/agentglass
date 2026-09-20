@@ -294,13 +294,23 @@ cat > "$DESKTOP/agentglass.desktop" <<EOF
 Type=Application
 Name=agentglass
 Comment=Real-time cockpit for your Claude Code agents
-Exec=$APP/agentglass
+Exec=$APP/agentglass %u
 Icon=$APP/icon.png
 Terminal=false
 Categories=Development;
+# The plugins page's Install button opens agentglass://plugin/install?url=…
+# On Linux `app.setAsDefaultProtocolClient` is not enough on its own: the
+# desktop database is what a browser consults, and it only knows what a
+# .desktop file declares. `%u` above is the other half — without it the URL
+# is never passed to the process that was launched for it.
+MimeType=x-scheme-handler/agentglass;
 EOF
 chmod 644 "$DESKTOP/agentglass.desktop"
 command -v update-desktop-database >/dev/null && update-desktop-database "$DESKTOP" 2>/dev/null || true
+# And say it out loud, because `update-desktop-database` alone leaves a
+# desktop that already had a default for the scheme pointing wherever it
+# pointed before.
+command -v xdg-mime >/dev/null && xdg-mime default agentglass.desktop x-scheme-handler/agentglass 2>/dev/null || true
 
 echo "installed:"
 echo "  app      $APP/agentglass"
