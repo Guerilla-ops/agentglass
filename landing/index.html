@@ -979,6 +979,9 @@ body:not([data-route="home"]) .page{padding-top:calc(118px + var(--safe))}
 .pl-q kbd{font:11px var(--mono);color:var(--dim);border:1px solid var(--line2);border-radius:6px;padding:2px 6px}
 .pl-sort{height:46px;border-radius:12px;background:rgba(167,139,250,.06);border:1px solid var(--line2);color:var(--txt);
  font:13px var(--mono);padding:0 12px}
+.pl-jump{margin-top:14px;display:flex;flex-wrap:wrap;gap:16px;font:12.5px var(--mono)}
+.pl-jump a{color:var(--dim);text-decoration:none;border-bottom:1px solid transparent}
+.pl-jump a:hover{color:var(--fg);border-bottom-color:var(--vio)}
 .pl-chips{margin-top:14px;display:flex;flex-wrap:wrap;gap:8px}
 .pl-chip{font:12px var(--mono);color:var(--dim);background:none;border:1px solid var(--line2);border-radius:999px;
  padding:6px 12px;cursor:pointer;transition:color .15s,border-color .15s,background .15s}
@@ -1424,6 +1427,11 @@ body:not([data-route="home"]) .page{padding-top:calc(118px + var(--safe))}
    <input id="pl-q" type="search" placeholder="Search plugins, tags, authors" autocomplete="off" aria-label="Search plugins"><kbd>/</kbd></label>
   <select id="pl-sort" class="pl-sort" aria-label="Sort"><option value="new">Recently added</option><option value="az">A–Z</option></select>
  </div>
+ <div class="pl-jump">
+  <a href="#install">Install one →</a>
+  <a href="#publish">Publish yours →</a>
+  <a href="https://github.com/SirAllap/agentglass/issues/new?template=plugin_submission.yml">Ask to be listed →</a>
+ </div>
  <div class="pl-chips" id="pl-chips" role="group" aria-label="Filter"></div>
  <div class="pl-count" id="pl-count"></div>
  <div class="pl-grid" id="pl-grid"></div>
@@ -1437,16 +1445,20 @@ body:not([data-route="home"]) .page{padding-top:calc(118px + var(--safe))}
    repository, a manifest the app accepts, a README and a licence — that is what a machine can tell, and
    whoever installs it still approves what it asks for. <a href="https://github.com/SirAllap/agentglass/blob/main/docs/PLUGINS.md" style="color:var(--vio)">The guide</a>
    has the manifest, the routes and the vocabulary.</p></div>
-  <div class="pl-step"><b>02 · PUSH</b><p>Any host <code>git clone</code> reaches. The URL is the publication:
-   pasting it into Settings → Plugins installs it, with no account or registry in between.</p></div>
-  <div class="pl-step"><b>03 · LIST IT</b><p>Open a pull request that adds it to <code>landing/plugins.json</code>.
-   Once it is merged, the plugin shows here and in the app's catalogue.</p></div>
+  <div class="pl-step"><b>02 · PUSH</b><p>Any host <code>git clone</code> reaches. The URL is already the
+   publication: pasting it into Settings → Plugins installs it, with no account, no registry and nobody's
+   permission. Being listed below is only about being found.</p></div>
+  <div class="pl-step"><b>03 · LIST IT</b><p>Open the <a href="https://github.com/SirAllap/agentglass/issues/new?template=plugin_submission.yml" style="color:var(--vio)">List a plugin</a> issue.
+   A check clones what you named, validates the manifest, reads the source for a short list of patterns
+   and writes what it found on the issue — it never runs your code. A maintainer then approves, and the
+   entry is written from your manifest into <code>landing/plugins.json</code> by a pull request somebody
+   merges. The plugin shows here and in the app's catalogue.</p></div>
  </div>
- <h3>Install one</h3>
- <p>In agentglass, open Settings → Plugins and add this page's catalogue,
-  <code>https://sirallap.github.io/agentglass/plugins.json</code>. Or paste a plugin's URL
-  straight in. Nothing runs at install. You read what it asks for, then switch it on, and an update
-  that changes what it asks for is asked about again.</p>
+ <h3 id="install">Install one</h3>
+ <p>In agentglass, open Settings → Plugins. This page's catalogue is offered there by name — press Add,
+  open it, and install from the card. Or paste a plugin's URL straight in; the catalogue is a
+  convenience, not a gate. Nothing runs at install: you read what it asks for and switch it on, and an
+  update that changes what it asks for is asked about again.</p>
  <p>Verified means a maintainer read that plugin at the listed source. It does not vouch for
   later changes, which is why an update always asks again.</p>
 </div></section></main>
