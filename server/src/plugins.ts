@@ -721,13 +721,37 @@ export async function updatePlugin(name: string): Promise<{ ok: true; plugin: Pu
  * manifest to a human first, the same duty the install dialog already
  * carries.
  */
-export async function enablePlugin(name: string): Promise<{ ok: true } | { ok: false; error: string }> {
+/**
+ * Switch a plugin on, which is also the act of approving what it declares.
+ *
+ * `approved` is the caller saying it has SHOWN the declaration to somebody.
+ * The window has: the card lists the scope and every place the plugin draws,
+ * and an update that changes any of it turns the switch into a confirm that
+ * names what changed. A terminal has not — `agentglass-plugin enable` was a
+ * one-line way to grant a new manifest's scope with nobody having read it,
+ * which is the whole gate this system rests on, opened from outside the room
+ * it was built in.
+ *
+ * So: a plugin whose declaration has never been approved, or whose
+ * declaration changed since it was, is refused unless the caller says it
+ * showed it. The window passes true because it did; the CLI passes it only
+ * for `--approve`, which prints the declaration first.
+ */
+export async function enablePlugin(name: string, approved = true): Promise<{ ok: true } | { ok: false; error: string }> {
   const store = read();
   const rec = store.plugins.find((p) => p.name === name);
   if (!rec) return { ok: false, error: "no such plugin" };
   if (!store.master) return { ok: false, error: "plugins are switched off — flip the master switch first" };
   const block = blockedEntry(name);
   if (block) return { ok: false, error: `blocked: ${block.reason}${block.link ? ` (${block.link})` : ""}` };
+  if (!approved && rec.approvedFingerprint !== rec.fingerprint) {
+    return {
+      ok: false,
+      error: rec.hadApproval
+        ? "what this plugin declares has changed since you approved it — read it and enable it again with --approve, or switch it on in Settings ▸ Plugins"
+        : "switching it on approves the scope and the places it draws — read them and enable it with --approve, or switch it on in Settings ▸ Plugins",
+    };
+  }
   rec.approvedHash = rec.manifestHash;
   rec.approvedFingerprint = rec.fingerprint;
   rec.hadApproval = true;
