@@ -6,10 +6,42 @@ on:
   pull_request:
 
 jobs:
+  # What changed, before anything is cloned or installed. A catalogue listing
+  # is one generated line of `landing/plugins.json` and it was running the
+  # whole matrix — build, mobile, both sidecars — for twenty-seven lines of
+  # JSON. `paths-ignore` cannot fix that on its own: `build` is a required
+  # check, and a check that never runs never reports, so the pull request
+  # waits for it for ever. So the jobs still run and decide for themselves
+  # whether there is anything to do.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.what.outputs.code }}
+    steps:
+      - id: what
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "code=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          # The API, not a checkout: the question is which files the pull
+          # request touches, and cloning the repository to answer it is the
+          # cost this job exists to avoid.
+          files="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${{ github.event.number }}/files" --paginate --jq '.[].filename')"
+          if printf '%s\n' "$files" | grep -qvE '^landing/'; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "code=false" >> "$GITHUB_OUTPUT"
+          fi
+
   build:
+    needs: changes
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        if: needs.changes.outputs.code == 'true'
       # Pinned, and this is the line that decides whether CI is measuring the
       # tree or the week. `latest` resolved to bun 1.4.0 the moment it shipped
       # — 2026-08-20 14:14 UTC — and main went red at 16:08 the same day, on a
@@ -26,6 +58,7 @@ jobs:
       # 1.3.14 is not a guess. It is what `latest` meant on the 17th, which is
       # the last run of this workflow that was green.
       - uses: oven-sh/setup-bun@v2
+        if: needs.changes.outputs.code == 'true'
         with:
           # A version, not `latest`, for the same reason `bunx tsc` is banned two
           # steps down: a toolchain the registry picks is a toolchain nobody in
@@ -41,12 +74,14 @@ jobs:
           # change, and the suites that carry those notes are the ones to re-run.
           bun-version: 1.3.14
       - name: Install
+        if: needs.changes.outputs.code == 'true'
         run: bun install --frozen-lockfile
       # The mark lives in seven places — a standalone SVG, the favicon, a React
       # component, the boot splash and three inlines in the landing page. They
       # drifted once and a fix shipped to six of them while the seventh kept
       # the bug, so they are generated now and this is what catches a hand-edit.
       - name: The mark is in sync
+        if: needs.changes.outputs.code == 'true'
         run: bun scripts/logo.mjs --check
       # `bun run typecheck`, never `bunx tsc`. bunx runs a LOCAL binary if there
       # is one and silently downloads the newest published otherwise, and
@@ -67,10 +102,13 @@ jobs:
       # where, and why a linter that reformatted this codebase's hand-written
       # style would have been the wrong tool.
       - name: Lint (correctness)
+        if: needs.changes.outputs.code == 'true'
         run: bun run lint
       - name: Typecheck web (app and tests)
+        if: needs.changes.outputs.code == 'true'
         run: cd web && bun run typecheck
       - name: Typecheck server
+        if: needs.changes.outputs.code == 'true'
         run: cd server && bun run typecheck
       # electron/ is hand-written .js, and for years that meant this job checked
       # every line of the app except the ~2,400 that mint the auth token, decide
@@ -78,8 +116,10 @@ jobs:
       # reach. `// @ts-check` at the top of main.js and preload.js is what makes
       # `tsc` read them; this is what makes CI read them.
       - name: Typecheck desktop shell
+        if: needs.changes.outputs.code == 'true'
         run: cd electron && bun run typecheck
       - name: Tests (server)
+        if: needs.changes.outputs.code == 'true'
         # Generous per-test timeout, not bun's 5s default: several server tests
         # do real git/spawn/settle work that finishes in ~seconds on a dev box
         # but brushes the 5s ceiling on the runner's constrained 2 cores, so one
@@ -91,13 +131,16 @@ jobs:
       # themes, the session-live rule, the file tree — could break on a PR and
       # nothing would say so.
       - name: Tests (web)
+        if: needs.changes.outputs.code == 'true'
         run: cd web && bun test
       - name: Build web
+        if: needs.changes.outputs.code == 'true'
         run: cd web && bun run build
       # Pinned rather than the runner's preinstalled Chrome: the ubuntu-latest
       # image has dropped and re-added browsers before, and this also keeps the
       # step working on container or self-hosted runners that ship none.
       - uses: browser-actions/setup-chrome@v2
+        if: needs.changes.outputs.code == 'true'
         id: chrome
         with:
           chrome-version: stable
@@ -109,6 +152,7 @@ jobs:
       # run has no repos, so it cannot open a chat, so the chat-persistence check
       # skips itself and the reload path goes uncovered.
       - name: Smoke (production bundle boots)
+        if: needs.changes.outputs.code == 'true'
         run: |
           cd server
           AGENTGLASS_PORT=4000 AGENTGLASS_DB=/tmp/smoke.db AGENTGLASS_SCAN_DISABLED=1 bun run src/index.ts &
@@ -127,8 +171,10 @@ jobs:
       # this process serves the terminal's PTY on the same thread as every git
       # call it makes. This is the only step that measures it.
       - name: Perf budget (the event loop stays answerable)
+        if: needs.changes.outputs.code == 'true'
         run: bun scripts/perfbudget.ts
       - name: Server boots
+        if: needs.changes.outputs.code == 'true'
         run: |
           cd server
           AGENTGLASS_PORT=4123 AGENTGLASS_DB=/tmp/ci.db AGENTGLASS_SCAN_DISABLED=1 bun run src/index.ts &
@@ -155,6 +201,8 @@ jobs:
   # Not `fail-fast`: a red Windows must not hide a green macOS, which is the
   # whole reason both are here rather than one.
   platform:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     name: Sidecar (${{ matrix.os }})
     strategy:
       fail-fast: false
@@ -187,6 +235,8 @@ jobs:
   # npm from its own package-lock.json, and nothing above depends on it — so a
   # red phone should not hide a green dashboard or wait behind vite.
   mobile:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     # `mobile/` arrives in a later commit than this workflow does: the phone and
     # the job that tests it were split into separate pull requests, so on the
