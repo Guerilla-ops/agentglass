@@ -1,5 +1,33 @@
 {
   "name": "agentglass plugins",
   "owner": "SirAllap",
-  "plugins": []
+  "plugins": [
+    {
+      "id": "local-review",
+      "title": "Local Review",
+      "publisher": "agentglass",
+      "verified": false,
+      "scope": "read",
+      "draws": [
+        "panel",
+        "pr-button",
+        "pr-notes",
+        "settings"
+      ],
+      "source": {
+        "kind": "git",
+        "url": "https://github.com/SirAllap/agentglass-local-review",
+        "ref": null
+      },
+      "description": "Reviews your pull requests on this machine with the agent and model you choose, inside a sandbox with no writable checkout, no GitHub login and no reach into your home directory. The findings appear inside the pull request in agentglass, marked local, and nothing is ever posted to GitHub. It costs whatever the model costs \u2014 it starts an agent, and the spend caps are yours to set.",
+      "categories": [
+        "review",
+        "pull requests",
+        "sandbox",
+        "claude",
+        "review"
+      ],
+      "added": "2026-09-20"
+    }
+  ]
 }
