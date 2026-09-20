@@ -154,12 +154,35 @@ describe("the sessions this app made itself", () => {
 });
 
 describe("a tmux floating window", () => {
+  const base = { sessionId: "$1", windowId: "@1", windowIndex: "1", windowName: "w",
+    path: "/x", agentCwds: [] as string[], agentSession: null };
+
   test("is not somewhere to go", () => {
-    const base = { sessionId: "$1", windowId: "@1", windowIndex: "1", windowName: "w",
-      path: "/x", agentCwds: [], agentSession: null };
     const tabs = paneTabs([
       { ...base, session: "work", paneId: "%1" },
       { ...base, session: "scratch", sessionId: "$2", paneId: "%2", popup: true },
+    ]);
+    expect(sessionsOf(tabs)).toEqual(["work"]);
+  });
+
+  /*
+   * The scratch is open on the computer right now, and the phone is the only
+   * way to read it. The mark on a popup session is remembered by the panes
+   * route for as long as the server runs, so "is it a popup" cannot answer
+   * this; "is a client on it" can, and it is exact — the popup IS the client.
+   */
+  test("is somewhere to go while it is open on the desk", () => {
+    const tabs = paneTabs([
+      { ...base, session: "work", paneId: "%1", attached: true },
+      { ...base, session: "scratch", sessionId: "$2", paneId: "%2", popup: true, attached: true },
+    ]);
+    expect(sessionsOf(tabs)).toEqual(["scratch", "work"]);
+  });
+
+  test("drops out again once it is dismissed", () => {
+    const tabs = paneTabs([
+      { ...base, session: "work", paneId: "%1", attached: true },
+      { ...base, session: "scratch", sessionId: "$2", paneId: "%2", popup: true, attached: false },
     ]);
     expect(sessionsOf(tabs)).toEqual(["work"]);
   });
@@ -266,7 +289,9 @@ describe("servers that are not ours", () => {
     const tabs = paneTabs([
       { ...base, session: "work", paneId: "%1", own: true },
       { ...base, session: "leftover", sessionId: "$2", paneId: "%2", own: true, attached: false },
-      { ...base, session: "popup", sessionId: "$3", paneId: "%3", own: true, popup: true },
+      // Dismissed, which is what makes a popup droppable — `base` here is
+      // attached, and an OPEN one is a tab now.
+      { ...base, session: "popup", sessionId: "$3", paneId: "%3", own: true, popup: true, attached: false },
       { ...base, session: "agx-phone-%9-abc", sessionId: "$4", paneId: "%4", own: true },
     ]);
     expect(tabs.map((t) => t.session)).toEqual(["work"]);
