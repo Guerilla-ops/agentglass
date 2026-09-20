@@ -3198,28 +3198,21 @@ export function SettingsModal({ open, onClose, sound, onSound, scale, onZoom, on
    * lands where you left it, defaulting to the first page on a fresh install.
    */
   /*
-   * A page per plugin that declares settings, added to the nav at run time.
-   * Listed from the same /plugins read the Plugins page makes, so a plugin
-   * shows here the moment it is installed and goes when it is removed.
+   * NO PAGE PER PLUGIN IN THIS NAV, and that is the fix rather than the gap.
+   *
+   * There was one, added at run time from the same `/plugins` read the Plugins
+   * page makes. Two things were wrong with it and both were reported by
+   * somebody using it: removing a plugin left its page in the sidebar until
+   * Settings was closed and opened again — the list is read once, and nothing
+   * told it the plugin had gone — and a person with a hundred plugins would
+   * have a hundred entries in a nav that has nineteen of its own.
+   *
+   * A plugin's settings now open inside the Plugins page, which is the one
+   * place that already knows what is installed and redraws when that changes.
+   * `openSettings("plugin:<name>")` still works: it lands on Plugins with that
+   * plugin's page open, so every link that pointed at one still points at one.
    */
-  const [pluginTabs, setPluginTabs] = useState<typeof TABS>([]);
-  useEffect(() => {
-    if (!open) return;
-    let live = true;
-    api.plugins().then((r) => {
-      if (!live) return;
-      setPluginTabs(r.plugins.filter((p) => p.contributes?.settings?.length).map((p) => ({
-        id: `plugin:${p.name}` as Pane,
-        label: p.name,
-        group: "Connections" as TabGroup,
-        kw: `plugin ${p.name} ${p.publisher} settings configure options`,
-        what: p.description,
-        icon: PuzzleIcon,
-      })));
-    }).catch(() => { /* the static pages still work */ });
-    return () => { live = false; };
-  }, [open]);
-  const allTabs = useMemo(() => [...TABS, ...pluginTabs], [pluginTabs]);
+  const allTabs = TABS;
   const [pane, setPane] = useState<Pane>(() => {
     try {
       const saved = localStorage.getItem(LAST_PANE_KEY);
@@ -4419,7 +4412,7 @@ export function SettingsModal({ open, onClose, sound, onSound, scale, onZoom, on
 
                   {pane === "remote" && <RemoteAccessPane open={open} />}
                   {pane === "plugins" && <PluginsPane open={open} />}
-                  {pane.startsWith("plugin:") && <PluginSettingsPane key={pane} name={pane.slice("plugin:".length)} open={open} />}
+                  {pane.startsWith("plugin:") && <PluginsPane open={open} focus={pane.slice("plugin:".length)} />}
 
                   {pane === "log" && <ActivityPane open={open} />}
                   {pane === "understudy" && <UnderstudyPane open={open} onLeave={onClose} />}

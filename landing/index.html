@@ -999,21 +999,29 @@ body:not([data-route="home"]) .page{padding-top:calc(118px + var(--safe))}
 .pl-name{font-size:17px;font-weight:650;color:var(--txt);line-height:1.25}
 .pl-by{margin-top:3px;font:12px var(--mono);color:var(--dim)}
 .pl-ok{color:var(--run)}
-.pl-desc{color:var(--dim);font-size:14px;line-height:1.6;flex:1;margin:0}
+.pl-desc{color:var(--dim);font-size:13.5px;line-height:1.6;flex:1;margin:0;
+ display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+.pl-more-desc{align-self:flex-start;margin-top:-4px;padding:0;font:11.5px var(--mono);color:var(--vio);
+ background:none;border:0;cursor:pointer}
+.pl-more-desc:hover{text-decoration:underline}
+.pl-card.open .pl-desc{-webkit-line-clamp:unset;display:block}
 .pl-tags{display:flex;flex-wrap:wrap;gap:6px}
-.pl-tag{font:11px var(--mono);color:var(--dim);border:1px solid var(--line);border-radius:6px;padding:3px 7px}
+.pl-tag{font:11px var(--mono);color:var(--dim2);border:1px solid var(--line);border-radius:999px;padding:3px 9px}
+.pl-tag.t{border-style:dashed}
 .pl-tag.d{color:var(--vio);border-color:rgba(167,139,250,.35)}
 .pl-tag.s{color:var(--run);border-color:rgba(52,211,153,.35)}
 .pl-tag.w{color:var(--wait);border-color:rgba(251,191,36,.35)}
-.pl-inst{display:flex;align-items:center;gap:8px;margin-top:2px;padding:8px 8px 8px 12px;border-radius:10px;
+.pl-inst{display:flex;align-items:center;gap:8px;margin-top:auto;padding:8px;border-radius:12px;
  background:rgba(7,6,13,.55);border:1px solid var(--line)}
 .pl-inst code{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:12px var(--mono);color:var(--txt)}
-.pl-copy{flex:none;font:12px var(--mono);color:var(--void);background:var(--vio);border:0;border-radius:7px;
- padding:6px 10px;cursor:pointer}
-.pl-copy.done{background:var(--run)}
+.pl-copy{flex:none;font:11.5px var(--mono);color:var(--dim);background:transparent;border:1px solid var(--line2);
+ border-radius:8px;padding:6px 10px;cursor:pointer}
+.pl-copy:hover{color:var(--txt);border-color:var(--vio)}
+.pl-copy.done{color:var(--run);border-color:rgba(52,211,153,.5)}
 .pl-links{display:flex;gap:14px;font:12px var(--mono);color:var(--dim2)}
 .pl-links a{color:var(--dim);text-decoration:none}
 .pl-links a:hover{color:var(--txt)}
+.pl-more[hidden]{display:none}
 .pl-more{margin:18px auto 0;display:block;padding:9px 18px;font:12.5px var(--mono);color:var(--dim);background:transparent;border:1px solid var(--line2);border-radius:10px;cursor:pointer}
 .pl-more:hover{color:var(--fg);border-color:var(--vio)}
 .pl-go{padding:5px 12px;font:12px var(--mono);color:var(--bg);background:var(--vio);border:0;border-radius:8px;cursor:pointer;white-space:nowrap}
@@ -1622,13 +1630,27 @@ new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){g.classList.add
   if (p.verified) by.append(el("span", "pl-ok", " · verified"));
   who.append(by);
   top.append(ic, who);
+  /* Chips in one order, and not all of them: what it may do, then where it
+     draws, then what it is about. A card that lists eleven of them reads as a
+     wall and hides the two that decide whether you want it — so the tags are
+     deduplicated and cut, with the count of what was left out. */
   const tags = el("div", "pl-tags");
   const sc = SCOPE[p.scope];
   if (sc) tags.append(el("span", "pl-tag " + sc[1], sc[0]));
-  (p.draws || []).forEach((d) => { if (DRAW[d]) tags.append(el("span", "pl-tag d", DRAW[d])); });
-  (p.categories || []).forEach((t) => tags.append(el("span", "pl-tag", "#" + t)));
+  const draws = (p.draws || []).filter((d) => DRAW[d]);
+  draws.slice(0, 3).forEach((d) => tags.append(el("span", "pl-tag d", DRAW[d])));
+  if (draws.length > 3) tags.append(el("span", "pl-tag d", "+" + (draws.length - 3) + " more"));
+  if (p.minApp) tags.append(el("span", "pl-tag w", "needs " + p.minApp + "+"));
+  const seen = Object.create(null);
+  const cats = (p.categories || []).map(String).filter((t) => {
+   const k = t.trim().toLowerCase();
+   if (!k || seen[k]) return false;
+   seen[k] = 1;
+   return true;
+  });
+  cats.slice(0, 3).forEach((t) => tags.append(el("span", "pl-tag t", "#" + t)));
+  if (cats.length > 3) tags.append(el("span", "pl-tag t", "+" + (cats.length - 3)));
   const url = safe(p.source && p.source.url);
-  if (p.minApp) tags.append(el("span", "pl-tag", "needs " + p.minApp + "+"));
   const inst = el("div", "pl-inst");
   const btn = el("button", "pl-copy", "Copy");
   btn.type = "button";
@@ -1674,7 +1696,20 @@ new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){g.classList.add
   const links = el("div", "pl-links");
   if (url) { const a = el("a", null, "Source ↗"); a.href = url; a.target = "_blank"; a.rel = "noopener"; links.append(a); }
   if (p.added) links.append(el("span", null, "added " + p.added));
-  c.append(top, el("p", "pl-desc", p.description || ""), tags, inst, links);
+  const desc = el("p", "pl-desc", p.description || "");
+  c.append(top, desc);
+  /* Only when there is something to unfold: measured after paint, because the
+     clamp is a CSS one and the answer is whether it actually clipped. */
+  const more = el("button", "pl-more-desc", "Read the rest");
+  more.type = "button";
+  more.hidden = true;
+  more.onclick = () => {
+   c.classList.add("open");
+   more.hidden = true;
+  };
+  c.append(more);
+  requestAnimationFrame(() => { more.hidden = desc.scrollHeight <= desc.clientHeight + 2; });
+  c.append(tags, inst, links);
   return c;
  };
  const PAGE = 24;

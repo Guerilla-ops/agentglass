@@ -9,7 +9,8 @@
 import { PluginMark } from "./plugins/PluginMark.tsx";
 import { emitControl } from "../lib/controlBus.ts";
 import { clearPluginInstall, pluginInstallRequest, subscribePluginInstall } from "../lib/installPlugin.ts";
-import { openSettings } from "../lib/openSettings.ts";
+import { PluginSettingsPane } from "./plugins/PluginSettingsPane.tsx";
+import { ICON } from "../lib/iconSize.ts";
 import { useDialogs } from "./ConfirmDialog.tsx";
 import { useCallback, useEffect, useState, useMemo, useSyncExternalStore } from "react";
 import { Fold, SettingRow, Switch } from "./SettingRow.tsx";
@@ -125,11 +126,21 @@ function AddPluginCard({ onInstalled, open, setOpen, prefill }: {
  *  found later in a catalogue are the same install either way, and an
  *  already-installed entry must read as installed, not as a fresh offer. */
 function isInstalled(entry: Catalogue["plugins"][number], plugins: PublicPlugin[]): boolean {
-  return plugins.some((p) => {
-    if (p.source.kind === "git") return p.source.url === entry.source.url;
-    if (p.source.kind === "marketplace") return p.source.plugin.url === entry.source.url;
+  return !!installedFrom(entry.source.url, plugins);
+}
+
+/** The installed plugin that came from this git URL, if any. A trailing slash
+ *  or a `.git` is the same repository to git and a different string here, so
+ *  they are taken off both sides before comparing — a card that offers to
+ *  install what is already installed is a card that lies. */
+export function installedFrom(url: string, plugins: PublicPlugin[]): PublicPlugin | null {
+  const same = (a: string, b: string) => tidy(a) === tidy(b);
+  const tidy = (u: string) => u.trim().replace(/\.git$/i, "").replace(/\/+$/, "").toLowerCase();
+  return plugins.find((p) => {
+    if (p.source.kind === "git") return same(p.source.url, url);
+    if (p.source.kind === "marketplace") return same(p.source.plugin.url, url);
     return false;
-  });
+  }) ?? null;
 }
 
 /** One entry inside a browsed catalogue, drawn as the same tile a plugin
@@ -455,7 +466,14 @@ function CataloguesSection({ plugins, onInstalled }: { plugins: PublicPlugin[]; 
   );
 }
 
-export function PluginsPane({ open }: { open: boolean }) {
+export function PluginsPane({ open, focus }: {
+  open: boolean;
+  /** One plugin's settings, opened inside this page rather than as a page of
+   *  its own in the nav. A hundred plugins are a hundred entries there, and a
+   *  removed one lingered until Settings was closed — this page already knows
+   *  what is installed and redraws when that changes. */
+  focus?: string;
+}) {
   const [master, setMasterState] = useState<boolean | null>(null);
   const [plugins, setPlugins] = useState<PublicPlugin[]>([]);
   const [busyMaster, setBusyMaster] = useState(false);
@@ -483,20 +501,65 @@ export function PluginsPane({ open }: { open: boolean }) {
      its name — and with a catalogue attached this list is not always short. */
   const [q, setQ] = useState("");
   const [installing, setInstalling] = useState(false);
+  /** Which plugin's own settings are open on top of this page. Kept here, so
+   *  removing that plugin takes its page with it. */
+  const [showing, setShowing] = useState<string | null>(focus ?? null);
+  useEffect(() => { setShowing(focus ?? null); }, [focus]);
   /* "Install this plugin", from the web page. The box opens with the URL in
      it and waits: a link may ask, the person answers. */
   const askedFor = useSyncExternalStore(subscribePluginInstall, pluginInstallRequest, () => null);
   const [prefill, setPrefill] = useState("");
+  /** What a link from the web asked for, once the list has loaded: either
+   *  "here it is, you already have it" or the install box with the URL in it.
+   *  The page cannot know which — it cannot reach this app — so the answer is
+   *  given here, where it is known. */
+  const [already, setAlready] = useState<string | null>(null);
   useEffect(() => {
     if (!askedFor) return;
+    const have = installedFrom(askedFor.url, plugins);
+    clearPluginInstall();
+    if (have) {
+      setAlready(have.name);
+      setInstalling(false);
+      setQ(have.name);
+      return;
+    }
+    setAlready(null);
     setPrefill(askedFor.url);
     setInstalling(true);
-    clearPluginInstall();
-  }, [askedFor]);
+  }, [askedFor, plugins]);
   const ql = q.trim().toLowerCase();
   const shown = ql
     ? plugins.filter((p) => `${p.name} ${p.publisher} ${p.description}`.toLowerCase().includes(ql))
     : plugins;
+
+  /* A plugin removed while its own page is open takes the page with it, which
+     is the bug that started this: a page for something that is gone used to
+     sit in the nav until Settings was closed and opened again. */
+  const here = showing ? plugins.find((p) => p.name === showing) : undefined;
+  useEffect(() => {
+    if (showing && plugins.length && !plugins.some((p) => p.name === showing)) setShowing(null);
+  }, [plugins, showing]);
+
+  if (showing && here) {
+    return (
+      <div className="pb-5">
+        <button onClick={() => setShowing(null)}
+          className="mb-3 inline-flex items-center gap-1.5 text-[12px] hover:opacity-80"
+          style={{ color: "var(--text3)", background: "transparent", border: 0 }}>
+          ← All plugins
+        </button>
+        <div className="flex items-center gap-2.5 mb-3">
+          <PluginMark name={here.name} icon={here.icon} color={here.color} size={ICON.lg} stamp={here.contentHash} />
+          <div className="min-w-0">
+            <div className="text-[14px]" style={{ color: "var(--text)" }}>{here.name}</div>
+            <div className="text-[11.5px] t-dim truncate">by {here.publisher}</div>
+          </div>
+        </div>
+        <PluginSettingsPane key={here.name} name={here.name} open={open} />
+      </div>
+    );
+  }
 
   return (
     <div className="pb-5">
@@ -557,6 +620,14 @@ export function PluginsPane({ open }: { open: boolean }) {
           open on a laptop. 360 is the floor a card of this density needs —
           below it the description wraps to five lines and the footer buttons
           stack, which is the letterbox again. */}
+      {already && (
+        <Alert tone="ok">
+          <span>
+            <b>{already}</b> is already installed — the link you followed asked for this one. It is in the list below;
+            <span className="t-dim"> Update re-clones it at the source it came from.</span>
+          </span>
+        </Alert>
+      )}
       <AddPluginCard onInstalled={load} open={installing} setOpen={setInstalling} prefill={prefill} />
       {plugins.length === 0 ? (
         <div className="rounded-xl px-4 py-5 text-[12px] t-dim" style={{ border: "1px dashed var(--surface-line)" }}>
@@ -564,7 +635,9 @@ export function PluginsPane({ open }: { open: boolean }) {
         </div>
       ) : (
         <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(360px, 1fr))" }}>
-          {shown.map((p) => <PluginCard key={p.name} plugin={p} masterOn={!!master} onChanged={load} />)}
+          {shown.map((p) => (
+            <PluginCard key={p.name} plugin={p} masterOn={!!master} onChanged={load} onSettings={() => setShowing(p.name)} />
+          ))}
         </div>
       )}
       {plugins.length > 0 && shown.length === 0 && (
@@ -579,7 +652,11 @@ export function PluginsPane({ open }: { open: boolean }) {
   );
 }
 
-function PluginCard({ plugin, masterOn, onChanged }: { plugin: PublicPlugin; masterOn: boolean; onChanged: () => void }) {
+function PluginCard({ plugin, masterOn, onChanged, onSettings }: {
+  plugin: PublicPlugin; masterOn: boolean; onChanged: () => void;
+  /** Opens this plugin's own settings inside the Plugins page. */
+  onSettings: () => void;
+}) {
   const [busy, setBusy] = useState(false);
   const [updating, setUpdating] = useState(false);
   const [updateError, setUpdateError] = useState<string | null>(null);
@@ -775,7 +852,7 @@ function PluginCard({ plugin, masterOn, onChanged }: { plugin: PublicPlugin; mas
               </button>
             )}
             {hasSettings && (
-              <button onClick={() => openSettings(`plugin:${plugin.name}`)}
+              <button onClick={onSettings}
                 className="text-[12px] px-2.5 py-1 rounded-lg whitespace-nowrap hover:opacity-80"
                 style={{ color: "var(--text)", border: "1px solid color-mix(in srgb, var(--border) 45%, transparent)" }}>
                 Settings
@@ -802,8 +879,8 @@ function PluginCard({ plugin, masterOn, onChanged }: { plugin: PublicPlugin; mas
   );
 }
 
-function Alert({ tone, children }: { tone: "warning" | "error"; children: React.ReactNode }) {
-  const c = tone === "error" ? "var(--error)" : "var(--warning)";
+function Alert({ tone, children }: { tone: "warning" | "error" | "ok"; children: React.ReactNode }) {
+  const c = tone === "error" ? "var(--error)" : tone === "ok" ? "var(--success)" : "var(--warning)";
   return (
     <div className="mt-1.5 px-3 py-2 rounded-lg text-[12px] leading-relaxed" style={{
       color: "var(--text2)",

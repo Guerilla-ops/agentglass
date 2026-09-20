@@ -97,3 +97,22 @@ describe("a catalogue with a thousand plugins in it", () => {
     expect(shelf).toContain("catalogue.total");
   });
 });
+
+describe("a plugin's own settings", () => {
+  test("live inside the Plugins page, not as a page each in the nav", async () => {
+    /* Two things somebody hit within a minute of each other: removing a plugin
+       left its page in the sidebar until Settings was closed and opened again,
+       because the nav reads the list once; and a person with a hundred plugins
+       would have a hundred entries in a nav that has nineteen of its own. */
+    const modal = await Bun.file(new URL("../../web/src/components/SettingsModal.tsx", import.meta.url)).text();
+    expect(modal, "no run-time pages added to the nav").not.toContain("setPluginTabs");
+    expect(modal).toContain("const allTabs = TABS;");
+    // A link that named one still lands on it.
+    expect(modal).toContain('<PluginsPane open={open} focus={pane.slice("plugin:".length)} />');
+
+    const pane = await Bun.file(new URL("../../web/src/components/PluginsPane.tsx", import.meta.url)).text();
+    expect(pane).toContain("<PluginSettingsPane");
+    // And the page goes when the plugin does, without waiting for a reopen.
+    expect(pane).toContain("!plugins.some((p) => p.name === showing)) setShowing(null)");
+  });
+});

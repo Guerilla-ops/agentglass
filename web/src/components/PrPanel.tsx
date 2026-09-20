@@ -36,6 +36,7 @@ import { flashElement } from "../lib/flash.ts";
 import { shaFromHref } from "../lib/commitLink.ts";
 import { viewHeaderClass, viewHeaderStyle } from "./workspace/ViewHeader.tsx";
 import { ScopeChip } from "./workspace/Chrome.tsx";
+import { CheckoutPicker } from "./CheckoutPicker.tsx";
 import type {
   PrSummary, PrDetail, PrRepoId, PrThread, PrComment, PrReview, PrReviewer, PrCheck, GitRepoRef, FileChange,
   PrReaction, PrAuthorAssociation, PrEvent, PrCommit, PrFile, PrCheckJob, PrLocalHead,
@@ -1761,6 +1762,12 @@ export function PrView({ active, onOpenChatWith, onReviewInTerminal, jumpTo }: {
 
   const [repos, setRepos] = useState<GitRepoRef[]>([]);
   const [root, setRoot] = useState("");
+  /** A project is a remote; its worktrees are the same one. */
+  const projects = useMemo(() => repos.filter((r) => !r.worktreeOf), [repos]);
+  const projectRoot = useMemo(
+    () => repos.find((r) => r.root === root)?.worktreeOf ?? root,
+    [repos, root],
+  );
   const [repo, setRepo] = useState<PrRepoId | null>(null);
   /** The panel opens on what is waiting on you, not on what you wrote — that
    *  is the question a review dashboard exists to answer. If nothing is waiting
@@ -4101,6 +4108,21 @@ export function PrView({ active, onOpenChatWith, onReviewInTerminal, jumpTo }: {
             the pull request list — the page somebody looking at this panel is
             most likely to want, and the one that takes the most clicks to
             reach from a repository landing page. */}
+        {/*
+          * WHICH repository, when the window is not scoped to one.
+          *
+          * The panel reads `repos[0]` for its remote, which is the project
+          * itself while a project is open — and an arbitrary one of a dozen
+          * under "All repos/projects", with nothing on screen to move it. The
+          * list here is PROJECTS, not checkouts: every worktree of a project
+          * shares its remote, so offering them would be a dozen ways to ask
+          * for the same pull requests.
+          */}
+        {projects.length > 1 && (
+          <CheckoutPicker repos={projects} value={projectRoot} onPick={setRoot}
+            placeholder="Pick a repository" triggerMaxWidth={220} branchLabel={null}
+            title="Which repository's pull requests" />
+        )}
         {repo && (
           <span className="flex items-center gap-1.5 min-w-0">
             {/* Two chips rather than two words. Grey text with an arrow after
