@@ -444,6 +444,33 @@
 }
 
 /*
+ * The market's rows.
+ *
+ * A list of things you might take should look like objects, not like a table
+ * of text — the first version was correct and completely flat, which on a
+ * page whose job is "browse these" reads as nothing worth browsing. Three
+ * cheap things fix that and none of them invents a colour: a light on the
+ * group's top edge, a tint under the row the pointer is on, and the plugin's
+ * own tile brightening with it.
+ *
+ * The tile's hue comes from the graph ramp, picked per plugin — eight hues at
+ * one lightness that mean nothing on purpose (see the ramp's own note). A
+ * plugin is not good, broken or careful, so the state colours would be a lie;
+ * what it needs is to be told apart from the one above it.
+ */
+.agx-market {
+  background-image: linear-gradient(180deg, color-mix(in srgb, var(--text) 3.5%, transparent), transparent 120px);
+}
+.agx-market-row { transition: background-color 120ms ease; }
+.agx-market-row:hover { background: color-mix(in srgb, var(--text) 3.5%, transparent); }
+.agx-market-tile { transition: transform 120ms ease, box-shadow 120ms ease; }
+.agx-market-row:hover .agx-market-tile { transform: translateY(-1px); box-shadow: var(--surface-lift); }
+@media (prefers-reduced-motion: reduce) {
+  .agx-market-row, .agx-market-tile { transition: none; }
+  .agx-market-row:hover .agx-market-tile { transform: none; }
+}
+
+/*
  * The Lantern's cards: the same surface with a little light on its top edge,
  * and a lift on hover so a grid of twenty reads as objects, not as boxes
  * drawn on the background. The colour of a card that needs you is set inline
@@ -473,6 +500,18 @@
  * heading: bigger than the rows it governs, which is the only rule a heading
  * has to obey.
  */
+/*
+ * The card's own gutter, for a row a page builds by hand.
+ *
+ * 18px is not a step on the spacing scale and is not meant to be: it is the
+ * measurement of the group heading's left edge, three lines down in this same
+ * file, and a row that sets its own padding to the nearest step starts 2px
+ * off the title it sits under. The number lives here, next to the padding it
+ * has to match, rather than as an arbitrary value repeated at seven call
+ * sites — which is what spacing-scale.test.ts exists to stop.
+ */
+.agx-settings-gutter { padding-left: 18px; padding-right: 18px; }
+
 .agx-settings-head { padding: 16px 18px 14px; }
 .agx-settings-head-t {
   /*

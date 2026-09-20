@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Portal } from "./Portal.tsx";
 
@@ -26,6 +26,10 @@ export type ConfirmSpec = {
   title: string;
   /** Shown under the title, newlines preserved. */
   body?: string;
+  /** Drawn under the body when a sentence is not the right shape for what is
+   *  being agreed to — the plugin consent gate is three blocks of structure,
+   *  not a paragraph, and it is the one dialog in the app that must be read. */
+  node?: ReactNode;
   confirmLabel?: string;
   cancelLabel?: string;
   /** Red confirm button — for anything that destroys work. */
@@ -83,6 +87,7 @@ export function ConfirmDialog({ pending }: { pending: Pending | null }) {
             >
               <div className="px-4 py-3.5">
                 <div className="text-[13px] font-medium" style={{ color: "var(--text)" }}>{pending.title}</div>
+                {pending.node && <div className="mt-2.5">{pending.node}</div>}
                 {pending.body && (
                   <div className="text-[11.5px] mt-2 whitespace-pre-wrap leading-relaxed" style={{ color: "var(--text3)" }}>{pending.body}</div>
                 )}

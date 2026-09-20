@@ -368,10 +368,23 @@ export function FieldRow({ field, value, onChange, onCommit }: {
    *  saves on submit and leaves this out. */
   onCommit?: (v: unknown) => void;
 }) {
+  /*
+   * Label, then the sentence under it — clipped to two lines.
+   *
+   * A settings page where every field carries three lines of prose is a page
+   * of prose with inputs in it: the eye has to read everything to find the
+   * one thing being changed. The whole sentence is still there on hover and
+   * for a screen reader; what is cut is the height it took from the controls.
+   */
   const label = (
     <div className="min-w-0">
       <div className="text-[12px] font-medium" style={{ color: "var(--text)" }}>{field.label}</div>
-      {field.description && <div className="text-[11px] mt-0.5" style={{ color: "var(--text3)" }}>{field.description}</div>}
+      {field.description && (
+        <div className="text-[11px] mt-0.5" title={field.description} style={{
+          color: "var(--text3)",
+          display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden",
+        }}>{field.description}</div>
+      )}
     </div>
   );
   const inputStyle: CSSProperties = { width: "100%" };
@@ -410,7 +423,17 @@ export function FieldRow({ field, value, onChange, onCommit }: {
         onBlur={(e) => onCommit?.(field.type === "list" ? e.target.value.split("\n") : e.target.value)} />
     );
   } else if (field.type === "number") {
-    control = <NumberInput field={field} value={value} onChange={onChange} onCommit={onCommit} style={inputStyle} />;
+    /* A number is short, and a box the width of the page for "10" is what
+       makes a settings page read as a form to fill in rather than a few
+       things to set. It sits beside its label instead. */
+    return (
+      <div className="flex items-center justify-between gap-4 min-w-0">
+        {label}
+        <div className="shrink-0" style={{ width: 128 }}>
+          <NumberInput field={field} value={value} onChange={onChange} onCommit={onCommit} style={inputStyle} />
+        </div>
+      </div>
+    );
   } else {
     control = (
       <input className="agx-input" style={inputStyle} type="text" placeholder={field.placeholder}
@@ -419,10 +442,23 @@ export function FieldRow({ field, value, onChange, onCommit }: {
         onBlur={(e) => onCommit?.(e.target.value)} />
     );
   }
+  /* Short controls sit beside their label; only the ones that need the width
+     — a prompt, a list, a picker with a search box — take the row under it.
+     A select of one word stretched across the page was what made every field
+     look like the same amount of work. */
+  const wide = field.type === "text" || field.type === "list" || field.type === "multi";
+  if (wide) {
+    return (
+      <label className="flex flex-col gap-1.5 min-w-0">
+        {label}
+        {control}
+      </label>
+    );
+  }
   return (
-    <label className="flex flex-col gap-1.5 min-w-0">
+    <label className="flex items-center justify-between gap-4 min-w-0">
       {label}
-      {control}
+      <div className="shrink-0" style={{ width: 260, maxWidth: "46%" }}>{control}</div>
     </label>
   );
 }

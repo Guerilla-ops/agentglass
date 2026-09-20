@@ -159,7 +159,7 @@ def check_fields(fields):
             return f'field "{key}" has an unknown type'
         if not _text(f.get("label"), 120):
             return f'field "{key}" label must be 1-120 characters'
-        for name, limit in (("description", SHORT), ("placeholder", 120)):
+        for name, limit in (("description", SHORT), ("placeholder", 120), ("group", 60)):
             v = f.get(name)
             if v is not None and (not isinstance(v, str) or len(v) > limit):
                 return f'field "{key}" {name} must be at most {limit} characters'

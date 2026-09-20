@@ -176,7 +176,6 @@ import { privateHost, resolvePeer, originOf, guardedFetch, hostsOnly } from "./n
 import { resolveToken, tokenOk, isIntake, isAuthExempt, callerFor, allowed, scopeNeeded, pluginOfRequest, answersFromADevice, understudyRequiresToken, UNDERSTUDY_NO_TOKEN_ERROR, mintUnderstudyToken, revokeUnderstudyToken, type Caller, type Origin } from "./auth.ts";
 import {
   listPlugins, masterEnabled, setMaster, installPlugin, installFromCatalogue, updatePlugin, enablePlugin, disablePlugin, removePlugin,
-  listCatalogues, addCatalogue, removeCatalogue,
   contributesOf, isRunning, pluginSettings, setPluginSettings, resumeEnabledPlugins, stopAllPluginsSync, pluginIcon,
 } from "./plugins.ts";
 import {
@@ -192,7 +191,7 @@ import {
   proposeScope, setProposeScope, quarantinedEver, openProjectNameAllowed,
   judgeEnabled, setJudge, isOpenProjectPath, OPEN_PARTITION, openProjectName, setOpenProject,
   nowhereReason,
-  bankByPartition,
+  bankByPartition, refileBank,
 } from "./understudy.ts";
 import { listSources } from "./understudy-sources.ts";
 /** The last ingest run, so the panel can say what it learned without re-reading
@@ -4654,32 +4653,6 @@ const server = Bun.serve<WsData>({
       return json(r, r.ok ? 200 : 400);
     }
 
-    /**
-     * The catalogues he has added, kept as a plain list of URLs — GET is a
-     * read; adding and removing one are writes at the same level as
-     * installing a plugin, so they go through the same trusted-caller check.
-     * Browsing a catalogue (above) never adds it: that stays a separate,
-     * explicit step, the same distinction viewing a repo has from starring it.
-     */
-    if (pathname === "/plugins/catalogues" && req.method === "GET") {
-      return json({ catalogues: listCatalogues() });
-    }
-    if (pathname === "/plugins/catalogues/add" && req.method === "POST") {
-      if (!trustedCaller(req, from)) return csrfBlocked();
-      let b: { url?: unknown };
-      try { b = (await req.json()) as { url?: unknown }; } catch { return json({ ok: false, error: "invalid json" }, 400); }
-      if (typeof b.url !== "string" || !b.url.trim()) return json({ ok: false, error: "url is required" }, 400);
-      const r = addCatalogue(b.url);
-      return json(r, r.ok ? 200 : 400);
-    }
-    if (pathname === "/plugins/catalogues/remove" && req.method === "POST") {
-      if (!trustedCaller(req, from)) return csrfBlocked();
-      let b: { url?: unknown };
-      try { b = (await req.json()) as { url?: unknown }; } catch { return json({ ok: false, error: "invalid json" }, 400); }
-      if (typeof b.url !== "string" || !b.url.trim()) return json({ ok: false, error: "url is required" }, 400);
-      return json({ ok: removeCatalogue(b.url) });
-    }
-
     if (pathname === "/plugins/install-from-catalogue" && req.method === "POST") {
       if (!trustedCaller(req, from)) return csrfBlocked();
       let b: { catalogueUrl?: unknown; pluginId?: unknown };
@@ -8216,6 +8189,19 @@ function repairThemeArtifacts() {
   }
 }
 repairThemeArtifacts();
+
+/*
+ * The precedent bank, re-filed after C4/C9/C10 changed shape.
+ *
+ * At boot rather than on demand: retrieval asks for a class by name, and a
+ * bank half in the old drawers and half in the new answers differently
+ * depending on when a row was banked. Once per database — the call is a no-op
+ * on the second boot.
+ */
+{
+  const moved = refileBank("c4-c9-c10-disjoint", ["C4", "C9", "C10"]);
+  if (moved) console.log(`[understudy] re-filed ${moved} precedent(s) into the classes that now claim them`);
+}
 
 // Retention: prune at boot and hourly so the DB stays lean but the 7d window
 // always has full history (see AGENTGLASS_RETENTION_DAYS in db.ts).

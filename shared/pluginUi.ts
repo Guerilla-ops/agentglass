@@ -83,6 +83,12 @@ export interface Field {
   key: string;
   type: FieldType;
   label: string;
+  /** Which heading this field sits under on the settings page. Fields with
+   *  no group come first, under no heading; the rest keep the order they were
+   *  declared in. Thirteen fields in one column is a wall nobody wants to
+   *  configure, and only the plugin knows which of them belong together. A
+   *  group called "Advanced" starts folded. */
+  group?: string;
   description?: string;
   placeholder?: string;
   default?: unknown;
@@ -226,6 +232,9 @@ export function validateField(raw: unknown, w: Walk): Field | null {
   const placeholder = str(f.placeholder, 120, w, `field "${key}" placeholder`, true);
   if (placeholder === null) return null;
   if (placeholder) out.placeholder = placeholder;
+  const group = str(f.group, 60, w, `field "${key}" group`, true);
+  if (group === null) return null;
+  if (group) out.group = group;
   if (Array.isArray(f.options)) {
     out.options = [];
     for (const o of f.options.slice(0, UI_LIMITS.options)) {

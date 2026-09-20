@@ -1150,6 +1150,25 @@ CREATE TABLE IF NOT EXISTS understudy_quarantine (
  * genuinely painful to add afterwards — it is what makes a re-ingest idempotent
  * rather than a second copy of everything.
  */
+/*
+ * Which one-off re-filings of the bank this database has already been through.
+ *
+ * classify() decides a precedent's class when it is banked, so changing a
+ * class's words leaves every row already in the drawer filed by the old ones.
+ * The walk that moves them has to happen once per database and never again,
+ * and this file has no migration system — so the marker IS the version, the
+ * same way every CREATE TABLE here is.
+ *
+ * Declared here rather than made on demand by the code that writes it: a table
+ * created at the moment somebody reaches for a module is a table a fresh
+ * database has only sometimes, which is the defect understudy_asked and
+ * understudy_help already taught this file once.
+ */
+CREATE TABLE IF NOT EXISTS understudy_refiled (
+  tag TEXT PRIMARY KEY,
+  at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS understudy_precedents (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   class TEXT NOT NULL,

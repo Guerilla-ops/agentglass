@@ -9,7 +9,7 @@ import { seedWorktree, type SeedReport } from "./worktreeseed.ts";
 import { statSync, readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync, rmSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { git, gitAsync, safeAbs, repoRootOfAsync, currentBranch } from "./git.ts";
-import { configuredRepoDirs, workspaceRoot, inScope } from "./config.ts";
+import { configuredRepoDirs, workspaceRoot, inScope, hiddenProjects } from "./config.ts";
 import { worktreeParent, gitDir } from "./worktree.ts";
 import { observe, noteResolved, noteReopened, stopFor, forget } from "./mergesession.ts";
 import { entered, backoff } from "./loopwatch.ts";
@@ -523,9 +523,29 @@ export function invalidateRepos(root?: string): void {
 }
 
 export async function discoverRepos(paths: string[], knownRoots: string[] = [], opts: { ignoreScope?: boolean } = {}): Promise<GitRepoRef[]> {
+  /*
+   * A project removed from the list is removed from every list but the picker's.
+   *
+   * Hiding used to stop at the picker, which read as a button that did nothing:
+   * the three removed projects were gone from "Open a project" and still there
+   * in the unscoped Diff view, in the checkout dropdown of pull requests, and
+   * in every other panel that asks this function who is on the machine. The
+   * sweep still finds them — that is deliberate, and why the path is remembered
+   * rather than the folder touched — so the removal is applied here, at the one
+   * place all of those panels come through.
+   *
+   * The picker (`ignoreScope`) is the exception, because it is the only surface
+   * that can put one back, and a list it cannot see is a list it cannot restore
+   * from. The open project is the other: whoever scoped the cockpit to a folder
+   * asked for it by name, and answering with nothing would be a blank app.
+   */
+  const hide = opts.ignoreScope ? [] : hiddenProjects();
   // The workspace is part of the key: switching projects at runtime must not
-  // serve the old scope's answer for the next five seconds.
-  const key = [opts.ignoreScope ? "*" : workspaceRoot() ?? "", ...knownRoots].join("\\0");
+  // serve the old scope's answer for the next five seconds. So is the hidden
+  // set — removing a project has to show up before the cache expires.
+  // `\\1` between the two lists, so a removed project and a known root cannot
+  // add up to the key of a different pair.
+  const key = [opts.ignoreScope ? "*" : workspaceRoot() ?? "", ...hide, "\\1", ...knownRoots].join("\\0");
   const hit = repoCache.get(key);
   // Held longer while a shell is in use or the loop is stalling: this sweep is
   // eighteen `git status` calls on a worktree-heavy repo, and none of them is
@@ -570,8 +590,9 @@ export async function discoverRepos(paths: string[], knownRoots: string[] = [], 
     // and is subsumed by it — staging a file touches the index.
     scoped.sort((a, b) =>
       Number(!!a.worktreeOf) - Number(!!b.worktreeOf) || b.touchedAt - a.touchedAt || a.name.localeCompare(b.name));
-    repoCache.set(key, { at: Date.now(), repos: scoped });
-    return scoped;
+    const kept = notHidden(scoped, hide, self ?? only1);
+    repoCache.set(key, { at: Date.now(), repos: kept });
+    return kept;
   }
 
   // "Whole machine" does not mean "walk the machine". agentglass discovers
@@ -663,7 +684,7 @@ export async function discoverRepos(paths: string[], knownRoots: string[] = [], 
   // selected repo via workingTree().
   const out = (await Promise.all([...roots].map((r) => repoRef(r)))).filter((r): r is GitRepoRef => !!r);
   for (const r of out) { const n = folded.get(r.root); if (n) r.worktrees = n; }
-  const scoped = only.length ? within(out, only) : out;
+  const scoped = notHidden(only.length ? within(out, only) : out, hide);
   // Families stay together, most recently worked-in family first, the project
   // ahead of its own worktrees. Sorting the flat list alone scatters a repo's
   // checkouts through the dropdown, so `orbit` and `orbit-WEB-1042` end up
@@ -694,6 +715,15 @@ export async function discoverRepos(paths: string[], knownRoots: string[] = [], 
   });
   repoCache.set(key, { at: Date.now(), repos: scoped });
   return scoped;
+}
+
+/** Drop the projects the picker was told to forget, and their worktrees with
+ *  them — a checkout of a removed project is the removed project. `keep` is the
+ *  open project, which is never dropped however it is listed. */
+function notHidden(repos: GitRepoRef[], hide: string[], keep?: string | null): GitRepoRef[] {
+  if (!hide.length) return repos;
+  const gone = new Set(hide);
+  return repos.filter((r) => r.root === keep || (!gone.has(r.root) && !(r.worktreeOf && gone.has(r.worktreeOf))));
 }
 
 /** Keep only repos inside one of `dirs`. */

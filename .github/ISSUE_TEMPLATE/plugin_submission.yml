@@ -65,6 +65,12 @@ body:
           required: true
         - label: It has a README that says what it does and a licence file.
           required: true
+        - label: "Optional: a `preview.png` at the root — a wide screenshot of it working, which is what the catalogue card shows."
+          required: false
+        - label: "It writes nothing outside its own folder — not your shell, not an agent's settings, not what starts at boot — and its README says which folder that is."
+          required: true
+        - label: "Everything it runs is in this repository as source. No compiled file committed in, and nothing fetched at install or run time from a branch or tag that can move — a commit, or vendored."
+          required: true
         - label: It asks for the smallest scope it can do its job with.
           required: true
         - label: It says in its README what leaves the machine — a model, an API, a server of yours — and what does not.

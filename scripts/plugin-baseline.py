@@ -39,12 +39,55 @@ PATTERNS = [
      "downloads something and runs it as a shell script"),
     ("escalates", r"\b(sudo|pkexec|doas)\b",
      "asks for root"),
-    ("writes-outside-itself", r"\b(rm\s+-rf\s+[~/]|>\s*~/\.(bashrc|zshrc|profile|config/(?!agentglass)))",
+    ("writes-outside-itself", r"\b(rm\s+-rf\s+[~/]|>\s*~/\.(bashrc|zshrc|profile|config/))",
      "writes or deletes outside its own folder"),
+    # agentglass's own config directory used to be exempt here. It is the one
+    # that should have been flagged hardest: it holds the machine token, the
+    # blocklist that refuses a plugin by name, and every other plugin's copy
+    # on disk. A plugin has nothing to write there — the app hands it its own
+    # settings through `/plugin/self/settings`.
+    ("edits-your-configuration",
+     # The directory alone, not directory-and-file: a path in Python is built
+     # a component at a time (`Path.home() / ".claude" / "settings.json"`),
+     # so a pattern that wants `.claude/settings` contiguous matches the shell
+     # form and misses the one that actually ships. A plugin has no business
+     # naming these at all, so naming one is the finding.
+     r"['\"/]\.(claude|codex|cursor|gemini)\b"
+     r"|['\"/]\.config/(agentglass|fish|systemd|autostart|environment\.d)"
+     r"|\.(bashrc|zshrc|profile|bash_profile|gitconfig)\b"
+     r"|\bcrontab\s+-|\bgit\s+config\s+--global|\bsystemctl\s+--user\s+(enable|link)",
+     "reaches into configuration that is the person's, not its own — an agent's settings, "
+     "the shell, the login session or what starts at boot"),
     ("runs-generated-code", r"\b(eval|exec)\s*\(\s*(base64|atob|codecs|bytes\.fromhex)",
      "decodes something and runs it"),
-    ("hardcoded-endpoint", r"https?://(?!(localhost|127\.0\.0\.1|\[::1\]|github\.com|api\.github\.com|raw\.githubusercontent\.com|api\.anthropic\.com|docs\.|plugins\.omarchy\.org))[a-z0-9.-]+\.[a-z]{2,}",
+    # The allowlist ENDS the host, except for `docs.` which is a prefix on
+    # purpose. Without that boundary the lookahead only had to match the start
+    # of the host, so `github.com.example.net` — a host the attacker owns,
+    # reading as GitHub to anybody skimming — passed the check that exists to
+    # catch exactly that.
+    ("hardcoded-endpoint", r"https?://(?!(?:(?:localhost|127\.0\.0\.1|\[::1\]|github\.com|api\.github\.com|raw\.githubusercontent\.com|api\.anthropic\.com|anthropic\.com|plugins\.omarchy\.org)(?![a-z0-9.-])|docs\.))[a-z0-9.-]+\.[a-z]{2,}",
      "talks to a host that is not GitHub, the model's API or this machine"),
+    # Three classes an agentglass plugin can carry as easily as any other
+    # package, and that ten regexes about shell commands cannot see. Taken
+    # from a larger marketplace's scanner after reading it side by side with
+    # this one — not its 1,470 lines, the three rules of its that apply here.
+    ("fetches-code-that-can-move",
+     # A ref that is not a commit is a ref somebody else can rewrite between
+     # the review and the install: the thing audited is not the thing run.
+     r"\bgit\s+clone\b(?![^\n]*--branch\s+[0-9a-f]{40})[^\n]*\|\s*(?:bash|sh)\b"
+     # Tempered: the whole token has to lack an `@<40 hex>`, and a plain
+     # negative lookahead after a greedy run only has to fail in one place.
+     r"|\b(?:pip|pipx|uv pip)\s+install\s+(?:-e\s+)?git\+(?:(?!@[0-9a-f]{40}\b)\S)+(?=\s|$)"
+     r"|\bcargo\s+install\s+--git\b(?![^\n]*--rev\s+[0-9a-f]{7,})"
+     r"|\bnpm\s+(?:i|install)\s+\S*github:(?:(?!#[0-9a-f]{40}\b)\S)+(?=\s|$)",
+     "fetches code at install or run time from a reference that can move"),
+    ("installs-a-service",
+     # A plugin that writes a unit or a login item starts without anybody
+     # switching it on, which is the opposite of what enabling a plugin means
+     # here.
+     r"\bsystemctl\s+--user\b|\bsystemd-run\b|\.config/systemd/user\b"
+     r"|\bcrontab\s+-|\bLaunchAgents\b|\blaunchctl\s+(?:load|bootstrap)\b",
+     "installs something that starts on its own, outside this app"),
     ("kills-by-pattern", r"\bpkill\s+-f\b|\bkillall\b",
      "kills processes by name, which can hit the person's own"),
 ]
@@ -53,7 +96,18 @@ PATTERNS = [
 # what installing costs.
 CAPABILITIES = [
     ("spends-money", r"\b(anthropic|openai|api[_-]?key|usd|cost_usd)\b", "may spend money on a model"),
-    ("runs-an-agent", r"\b(claude|codex|cursor-agent|gemini)\b\s|\bsubprocess\b", "starts an agent or another process"),
+    # An agent NAMED is not an agent STARTED. The bare word followed by a
+    # space matched every line of prose that says "Claude" — and a plugin for
+    # this app says it in its README, in its manifest and in every file it
+    # ships for an agent to read. Reported on a plugin that makes HTTP calls
+    # and starts nothing: a costs list that overstates is one a reader learns
+    # to skip, which is worse than not having one. So: the ways a process is
+    # actually started, and an agent's name only where it reads as a command —
+    # at the start of one, carrying a flag or a subcommand.
+    ("runs-an-agent",
+     r"\b(subprocess|Popen|os\.system|child_process|execFile|spawnSync?|execSync)\b"
+     r"|(?:^|[;&|(`\"'\s])(claude|codex|cursor-agent|gemini)\s+(?:-{1,2}[A-Za-z]|mcp\b|chat\b|run\b|exec\b)",
+     "starts an agent or another process"),
     ("keeps-state", r"\.local/share/|state\.json|\.cache/", "keeps files of its own between runs"),
     ("uses-a-sandbox", r"\bbwrap\b|\bfirejail\b|--unshare", "runs what it starts inside a sandbox"),
 ]
@@ -109,8 +163,52 @@ def quotable(line):
             .replace("-->", "-- >"))
 
 
+# The first bytes of a compiled thing. A repository somebody is asked to read
+# before installing can carry one of these, and no amount of reading its source
+# says anything about what is in it.
+MAGIC = [
+    (b"\x7fELF", "a Linux executable"),
+    (b"MZ", "a Windows executable"),
+    (b"\xca\xfe\xba\xbe", "a macOS executable"),
+    (b"\xcf\xfa\xed\xfe", "a macOS executable"),
+    (b"\xce\xfa\xed\xfe", "a macOS executable"),
+    (b"\x50\x4b\x03\x04", "an archive"),
+]
+
+
+def binaries(root):
+    """Compiled files committed into the repository.
+
+    Walked separately from `files()`, which reads text and only text: a binary
+    has no line to quote and no pattern to match, and it is the one thing in a
+    submission that cannot be reviewed by reading it at all.
+    """
+    real_root = os.path.realpath(root)
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and not os.path.islink(os.path.join(dirpath, d))]
+        for name in filenames:
+            path = os.path.join(dirpath, name)
+            real = os.path.realpath(path)
+            if not real.startswith(real_root + os.sep) or os.path.islink(path):
+                continue
+            try:
+                if os.path.getsize(path) < 4:
+                    continue
+                with open(path, "rb") as f:
+                    head = f.read(4)
+            except OSError:
+                continue
+            for magic, what in MAGIC:
+                if head.startswith(magic):
+                    yield os.path.relpath(path, root), what
+                    break
+
+
 def scan(root):
     findings, capabilities = [], {}
+    for rel, what in binaries(root):
+        findings.append({"id": "bundled-binary", "says": f"ships {what} nobody can read",
+                         "where": rel, "line": quotable(f"{os.path.basename(rel)} is not source")})
     for path in files(root):
         try:
             text = open(path, encoding="utf-8", errors="replace").read()

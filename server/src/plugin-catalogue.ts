@@ -29,6 +29,10 @@ export interface CataloguePlugin {
    *  can say "needs 0.18+" before anybody presses anything. The install
    *  checks the manifest itself; this is only the warning. */
   minApp?: string;
+  /** A picture of the plugin, as an https URL — a card that shows what a
+   *  thing looks like is read before one that describes it. Drawn by the
+   *  website only: the app never fetches a stranger's image. */
+  preview?: string;
 }
 
 export interface Catalogue {
@@ -78,6 +82,7 @@ function validateCataloguePlugin(raw: unknown): CataloguePlugin | null {
     ...(draws?.length ? { draws } : {}),
     ...(short(p.added, 40) ? { added: short(p.added, 40) } : {}),
     ...(typeof p.minApp === "string" && /^\d{1,4}(\.\d{1,4}){0,2}$/.test(p.minApp) ? { minApp: p.minApp } : {}),
+    ...(typeof p.preview === "string" && /^https:\/\/[^\s"'<>]{4,512}$/.test(p.preview) ? { preview: p.preview } : {}),
   };
 }
 

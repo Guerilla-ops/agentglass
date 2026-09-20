@@ -10,6 +10,8 @@ import { PluginMark } from "./plugins/PluginMark.tsx";
 import { emitControl } from "../lib/controlBus.ts";
 import { clearPluginInstall, pluginInstallRequest, subscribePluginInstall } from "../lib/installPlugin.ts";
 import { PluginSettingsPane } from "./plugins/PluginSettingsPane.tsx";
+import { Market } from "./plugins/Market.tsx";
+import { PluginDeclaration } from "./plugins/PluginDeclaration.tsx";
 import { ICON } from "../lib/iconSize.ts";
 import { useDialogs } from "./ConfirmDialog.tsx";
 import { useCallback, useEffect, useState, useMemo, useSyncExternalStore } from "react";
@@ -17,11 +19,11 @@ import { Fold, SettingRow, Switch } from "./SettingRow.tsx";
 import { api } from "../lib/api.ts";
 import { fmtAgo } from "../lib/format.ts";
 import { usePoll } from "../lib/usePoll.ts";
-import type { Catalogue, DeviceScope, InstallSource, PublicPlugin } from "../../../shared/types.ts";
+import type { DeviceScope, InstallSource, PublicPlugin } from "../../../shared/types.ts";
 
 /** The one-line "From …" a reviewer reads — a local path plainly, a git
- *  source with its ref if one was pinned, a marketplace install naming the
- *  catalogue it came from. */
+ *  source with its ref if one was pinned, a market install naming the list
+ *  it came from. */
 function formatSource(source: InstallSource): string {
   if (source.kind === "local-path") return source.path;
   if (source.kind === "git") return source.ref ? `${source.url}@${source.ref}` : source.url;
@@ -41,11 +43,6 @@ function formatSource(source: InstallSource): string {
  * yourself work. Say that here, once, so nobody approves it thinking it
  * only sees a list of pull requests.
  */
-const SCOPE_SENTENCE: Record<DeviceScope, string> = {
-  read: "Sees everything this app can read: every session's live output as it streams — the same prompts and replies you watch on screen — plus costs, diffs and pull requests. Cannot approve a gate, send a reply, or write anything.",
-  answer: "Everything read gets, plus approving gates and replying to a session that is already running.",
-  full: "Everything this machine can do: a terminal, git write access, docker control, merging pull requests.",
-};
 const SCOPE_WORD: Record<DeviceScope, string> = { read: "Read", answer: "Answer", full: "Full" };
 
 /** The house card shape (see TriageBoard.tsx's `CardView`, SkillsModal.tsx's
@@ -69,7 +66,8 @@ const CARD_STYLE: React.CSSProperties = {
  */
 function AddPluginCard({ onInstalled, open, setOpen, prefill }: {
   onInstalled: () => void; open: boolean; setOpen: (v: boolean) => void;
-  /** Put there by a link from the catalogue's page — see lib/installPlugin.ts.
+  /** Put there by a link from the plugin's page on the site — see
+   *  lib/installPlugin.ts.
    *  It fills the box and nothing else: the press is still the person's. */
   prefill?: string;
 }) {
@@ -120,15 +118,6 @@ function AddPluginCard({ onInstalled, open, setOpen, prefill }: {
   );
 }
 
-/** Is this catalogue entry already on disk — installed from this exact
- *  catalogue entry, or from its git source directly. Matched on the git
- *  source, not the catalogue's own `id`: a plugin pasted in by URL and one
- *  found later in a catalogue are the same install either way, and an
- *  already-installed entry must read as installed, not as a fresh offer. */
-function isInstalled(entry: Catalogue["plugins"][number], plugins: PublicPlugin[]): boolean {
-  return !!installedFrom(entry.source.url, plugins);
-}
-
 /** The installed plugin that came from this git URL, if any. A trailing slash
  *  or a `.git` is the same repository to git and a different string here, so
  *  they are taken off both sides before comparing — a card that offers to
@@ -141,329 +130,6 @@ export function installedFrom(url: string, plugins: PublicPlugin[]): PublicPlugi
     if (p.source.kind === "marketplace") return same(p.source.plugin.url, url);
     return false;
   }) ?? null;
-}
-
-/** One entry inside a browsed catalogue, drawn as the same tile a plugin
- *  card is — this is a thing on the shelf too, just not taken yet. The
- *  border is the dashed one `AddPluginCard` uses for its own closed state:
- *  a plugin already installed is claimed (solid), one still in the
- *  catalogue is offered (dashed) — the two states of one shelf, not a card
- *  next to a row. Installing runs the same review-then-enable path as any
- *  other install — installFromCatalogue on the server still only copies a
- *  folder and reads its manifest. */
-/** The manifest's own words for where a plugin draws, in the catalogue's
- *  shorthand. A card says what installing gets you before it is installed. */
-const DRAWS_WORD: Record<string, string> = {
-  panel: "adds a panel", panels: "adds a panel",
-  settings: "settings page",
-  "pr-notes": "notes in pull requests", prNotes: "notes in pull requests",
-  "pr-button": "a button in pull requests", prActions: "a button in pull requests",
-};
-
-function CatalogueEntryRow({
-  entry, owner, catalogueUrl, installed, onInstalled,
-}: { entry: Catalogue["plugins"][number]; owner: string; catalogueUrl: string; installed: boolean; onInstalled: () => void }) {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const install = async () => {
-    setBusy(true);
-    setError(null);
-    const r = await api.pluginInstallFromCatalogue(catalogueUrl, entry.id);
-    setBusy(false);
-    if (r.ok) onInstalled();
-    else setError(r.error);
-  };
-
-  return (
-    <div className="rounded-xl p-3 flex flex-col" style={installed ? CARD_STYLE : {
-      border: "1px dashed color-mix(in srgb, var(--border) 55%, transparent)",
-      background: "transparent",
-    }}>
-      <div className="flex items-start gap-2.5">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-baseline gap-2 flex-wrap">
-            <span className="text-[13.5px]" style={{ color: "var(--text)" }}>{entry.title || entry.id}</span>
-            <span className="text-[11.5px] t-dim">by {entry.publisher || owner}</span>
-          </div>
-          <div className="flex items-center gap-1 flex-wrap mt-1">
-            {(entry.draws ?? []).map((d) => (
-              <span key={`d-${d}`} className="chip text-[9.5px]" style={{
-                color: "var(--primary)",
-                background: "color-mix(in srgb, var(--primary) 12%, transparent)",
-                borderColor: "color-mix(in srgb, var(--primary) 30%, transparent)",
-              }}>{DRAWS_WORD[d] ?? d}</span>
-            ))}
-            {entry.categories.map((c) => (
-              <span key={c} className="chip text-[9.5px]" style={{
-                color: "var(--text3)",
-                background: "color-mix(in srgb, var(--border) 16%, transparent)",
-                borderColor: "color-mix(in srgb, var(--border) 40%, transparent)",
-              }}>{c}</span>
-            ))}
-          </div>
-        </div>
-      </div>
-      <div className="text-[12px] mt-1.5" style={{ color: "var(--text2)" }}>{entry.description}</div>
-      {error && <Alert tone="error">{error}</Alert>}
-      <div className="mt-auto pt-2.5 flex items-center justify-end">
-        {installed ? (
-          <span className="text-[11px] t-dim">On the shelf</span>
-        ) : (
-          <button onClick={install} disabled={busy}
-            className="text-[12px] px-2.5 py-1 rounded-lg whitespace-nowrap hover:opacity-80 disabled:opacity-50 font-medium"
-            style={{ color: "var(--bg)", background: "var(--primary)" }}>
-            {busy ? "Installing…" : "Install"}
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/**
- * The plugins in one catalogue, searched and read a page at a time.
- *
- * A catalogue is a list somebody else keeps, and it grows. Drawing all of it
- * was fine at one entry and is a thousand cards at a thousand — every one of
- * them a card with its own state, laid out on the thread the settings page
- * is scrolling on. So: a box that narrows it, and a page of two dozen.
- *
- * The filter is done here rather than asked of the server, because the whole
- * document is already in hand — it arrived in one fetch, which is what a
- * catalogue IS. The ceiling that matters is upstream: the server keeps the
- * first five hundred entries of a document and says how many it held, so a
- * catalogue past that says so rather than quietly becoming shorter.
- */
-const PAGE = 24;
-
-function CatalogueShelf({
-  catalogue, url, plugins, onInstalled,
-}: { catalogue: Catalogue; url: string; plugins: PublicPlugin[]; onInstalled: () => void }) {
-  const [q, setQ] = useState("");
-  const [page, setPage] = useState(0);
-  const found = useMemo(() => {
-    const needle = q.trim().toLowerCase();
-    if (!needle) return catalogue.plugins;
-    return catalogue.plugins.filter((e) => [e.id, e.title, e.publisher, e.description, ...(e.categories ?? [])]
-      .some((f) => (f ?? "").toLowerCase().includes(needle)));
-  }, [catalogue.plugins, q]);
-  const pages = Math.max(1, Math.ceil(found.length / PAGE));
-  const here = Math.min(page, pages - 1);
-  const shown = found.slice(here * PAGE, here * PAGE + PAGE);
-  const held = catalogue.total > catalogue.plugins.length;
-
-  return (
-    <div className="mt-2">
-      <div className="flex items-center gap-2 flex-wrap">
-        <input value={q} onChange={(e) => { setQ(e.target.value); setPage(0); }}
-          placeholder={`Search ${catalogue.plugins.length} plugins`} spellCheck={false}
-          className="agx-input text-[12px] px-2 py-1 rounded-lg min-w-[180px] flex-1" />
-        <span className="text-[11px] t-dim whitespace-nowrap">
-          {found.length === catalogue.plugins.length
-            ? `${catalogue.plugins.length} listed`
-            : `${found.length} of ${catalogue.plugins.length}`}
-          {held ? ` · the document lists ${catalogue.total}` : ""}
-        </span>
-      </div>
-      {found.length === 0 ? (
-        <div className="py-3 text-[11.5px] t-dim">Nothing in this catalogue matches “{q}”.</div>
-      ) : (
-        <div className="grid gap-3 mt-2" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))" }}>
-          {shown.map((entry) => (
-            <CatalogueEntryRow key={entry.id} entry={entry} owner={catalogue.owner} catalogueUrl={url}
-              installed={isInstalled(entry, plugins)} onInstalled={onInstalled} />
-          ))}
-        </div>
-      )}
-      {pages > 1 && (
-        <div className="flex items-center justify-center gap-2 mt-3 text-[11.5px]">
-          <button onClick={() => setPage(here - 1)} disabled={here === 0}
-            className="px-2 py-0.5 rounded-lg disabled:opacity-40 hover:opacity-80"
-            style={{ color: "var(--text2)", border: "1px solid var(--surface-line)" }}>Previous</button>
-          <span className="t-dim tabular-nums">{here + 1} of {pages}</span>
-          <button onClick={() => setPage(here + 1)} disabled={here >= pages - 1}
-            className="px-2 py-0.5 rounded-lg disabled:opacity-40 hover:opacity-80"
-            style={{ color: "var(--text2)", border: "1px solid var(--surface-line)" }}>Next</button>
-        </div>
-      )}
-      {held && (
-        <div className="mt-2 text-[11px] t-dim">
-          This catalogue lists {catalogue.total} plugins and {catalogue.plugins.length} of them were read. A list this
-          long is one the catalogue should publish in pages.
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** One catalogue he has added: collapsed by default, fetched fresh (never
- *  cached) the moment it is opened — a catalogue is a stranger's document,
- *  not a registry, so there is nothing here worth trusting between reads.
- *  Unreachable or malformed reads as exactly that, not as an empty list. */
-function CatalogueRow({
-  url, plugins, onInstalled, onRemoved,
-}: { url: string; plugins: PublicPlugin[]; onInstalled: () => void; onRemoved: () => void }) {
-  const [openState, setOpenState] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<{ ok: true; catalogue: Catalogue } | { ok: false; error: string } | null>(null);
-
-  const toggle = async () => {
-    const next = !openState;
-    setOpenState(next);
-    if (next && !result) {
-      setLoading(true);
-      const r = await api.pluginCatalogueFetch(url);
-      setLoading(false);
-      setResult(r);
-    }
-  };
-
-  const refetch = async () => {
-    const r = await api.pluginCatalogueFetch(url);
-    setResult(r);
-    onInstalled();
-  };
-
-  return (
-    <div className="py-3">
-      <div className="flex items-center gap-2.5">
-        <button onClick={toggle} className="min-w-0 flex-1 flex items-baseline gap-2 text-left hover:opacity-80">
-          <span className="t-mono text-[12.5px] truncate" style={{ color: "var(--text)" }}>{url}</span>
-          {result?.ok && <span className="text-[11px] t-dim shrink-0">{result.catalogue.plugins.length} plugins</span>}
-        </button>
-        <button onClick={onRemoved}
-          className="text-[11px] px-2 py-0.5 rounded-lg whitespace-nowrap hover:opacity-80 shrink-0"
-          style={{ color: "var(--error)", border: "1px solid color-mix(in srgb, var(--error) 30%, transparent)" }}>
-          Remove
-        </button>
-      </div>
-      {openState && (
-        loading ? (
-          <div className="py-2 text-[11.5px] t-dim">Fetching…</div>
-        ) : result && !result.ok ? (
-          <Alert tone="error">Catalogue unreachable: {result.error}</Alert>
-        ) : result?.ok ? (
-          result.catalogue.plugins.length === 0 ? (
-            <div className="py-2 text-[11.5px] t-dim">This catalogue lists no plugins.</div>
-          ) : (
-            <CatalogueShelf catalogue={result.catalogue} url={url} plugins={plugins} onInstalled={refetch} />
-          )
-        ) : null
-      )}
-    </div>
-  );
-}
-
-/** Add a catalogue by URL and keep the ones already added — a catalogue is
- *  somebody else's list; he collects the ones he trusts, the way he
- *  collects anything else. Adding never installs anything on its own. */
-/** The list this project publishes on its own site, the same file its plugins
- *  page is drawn from. Offered, never added on its own: fetching somebody's
- *  list is a request to their host, and that stays a choice. */
-const PROJECT_CATALOGUE = "https://sirallap.github.io/agentglass/plugins.json";
-
-function CataloguesSection({ plugins, onInstalled }: { plugins: PublicPlugin[]; onInstalled: () => void }) {
-  const [catalogues, setCatalogues] = useState<string[]>([]);
-  const [open, setOpen] = useState(false);
-  const [url, setUrl] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(() => {
-    api.pluginCatalogues().then((r) => setCatalogues(r.catalogues)).catch(() => { /* left as last known */ });
-  }, []);
-
-  useEffect(() => { load(); }, [load]);
-
-  const add = async () => {
-    if (!url.trim() || busy) return;
-    setBusy(true);
-    setError(null);
-    const r = await api.pluginCatalogueAdd(url.trim());
-    setBusy(false);
-    if (r.ok) { setUrl(""); setOpen(false); load(); }
-    else setError(r.error ?? "Could not add that catalogue");
-  };
-
-  const remove = async (u: string) => {
-    await api.pluginCatalogueRemove(u);
-    load();
-  };
-
-  const addProject = async () => {
-    setBusy(true);
-    setError(null);
-    const r = await api.pluginCatalogueAdd(PROJECT_CATALOGUE);
-    setBusy(false);
-    if (r.ok) load();
-    else setError(r.error ?? "Could not add that catalogue");
-  };
-
-  /* Rows, like every other settings card: a line between them and the
-     column's own margin, never a bordered box inside the card. Two boxes had
-     been nested here — a dashed "add" button and the offer below — each with
-     its border drawn on the card's edge. */
-  const btn = "text-[12px] px-2.5 py-1 rounded-lg whitespace-nowrap hover:opacity-80 disabled:opacity-50";
-  return (
-    <div className="agx-settings-section">
-      <div className="panel-eyebrow pb-1">Catalogues</div>
-      <div className="agx-settings-rows">
-        {!catalogues.includes(PROJECT_CATALOGUE) && (
-          <div className="py-3 flex items-center gap-4">
-            <div className="min-w-0 flex-1">
-              <div className="text-[12.5px]" style={{ color: "var(--text)" }}>The agentglass catalogue</div>
-              <div className="text-[11px] t-dim mt-0.5">
-                The plugins listed on this project's site. Adding it fetches that list from GitHub Pages when you browse it; nothing installs until you pick one.
-              </div>
-            </div>
-            <button onClick={addProject} disabled={busy} className={btn}
-              style={{ color: "var(--primary)", border: "1px solid color-mix(in srgb, var(--primary) 45%, transparent)" }}>
-              Add
-            </button>
-          </div>
-        )}
-        {catalogues.map((u) => (
-          <CatalogueRow key={u} url={u} plugins={plugins} onInstalled={onInstalled} onRemoved={() => remove(u)} />
-        ))}
-        <div className="py-3">
-          {open ? (
-            <>
-              <div className="text-[12.5px]" style={{ color: "var(--text)" }}>Add a catalogue</div>
-              <div className="text-[11px] t-dim mt-0.5">
-                A URL to a JSON catalogue somebody else publishes — a list of plugins by their git source. Nothing installs until you pick one from it.
-              </div>
-              <div className="flex items-center gap-2 mt-2.5">
-                <input value={url} onChange={(e) => setUrl(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter") add(); if (e.key === "Escape") setOpen(false); }}
-                  placeholder="https://…/catalogue.json" disabled={busy} autoFocus
-                  className="agx-input t-mono min-w-0 flex-1" />
-                <button onClick={add} disabled={busy || !url.trim()} className={btn}
-                  style={{ color: "var(--text)", border: "1px solid color-mix(in srgb, var(--border) 45%, transparent)" }}>
-                  {busy ? "Adding…" : "Add"}
-                </button>
-                <button onClick={() => { setOpen(false); setError(null); }} disabled={busy} className={btn} style={{ color: "var(--text3)" }}>
-                  Cancel
-                </button>
-              </div>
-            </>
-          ) : (
-            <div className="flex items-center gap-4">
-              <div className="min-w-0 flex-1">
-                <div className="text-[12.5px]" style={{ color: "var(--text)" }}>Another catalogue</div>
-                <div className="text-[11px] t-dim mt-0.5">Somebody else's list, by its URL.</div>
-              </div>
-              <button onClick={() => setOpen(true)} className={btn}
-                style={{ color: "var(--text2)", border: "1px solid color-mix(in srgb, var(--border) 45%, transparent)" }}>
-                Add by URL…
-              </button>
-            </div>
-          )}
-          {error && <Alert tone="error">{error}</Alert>}
-        </div>
-      </div>
-    </div>
-  );
 }
 
 export function PluginsPane({ open, focus }: {
@@ -498,7 +164,7 @@ export function PluginsPane({ open, focus }: {
 
   /* The board narrows by name, publisher and description at once, because
      "the one that watches the cockpit" is as likely a thing to remember as
-     its name — and with a catalogue attached this list is not always short. */
+     its name, and this list is not always short. */
   const [q, setQ] = useState("");
   const [installing, setInstalling] = useState(false);
   /** Which plugin's own settings are open on top of this page. Kept here, so
@@ -631,10 +297,15 @@ export function PluginsPane({ open, focus }: {
       <AddPluginCard onInstalled={load} open={installing} setOpen={setInstalling} prefill={prefill} />
       {plugins.length === 0 ? (
         <div className="rounded-xl px-4 py-5 text-[12px] t-dim" style={{ border: "1px dashed var(--surface-line)" }}>
-          Nothing installed yet. Install one from a folder or a git URL, or pick one from a catalogue below.
+          Nothing installed yet. Install one from a folder or a git URL, or take one from the market below.
         </div>
       ) : (
-        <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(360px, 1fr))" }}>
+        /* `items-start`, because a card in here can grow: opening one card's
+           "What it can do" made the card BESIDE it grow with it, into a tall
+           box with nothing in the bottom two thirds of it. A grid item
+           stretches to its row by default, and the row is as tall as whatever
+           is open in it. Each card owns its own height now. */
+        <div className="grid gap-3 items-start" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(360px, 1fr))" }}>
           {shown.map((p) => (
             <PluginCard key={p.name} plugin={p} masterOn={!!master} onChanged={load} onSettings={() => setShowing(p.name)} />
           ))}
@@ -645,9 +316,9 @@ export function PluginsPane({ open, focus }: {
       )}
 
       {/* The same 24px every settings card keeps from the next one. The grid
-          sat directly on the Catalogues card, with nothing between them. */}
+          sat directly on the card below it, with nothing between them. */}
       <div className="h-6" aria-hidden />
-      <CataloguesSection plugins={plugins} onInstalled={load} />
+      <Market installed={(url) => !!installedFrom(url, plugins)} onInstalled={load} />
     </div>
   );
 }
@@ -689,7 +360,7 @@ function PluginCard({ plugin, masterOn, onChanged, onSettings }: {
     if (next && needsReview) {
       const ok = await ask({
         title: `Switch on ${plugin.name}?`,
-        body: [SCOPE_SENTENCE[plugin.scope], `Runs: ${plugin.entrypoint}`, ...drawsWhere(plugin)].join("\n\n"),
+        node: <PluginDeclaration plugin={plugin} />,
         confirmLabel: "Approve and switch on",
       });
       if (!ok) return;
@@ -803,19 +474,11 @@ function PluginCard({ plugin, masterOn, onChanged, onSettings }: {
             once it has been approved. The sentence has to be legible at the
             moment somebody is approving it; once approved, showing it every
             visit is the noise a four-line paragraph on every card would be. */}
-        <Fold label="What it can do" hint={SCOPE_WORD[plugin.scope]} defaultOpen={needsReview}>
-          <p className="m-0">{SCOPE_SENTENCE[plugin.scope]}</p>
-          <p className="m-0 mt-1.5 t-mono text-[11px]" style={{ color: "var(--text3)" }}>
-            runs: {plugin.entrypoint}
-          </p>
-          {/* Where it draws is part of what is being approved: a plugin that
-              starts drawing somewhere new has a new manifest hash, and is
-              asked about again. Drawn by this app, never run in it. */}
-          {drawsWhere(plugin).length > 0 && (
-            <ul className="m-0 mt-2 pl-4 text-[11.5px] flex flex-col gap-0.5" style={{ color: "var(--text2)" }}>
-              {drawsWhere(plugin).map((w) => <li key={w}>{w}</li>)}
-            </ul>
-          )}
+        {/* Where it draws is part of what is being approved: a plugin that
+            starts drawing somewhere new has a new manifest hash, and is asked
+            about again. Drawn by this app, never run in it. */}
+        <Fold label="What it can do" defaultOpen={needsReview}>
+          <PluginDeclaration plugin={plugin} />
         </Fold>
       </div>
 
@@ -892,16 +555,6 @@ function Alert({ tone, children }: { tone: "warning" | "error" | "ok"; children:
   );
 }
 
-/** What a plugin declared it draws, as the sentences a reviewer reads. */
-function drawsWhere(p: PublicPlugin): string[] {
-  const c = p.contributes ?? {};
-  const out: string[] = [];
-  for (const panel of c.panels ?? []) out.push(`Adds a panel, "${panel.title}", to the Plugins view`);
-  if (c.settings?.length) out.push(`Adds a settings page with ${c.settings.length} ${c.settings.length === 1 ? "field" : "fields"}`);
-  if (c.prNotes) out.push("Writes notes on pull requests, shown only in this app and never sent to GitHub");
-  for (const a of c.prActions ?? []) out.push(`Adds a button, "${a.label}", to every pull request`);
-  return out;
-}
 
 /** Running, off, or waiting on you — a word, not only a dot, because the dot
  *  alone had to be learned and it is the first thing asked of a card. */

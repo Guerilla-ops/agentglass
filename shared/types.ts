@@ -4578,6 +4578,7 @@ export interface CataloguePlugin {
   draws?: string[];
   added?: string;
   minApp?: string;
+  preview?: string;
 }
 
 /** A fetched catalogue document. Mirrors `Catalogue` in

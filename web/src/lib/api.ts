@@ -1740,12 +1740,6 @@ const realApi = {
    *  its approval rather than re-enabling itself. */
   pluginUpdate: (name: string) =>
     post<{ ok: true; plugin: PublicPlugin } | { ok: false; error: string }>("/plugins/update", { name }),
-  /** The catalogues he has added — a plain list of URLs. */
-  pluginCatalogues: () => get<{ catalogues: string[] }>("/plugins/catalogues"),
-  pluginCatalogueAdd: (url: string) =>
-    post<{ ok: boolean; error?: string }>("/plugins/catalogues/add", { url }),
-  pluginCatalogueRemove: (url: string) =>
-    post<{ ok: boolean }>("/plugins/catalogues/remove", { url }),
   /** Fetched fresh, never cached — a stale list read as live is the one
    *  thing this must not do. `ok: false` covers an unreachable or malformed
    *  catalogue equally; the caller shows the error either way. */
@@ -2277,9 +2271,6 @@ const demoApi: typeof realApi = {
   pluginPrOpen: (_repo: string, _n: number) => D({ ok: true }),
   pluginPrAction: (_p: string, _id: string, _repo: string, _n: number) => D({ ok: false, error: "not available in the demo" }),
   pluginUpdate: (_name: string) => D({ ok: false, error: "not available in the demo" } as { ok: false; error: string }),
-  pluginCatalogues: () => D({ catalogues: [] }),
-  pluginCatalogueAdd: (_url: string) => D({ ok: false, error: "not available in the demo" }),
-  pluginCatalogueRemove: (_url: string) => D({ ok: false }),
   pluginCatalogueFetch: (_url: string) => D({ ok: false, error: "not available in the demo" } as { ok: false; error: string }),
   pluginInstallFromCatalogue: (_catalogueUrl: string, _pluginId: string) =>
     D({ ok: false, error: "not available in the demo" } as { ok: false; error: string }),

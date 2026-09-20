@@ -50,7 +50,7 @@ const objects = (type: string): string[] =>
     .sort();
 
 describe("the tables a fresh database gets", () => {
-  test("all eleven, plus the full-text index over the precedents", () => {
+  test("all twelve, plus the full-text index over the precedents", () => {
     // Enumerated rather than counted, and it earns that every time the list
     // changes: `understudy_proposals` arrived with the queue and this test is
     // where a new table has to be acknowledged out loud rather than appearing.
@@ -75,6 +75,9 @@ describe("the tables a fresh database gets", () => {
       "understudy_precedents_fts",
       "understudy_proposals",
       "understudy_quarantine",
+      /* The marker that says which one-off re-filings this database has been
+         through — declared in db.ts with the rest, not made on demand. */
+      "understudy_refiled",
       "understudy_shifts",
       "understudy_snapshots",
       "understudy_work",
@@ -249,7 +252,7 @@ describe("opening a database that already has all of this in it", () => {
     expect(out).toEqual({
       ledger: 1, snapshots: 1, quarantine: 1, precedents: 1, matched: 1,
       // Five declared, plus the four shadow tables fts5 keeps for itself.
-      tables: 16,
+      tables: 17,
     });
   });
 });
