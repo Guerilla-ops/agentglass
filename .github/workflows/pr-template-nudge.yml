@@ -14,7 +14,9 @@ permissions:
 
 jobs:
   nudge:
-    if: github.event.pull_request.user.type != 'Bot'
+    # Not on a catalogue listing either: the body is generated from a
+    # manifest and there is nothing a human wrote to remind them about.
+    if: github.event.pull_request.user.type != 'Bot' && !startsWith(github.event.pull_request.head.ref, 'list-')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/github-script@v9
