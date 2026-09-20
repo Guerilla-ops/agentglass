@@ -113,15 +113,18 @@ jobs:
               "draws": [WORD.get(d, d) for d in (v.get("draws") or [])],
               "source": {"kind": "git", "url": os.environ["REPO_URL"], "ref": None},
               "description": (field("What it does, in two or three sentences") or "")[:500],
-              "categories": [c for c in [field("Category").lower()] if c and c != "_no response_"]
-                            + [t.strip().lower() for t in field("Tags").split(",") if t.strip() and t.strip() != "_No response_"][:5],
+              "categories": list(dict.fromkeys(
+                  [c for c in [field("Category").lower()] if c and c != "_no response_"]
+                  + [t.strip().lower() for t in field("Tags").split(",") if t.strip() and t.strip() != "_no response_"][:5])),
               "added": datetime.date.today().isoformat(),
           }
           # `verified` is the catalogue's own word for "this project wrote it",
           # never something a submission can ask for.
           others = [p for p in cat["plugins"] if p["id"] != entry["id"]]
           cat["plugins"] = sorted(others + [entry], key=lambda p: p["id"])
-          json.dump(cat, open("landing/plugins.json", "w"), indent=2)
+          # `ensure_ascii=False`: the file is read by people in a diff, and an
+          # em dash written as \u2014 is a description nobody can review.
+          json.dump(cat, open("landing/plugins.json", "w"), indent=2, ensure_ascii=False)
           open("landing/plugins.json", "a").write("\n")
           PY
           python3 -c "import json;json.load(open('landing/plugins.json'))"
@@ -130,6 +133,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           ISSUE: ${{ github.event.issue.number }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
           NAME: ${{ steps.entry.outputs.name }}
           SOURCE: ${{ steps.entry.outputs.repo }}
         run: |
@@ -150,8 +154,20 @@ jobs:
           manifest is one the app accepts, and somebody with write access said
           yes. It says nothing about what the plugin does."
           git push -u origin "$branch"
-          gh pr create --title "catalogue: list $NAME" --body "Closes #$ISSUE
+          # A repository can forbid Actions from opening pull requests, and
+          # this one does: the switch that would allow it is the same one that
+          # lets a bot approve reviews, and a catalogue whose only reviewer is
+          # a person does not hand that away to save a click. So the branch is
+          # pushed either way and the link is handed to the maintainer.
+          body="Closes #$ISSUE
 
           Adds \`$NAME\` to \`landing/plugins.json\` from https://github.com/$SOURCE.
 
-          The manifest was validated again from a fresh clone in this run. Read the submission check on the issue before merging — it says what installing this costs and which lines are worth an eye." --base main --head "$branch"
+          The manifest was validated again from a fresh clone in this run. Read the submission check on the issue before merging — it says what installing this costs and which lines are worth an eye."
+          if gh pr create --title "catalogue: list $NAME" --body "$body" --base main --head "$branch" 2>/tmp/pr.err; then
+            exit 0
+          fi
+          echo "::warning::could not open the pull request: $(tail -1 /tmp/pr.err)"
+          gh issue comment "$ISSUE" --body "The entry is written and pushed to \`$branch\`, and this run could not open the pull request itself: $(tail -1 /tmp/pr.err)
+
+          Open it here: https://github.com/${GITHUB_REPOSITORY}/compare/main...$branch?expand=1"
