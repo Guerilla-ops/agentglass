@@ -1372,13 +1372,32 @@ export function recordDecision(
 export const CLASS_WORDS: [string, RegExp][] = [
   ["C1", /\b(worktree|branch|rama|checkout)\b/i],
   ["C2", /\b(commit|mensaje|message|stage)\b/i],
+  /*
+   * C9 BEFORE C3, and this is the only place order is load-bearing.
+   *
+   * `classify` returns the first drawer that claims a line, and C9 is about
+   * whether a pull request is ready — which is said in English as "ready to
+   * merge". C3 owns the bare word `merge`, so every phrase C9 exists for was
+   * being eaten by the drawer above it. The phrases here are all longer than
+   * one word for the same reason: a line that only says "merge" is C3's, and
+   * should stay C3's.
+   */
+  ["C9", /\b(ready to merge|ready for merge|ready to land|mergeable|not ready|draft|undraft|close the pr|reopen)\b/i],
   ["C3", /\b(merge|rebase|land|integrat|cleanup|borrar la rama)\b/i],
-  ["C4", /\b(bot|review|approve|lgtm|nit)\b/i],
+  /*
+   * C4 is the BOT's review being triaged; C10 is a verdict a person writes.
+   * They used to share `review|lgtm|approve`, and since C4 is asked first,
+   * C10 could only ever be reached by the two words C4 did not carry —
+   * measured over the local bank: 160 lines in C4, 29 in C10, and every one
+   * of those 29 said `verdict` or `comment`. Disjoint now, rather than
+   * reordered: both questions are real and neither is a special case of the
+   * other.
+   */
+  ["C4", /\b(bot|nit|dismiss|resolve the thread)\b/i],
   ["C5", /\b(test|suite|red|green|fail)\b/i],
   ["C6", /\b(gate|permission|allow|deny|permiso)\b/i],
   ["C7", /\b(install|instal|build|deploy|reinstall)\b/i],
   ["C8", /\b(agent|subagent|worker|fan.?out)\b/i],
-  ["C9", /\b(halt|stop|abort|para|kill)\b/i],
   ["C10", /\b(review|lgtm|approve|verdict|comment)\b/i],
   ["C11", /\b(pr body|scrum|worklog|gherkin|testing criteria|daily)\b/i],
   ["C12", /\b(clickup|card|sprint|squad|scope)\b/i],
@@ -1471,6 +1490,96 @@ export function addPrecedent(p: PrecedentIn): number {
     insertPrecedentFts.run(row.id, p.cls, p.repo ?? "", p.situation, p.decision, words, p.sourceRef);
     return row.id;
   })();
+}
+
+/**
+ * The bank, re-filed when the drawers change.
+ *
+ * Every row in `understudy_precedents` was filed by `classify()` at the moment
+ * it was banked. Change a class's words without touching what is already in
+ * the drawer and the fix makes things worse than the bug: retrieval asks for
+ * C10, the lines that belong to C10 sit in C4 where yesterday's regex put
+ * them, and the drawer that was merely wrong becomes wrong AND empty.
+ *
+ * Re-run over `his_words`, which is the exact text `classify()` saw when the
+ * row was written (see the ingest: `hisWords: clean`, and `cls:
+ * classify(clean)` on the same object). A row with no words is left where it
+ * is rather than guessed at from its summary.
+ *
+ * Once per tag, and the tag is the shape of the change rather than a date, so
+ * a database that has already been through it is not walked again on every
+ * boot. This file has no migration system — the marker table IS the version,
+ * the same way every CREATE TABLE here is.
+ */
+export function refileBank(tag: string, classes: string[]): number {
+  try {
+    const done = db.query<{ tag: string }, [string]>(
+      "SELECT tag FROM understudy_refiled WHERE tag = ?").get(tag);
+    if (done) return 0;
+    /*
+     * ONLY the drawers that changed, and this is the whole difference between
+     * a migration and a rewrite.
+     *
+     * Re-filing the entire bank moves rows this change never touched: banked
+     * rows are stored with `his_words` cut at 240 characters, so a long line
+     * re-read today can classify differently from the full line classify()
+     * saw when it was banked. Measured on the real bank: re-filing everything
+     * moved 3,343 rows and sent 796 of them to `general` — retrievability
+     * lost, for classes nobody had complained about. Restricted to the three
+     * that changed, it moves what it is for and leaves the rest alone.
+     */
+    const rows = db.query<{ id: number; class: string; his_words: string; source: string; source_ref: string }, [...string[]]>(
+      `SELECT id, class, his_words, source, source_ref FROM understudy_precedents
+        WHERE his_words <> '' AND class IN (${classes.map(() => "?").join(", ")})`).all(...classes);
+    let moved = 0;
+    db.transaction(() => {
+      const clash = db.query<{ id: number }, [string, string, string]>(
+        "SELECT id FROM understudy_precedents WHERE source = ? AND source_ref = ? AND class = ?");
+      const move = db.query<unknown, [string, number]>(
+        "UPDATE understudy_precedents SET class = ? WHERE id = ?");
+      const drop = db.query<unknown, [number]>("DELETE FROM understudy_precedents WHERE id = ?");
+      for (const r of rows) {
+        const now = classify(r.his_words);
+        if (now === r.class) continue;
+        const old = precedentById.get(r.id);
+        if (!old) continue;
+        try {
+        /*
+         * The same line can already be filed in the drawer this one is moving
+         * to — `UNIQUE(source, source_ref, class)` — and an UPDATE into it
+         * throws. Measured on the real bank: 3,343 rows want to move and the
+         * first collision killed the whole transaction, so nothing moved and
+         * the marker was never written. A collision means the target already
+         * holds this exact source line under that class, so the row being
+         * moved is a duplicate and goes.
+         */
+          const taken = clash.get(r.source, r.source_ref, now);
+          dropPrecedentFts.run(old.id, old.class, old.repo, old.situation, old.decision, old.his_words, old.source_ref);
+          if (taken) {
+            drop.run(r.id);
+          } else {
+            move.run(now, r.id);
+            // The index is external-content and there is not one trigger in
+            // server/src: the row's own entry has to be written back under its
+            // new class, or retrieval keeps finding it under the old one.
+            insertPrecedentFts.run(old.id, now, old.repo, old.situation, old.decision, old.his_words, old.source_ref);
+          }
+          moved++;
+        } catch {
+          /* One row that will not move — a hand-written row with no entry in
+             the index, say — is not a reason to leave the other three
+             thousand where they were. */
+        }
+      }
+      db.query<unknown, [string, number]>(
+        "INSERT OR REPLACE INTO understudy_refiled (tag, at) VALUES (?, ?)").run(tag, Date.now());
+    })();
+    return moved;
+  } catch {
+    // A bank that cannot be re-filed is not a reason to refuse to boot: the
+    // rows stay where they are and retrieval is as good as it was yesterday.
+    return 0;
+  }
 }
 
 export function precedentCount(): number {

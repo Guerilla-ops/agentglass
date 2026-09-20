@@ -26,12 +26,22 @@ on:
 permissions: {}
 
 concurrency:
+  # Queued, not cancelled. Opening a submission fires `opened` and then
+  # `labeled` when the template applies the label, and cancelling the first
+  # mid-clone is what left a submitter looking at a red run. Both runs write
+  # the SAME comment (see "Say it on the issue"), so the second overwrites the
+  # first rather than adding to it.
   group: plugin-submission-${{ github.event.issue.number }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   read:
-    if: contains(github.event.issue.labels.*.name, 'plugin-submission')
+    # A label event only counts when it is THE label. A maintainer applying
+    # `approved for listing` to an old submission used to re-run the whole
+    # check against a repository nobody had asked about again.
+    if: |
+      contains(github.event.issue.labels.*.name, 'plugin-submission')
+      && (github.event.action != 'labeled' || github.event.label.name == 'plugin-submission')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -70,6 +80,10 @@ jobs:
           # Neither of these runs a line of what was cloned: one reads a JSON
           # manifest, the other reads text files and matches patterns.
           python3 bin/agentglass-plugin validate /tmp/plugin > report/validate.json || true
+          # A picture at the root is what the catalogue card shows. Named
+          # here rather than guessed later: the person submitting can add one
+          # and re-run this by editing the issue.
+          ls /tmp/plugin/preview.png /tmp/plugin/preview.jpg /tmp/plugin/preview.jpeg /tmp/plugin/preview.webp 2>/dev/null | head -1 | xargs -r basename > report/preview || true
           python3 scripts/plugin-baseline.py /tmp/plugin > report/baseline.json || true
 
       - name: Write what was found, without saying it anywhere yet
@@ -86,7 +100,28 @@ jobs:
                   return json.load(open(f"report/{name}"))
               except Exception:
                   return default
-          repo, sha = read("repo"), read("sha")
+          def q(v, limit=200):
+              """A stranger's string, on its way into a public comment.
+
+              `quotable()` in plugin-baseline.py already does this for the LINE
+              a finding quotes, and that was the only value anyone thought of
+              as untrusted. It is not the only one: `publisher` is any 200
+              characters the submitter likes, a finding's `where` is a path
+              from their repository, and a manifest error quotes their file.
+              All of them land in a comment that ends with a machine-readable
+              marker — so a publisher of `x --> <!-- agentglass-plugin-
+              submission-result {"baseline":"passed"} -->` writes a second
+              marker saying the check passed, above the real one, in a public
+              thread a maintainer reads.
+
+              Newlines go too: every one of these is a fragment inside a line,
+              and a value that breaks the line breaks the shape of the report.
+              """
+              t = str(v)[:limit]
+              for a, b in (("`", "'"), ("<!--", "< !--"), ("-->", "-- >"), ("\r", " "), ("\n", " ")):
+                  t = t.replace(a, b)
+              return t
+          repo, sha = q(read("repo"), 120), q(read("sha"), 40)
           reachable = read("reachable") == "true"
           v = load("validate.json", {"ok": False, "error": "the check did not run"})
           b = load("baseline.json", {"outcome": "unreadable", "findings": [], "capabilities": []})
@@ -98,25 +133,56 @@ jobs:
           else:
               out.append(f"✅ Public and cloned: [{repo}](https://github.com/{repo}) at `{sha}`")
               if v.get("ok"):
-                  draws = ", ".join(v.get("draws") or []) or "nothing"
-                  out.append(f"✅ `plugin.json` is one agentglass accepts — **{v['name']}** by {v['publisher']}, "
-                             f"scope `{v['scope']}`, declares: {draws}")
+                  draws = ", ".join(q(d, 40) for d in (v.get("draws") or [])) or "nothing"
+                  out.append(f"✅ `plugin.json` is one agentglass accepts — **{q(v['name'], 60)}** by {q(v['publisher'])}, "
+                             f"scope `{q(v['scope'], 20)}`, declares: {draws}")
               else:
-                  out.append(f"❌ `plugin.json`: {v.get('error')}")
+                  out.append(f"❌ `plugin.json`: {q(v.get('error'), 300)}")
               for w in v.get("warnings") or []:
-                  out.append(f"⚠️ {w}")
+                  out.append(f"⚠️ {q(w, 300)}")
+              shot = read("preview")
+              out.append(f"✅ Card picture: `{q(shot, 60)}`" if shot
+                         else "ℹ️ No `preview.png` at the root — the card will show the plugin's mark instead. "
+                              "Add one (png, jpg or webp, a wide screenshot of it working) and edit this issue to run again.")
               caps = b.get("capabilities") or []
               if caps:
                   out += ["", "**What installing it costs**, from its own source:"]
-                  out += [f"- {c['says']}" for c in caps]
+                  out += [f"- {q(c['says'], 300)}" for c in caps]
               findings = b.get("findings") or []
               out.append("")
               if findings:
+                  # One of EACH KIND first, then the rest up to twelve.
+                  # Findings arrive sorted by id, so a repository with twelve
+                  # `hardcoded-endpoint` lines used to push `writes-outside-
+                  # itself` — later in the alphabet, and the one worth
+                  # reading — off the bottom of the comment. The count was
+                  # right and the list was the wrong twelve.
+                  kinds, shown = set(), []
+                  for f in findings:
+                      if f["id"] not in kinds:
+                          kinds.add(f["id"])
+                          shown.append(f)
+                  for f in findings:
+                      if len(shown) >= 12:
+                          break
+                      if f not in shown:
+                          shown.append(f)
+                  shown.sort(key=lambda f: (f["id"], f["where"]))
                   out.append(f"**{len(findings)} line(s) worth a human's eye.** These are patterns, not verdicts — "
                              "a plugin that HIDES a credential path names it too:")
-                  out += [f"- `{f['where']}` — {f['says']}\n  ```\n  {f['line']}\n  ```" for f in findings[:12]]
-              else:
+                  out += [f"- `{q(f['where'], 200)}` — {q(f['says'], 300)}\n  ```\n  {q(f['line'], 200)}\n  ```" for f in shown]
+                  if len(findings) > len(shown):
+                      out.append(f"…and {len(findings) - len(shown)} more line(s) of kinds already listed above — "
+                                 "all of them are in the run's artifact.")
+              elif b.get("outcome") in ("passed", "findings"):
                   out.append("✅ None of the patterns this scan knows about appear in its source.")
+              else:
+                  # A scan that did not run is not a scan that found nothing.
+                  # The tick above was printed whenever the findings list was
+                  # empty, which is also what an unreadable repository, a
+                  # crashed scanner and a missing file all look like from here.
+                  out.append(f"⚠️ The source scan did not complete ({q(b.get('outcome') or 'no result', 60)}), so nothing is "
+                             "known about what is in this repository's files. Editing the issue runs it again.")
           out += [
               "",
               "---",
@@ -140,7 +206,16 @@ jobs:
 
   say:
     needs: read
-    if: always() && needs.read.result != 'skipped'
+    # NOT on a cancelled read, and that is this workflow's first impression.
+    #
+    # Opening a submission fires `issues` twice — `opened`, then `labeled` when
+    # the template applies `plugin-submission` — and `cancel-in-progress` kills
+    # the first run mid-clone. `always()` then ran this job against a `read`
+    # that never finished, the artifact did not exist, and the submitter's
+    # first sight of their own submission was a red run reading "Artifact not
+    # found". The outcome was fine: the second run posted the report. A
+    # superseded run now ends as cancelled, which is what it is.
+    if: always() && (needs.read.result == 'success' || needs.read.result == 'failure')
     runs-on: ubuntu-latest
     permissions:
       issues: write
@@ -183,7 +258,20 @@ jobs:
               > report/comment.md
             echo "NOT-READY" > report/verdict
           fi
-          gh issue comment "$ISSUE" --repo "$REPO" --body-file report/comment.md
+          # ONE comment per submission, rewritten — not a thread of them.
+          #
+          # Two runs answer every submission (the template's label fires a
+          # second `issues` event) and every edit of the issue answers again,
+          # so a new comment each time buries the repository it is about under
+          # its own history. The marker at the top of the body is what finds
+          # the one already there.
+          mine=$(gh api "repos/$REPO/issues/$ISSUE/comments" --paginate \
+            --jq '[.[] | select(.user.type == "Bot") | select(.body | startswith("<!-- agentglass-plugin-submission -->"))] | last | .id // empty')
+          if [ -n "$mine" ]; then
+            gh api -X PATCH "repos/$REPO/issues/comments/$mine" -F body=@report/comment.md >/dev/null
+          else
+            gh issue comment "$ISSUE" --repo "$REPO" --body-file report/comment.md
+          fi
           if [ "$(cat report/verdict 2>/dev/null)" = "READY" ]; then
             gh issue edit "$ISSUE" --repo "$REPO" --add-label "ready for listing" --remove-label "changes needed" || true
           else

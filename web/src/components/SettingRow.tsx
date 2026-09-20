@@ -160,7 +160,24 @@ export function Fold({ label, hint, children, defaultOpen }: {
         hint={hint === undefined ? undefined : <span className="block pl-[18px]">{hint}</span>}
       />
       {open && (
-        <div className="pb-3 text-[12px] leading-relaxed" style={{ color: "var(--text2)", marginLeft: 18 }}>
+        /*
+         * Flush with the rows above and below it, and with a gap of its own
+         * under the header.
+         *
+         * It used to be `pb-3` with an 18px left margin: padding on one side
+         * only, and an indent on one side only. Measured on the Agents pane,
+         * that left the open body with an 18px gutter on its left and 0 on its
+         * right — a block visibly shoved right inside a card whose every other
+         * row is flush — and pressed against the header, which on the plugin
+         * declaration (a stack of cards rather than a sentence) read as one
+         * more card jammed under the title.
+         *
+         * The indent was there to line the body up with the label rather than
+         * the caret. That reads as an outline when the content is a sentence
+         * continuing the label, and as a mistake when it is anything with a
+         * border, which is most of what folds hold here.
+         */
+        <div className="pt-1.5 pb-3 text-[12px] leading-relaxed" style={{ color: "var(--text2)" }}>
           {children}
         </div>
       )}

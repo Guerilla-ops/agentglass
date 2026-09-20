@@ -2,8 +2,8 @@
  * Accent colour — a control that layers on top of a theme without belonging to
  * it.
  */
-import { describe, expect, test } from "bun:test";
-import { ACCENTS, currentAccent } from "../src/lib/accent.ts";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { ACCENTS, currentAccent, lastAccent, setAccentPref } from "../src/lib/accent.ts";
 
 const isHex = (s: string) => /^#[0-9a-f]{6}$/i.test(s);
 
@@ -27,5 +27,40 @@ describe("accent colours", () => {
 
   test("no accent saved → the theme's own primary (empty id)", () => {
     expect(currentAccent()).toBe("");
+  });
+});
+
+/*
+ * The follow switch has to be reversible. Turning it on is the absence of an
+ * override, so the id it writes is "" — and if that were all it wrote, turning
+ * it off again would land on no colour at all and the row would read as broken.
+ * The colour is remembered on the way in, under its own key.
+ */
+describe("following the theme is reversible", () => {
+  const real = (globalThis as { localStorage?: Storage }).localStorage;
+  let store: Map<string, string>;
+
+  beforeAll(() => {
+    store = new Map();
+    (globalThis as { localStorage?: unknown }).localStorage = {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => { store.set(k, v); },
+      removeItem: (k: string) => { store.delete(k); },
+    };
+  });
+  afterAll(() => { (globalThis as { localStorage?: unknown }).localStorage = real; });
+
+  test("never picked one → teal, the colour the phone starts on", () => {
+    store.clear();
+    expect(lastAccent()).toBe("teal");
+  });
+
+  test("a colour picked, then the switch on → the colour is still what comes back", () => {
+    store.clear();
+    setAccentPref("violet");
+    expect(currentAccent()).toBe("violet");
+    setAccentPref("");                    // the switch going on
+    expect(currentAccent()).toBe("");     // no override any more
+    expect(lastAccent()).toBe("violet");  // and the switch can come back off
   });
 });

@@ -84,6 +84,20 @@ export const LAYER = {
   settings: 10120,
 
   /**
+   * A dialog raised from inside the settings sheet.
+   *
+   * Settings is a full-height sheet at 10120, so anything it opens has to be
+   * above it or it opens invisibly behind the page that raised it. Below the
+   * menus, because a dropdown inside this dialog is still a menu and still has
+   * to escape it.
+   *
+   * Its own rung rather than `settings + 1`: the next person to open something
+   * from settings needs a name to reach for, and an arithmetic expression at a
+   * call site is how a stack of numbers stops being a table anybody can read.
+   */
+  settingsDialog: 10140,
+
+  /**
    * A menu opened from inside any of the above.
    *
    * Its own layer because it must escape its opener's box, not merely sit on

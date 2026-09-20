@@ -172,6 +172,7 @@ exactly that, never as an empty list.
 | `plugins[].title` | optional, ≤80; the card's heading when there is one, otherwise the id |
 | `plugins[].publisher` | optional, ≤80; the card's byline, otherwise the catalogue's owner |
 | `plugins[].draws` | optional list of at most 8 short words — `panel`, `settings`, `pr-notes`, `pr-button` — so a card can say what installing gets you before anything is installed |
+| `plugins[].preview` | optional `https` URL of a picture — the card shows it. The approval workflow fills this in from a `preview.png`, `.jpg` or `.webp` at the root of the plugin's own repository, so an author ships one file and nothing else |
 | `plugins[].added` | optional ISO date; the only ordering a catalogue offers that its author cannot game by rewriting the file |
 
 A document may list more than the 500 entries the server keeps; it answers with

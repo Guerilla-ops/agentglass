@@ -12,6 +12,10 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 
 const pane = readFileSync(new URL("../src/components/PluginsPane.tsx", import.meta.url), "utf8");
+/** The declaration a person approves moved out of the card into its own
+ *  component, drawn in both the card and the dialog that asks. The sentences
+ *  are held to the same rule wherever they live. */
+const declaration = readFileSync(new URL("../src/components/plugins/PluginDeclaration.tsx", import.meta.url), "utf8");
 
 describe("re-consent reads as its own thing", () => {
   test("distinct from a plugin that has simply never been reviewed", () => {
@@ -30,12 +34,12 @@ describe("re-consent reads as its own thing", () => {
 
 describe("the scope sentence is honest about `read`", () => {
   test("says a plugin can see a session's live output, not just \"read\"", () => {
-    expect(pane).toMatch(/every session's live output as it streams/);
-    expect(pane).toMatch(/the same prompts and replies you watch on screen/);
+    expect(declaration).toMatch(/every session's live output as it streams/);
+    expect(declaration).toMatch(/the same prompts and replies you watch on screen/);
   });
 
   test("and says what it cannot do", () => {
-    expect(pane).toMatch(/Cannot approve a gate, send a reply, or write anything/);
+    expect(declaration).toMatch(/cannot approve a gate, send a reply, or write anything/i);
   });
 });
 
@@ -81,5 +85,18 @@ describe("install takes a local path or a git URL, and cannot enable an unreview
     expect(pane).toContain("disabled={busy || (!plugin.enabled && !masterOn)}");
     expect(pane).toMatch(/if \(next && needsReview\) \{\s*const ok = await ask\(/);
     expect(pane).toContain("if (!ok) return;");
+  });
+});
+
+describe("a card that grows does not drag its neighbour with it", () => {
+  test("the installed grid lets each card keep its own height", () => {
+    // Opening one card's declaration made the card BESIDE it grow to match,
+    // into a tall box with nothing in the bottom two thirds. Grid items
+    // stretch to their row by default, and the row is as tall as whatever is
+    // open in it. Measured after the fix on a row of two: 390px closed,
+    // 826px open.
+    const grid = pane.slice(pane.indexOf('gridTemplateColumns: "repeat(auto-fill, minmax(360px'));
+    expect(pane).toContain("grid gap-3 items-start");
+    expect(grid.slice(0, 200)).toContain("minmax(360px, 1fr)");
   });
 });

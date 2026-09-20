@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
-import { SettingRow } from "./SettingRow.tsx";
+import { SettingRow, Switch } from "./SettingRow.tsx";
 import {
   THEMES, pickTheme, applyTheme, isDarkTheme, EXPERIMENTAL_THEME_IDS,
   themeMode, applyThemeMode, persistThemeMode, SERIOUS_DARK, SERIOUS_LIGHT, desktopPaletteName, onDesktopPalette,
   type Theme, type ThemeMode,
 } from "../lib/themes.ts";
-import { ACCENTS, currentAccent, setAccentPref } from "../lib/accent.ts";
+import { ACCENTS, currentAccent, setAccentPref, lastAccent } from "../lib/accent.ts";
 import { SERVER, authHeaders } from "../lib/api.ts";
 import { DoneIcon } from "../lib/glyphIcons.tsx";
 import { ICON } from "../lib/iconSize.ts";
@@ -193,11 +193,22 @@ export function AppearancePane({ current, onChange }: { current: string; onChang
   };
 
   const [accent, setAccentState] = useState(() => currentAccent());
+  /* The colour the theme brings by itself, for the swatch beside the switch.
+     `--theme-primary` is stamped by `applyAccent` before the overlay goes on,
+     so this is the theme's own even while an accent is laid over it. */
+  const [own, setOwn] = useState("");
+  useEffect(() => {
+    setOwn(getComputedStyle(document.documentElement).getPropertyValue("--theme-primary").trim());
+  }, [accent, current, desk]);
   const chooseAccent = (id: string) => {
     setAccentPref(id);
     applyTheme(current); // re-assert the theme so the overlay (or its removal) lands
     setAccentState(id);
   };
+  /* Following is the absence of an override, so the switch writes "" going on
+     and the last colour going off — never nothing, or the row would look
+     broken with every circle dark. */
+  const following = accent === "";
 
   /* Mode and accent are settings and read as rows; the palette grid is a
      picker and stays a grid. Both used a label floated left with the control
@@ -229,26 +240,44 @@ export function AppearancePane({ current, onChange }: { current: string; onChang
         </span>}
       />
 
-      {/* Accent — a colour laid over the theme's grey primary, for the things
-          that read as "live". "Theme" (dashed) is no override. */}
+      {/* Accent. The switch is the decision — follow the theme, or choose —
+          and the circles are only the second half of it. It was a dashed
+          circle in the row with the other seven, which reads as an eighth
+          colour: somebody ran this app for weeks laying a hand-picked green
+          over a desktop theme whose own accent they wanted, because nothing on
+          that circle said what it did. A sentence can say it; a swatch cannot. */}
       <SettingRow
         label="Accent"
-        hint="Laid over the theme's own primary, for the things that read as live."
-        control={<span className="flex items-center gap-1.5">
-          {ACCENTS.map((a) => {
-            const on = accent === a.id;
-            const isDefault = !a.primary;
-            return (
-              <button key={a.id || "theme"} onClick={() => chooseAccent(a.id)} title={a.name}
-                className="w-5 h-5 rounded-full transition-transform hover:scale-110"
-                style={{
-                  background: isDefault ? "transparent" : a.primary,
-                  border: isDefault ? "1.5px dashed color-mix(in srgb, var(--text4) 80%, transparent)" : "none",
-                  outline: on ? "2px solid var(--text)" : "none",
-                  outlineOffset: "1.5px",
-                }} />
-            );
-          })}
+        hint={following
+          ? <>Following your theme{desk && mode === "desktop" ? <> — <b style={{ color: "var(--text3)" }}>{desk.name}</b> brings its own</> : <>'s own primary</>}.</>
+          : <>Laid over the theme's own primary, for the things that read as live.</>}
+        control={<span className="flex items-center gap-4">
+          <button onClick={() => chooseAccent(following ? lastAccent() : "")}
+            role="switch" aria-checked={following} aria-label="Follow the theme's accent"
+            title="Follow the theme's accent" className="flex items-center gap-1.5">
+            <Switch on={following} />
+            {own
+              /* Smaller than the seven on purpose: it is the colour being
+                 followed, not an eighth colour to pick. The wider gap before
+                 the row says the same thing again. */
+              ? <span className="w-3.5 h-3.5 rounded-full shrink-0" style={{ background: own, opacity: following ? 1 : 0.35 }} />
+              : null}
+          </button>
+          <span className="flex items-center gap-1.5" aria-hidden={following}
+            style={{ opacity: following ? 0.3 : 1, pointerEvents: following ? "none" : undefined }}>
+            {ACCENTS.filter((a) => a.primary).map((a) => {
+              const on = accent === a.id;
+              return (
+                <button key={a.id} onClick={() => chooseAccent(a.id)} title={a.name}
+                  className="w-5 h-5 rounded-full transition-transform hover:scale-110"
+                  style={{
+                    background: a.primary,
+                    outline: on ? "2px solid var(--text)" : "none",
+                    outlineOffset: "1.5px",
+                  }} />
+              );
+            })}
+          </span>
         </span>}
       />
 

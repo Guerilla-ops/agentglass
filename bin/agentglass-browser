@@ -149,29 +149,84 @@ def _said_redacted(res):
     return res
 
 
-def call(op, body):
-    req = urllib.request.Request(
-        f"{SERVER}/browser/{op}",
-        data=json.dumps(body).encode(),
-        method="POST",
-        headers={
-            "Content-Type": "application/json",
-            # Same-origin is how the server tells a browser tab from everything
-            # else; a CLI on this machine says so plainly.
-            "Origin": SERVER,
-        },
-    )
-    token = os.environ.get("AGENTGLASS_TOKEN")
-    if token:
-        req.add_header("Authorization", f"Bearer {token}")
+TOKEN_PATH = os.path.join(
+    os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"), "agentglass", "token")
+
+
+def _token_on_disk():
+    """The token the app wrote, read only after the one in the environment was
+    refused.
+
+    A pane is handed the token when it is opened, and the desktop app rotates
+    it underneath — so every panel opened before the last restart holds a
+    string the server stopped accepting, and every command from it answers
+    `unauthorized`. The environment still wins: this is the second attempt,
+    not the first, so a shell that exports a token on purpose keeps deciding.
+
+    Reading the file does not widen anything. The app writes it 0600 under the
+    person's own config directory, and this CLI runs as that person — anything
+    that can run this can already read it. What the server deliberately does
+    NOT do is put the token in tmux's global environment (see the note at
+    `set-environment -g -u AGENTGLASS_TOKEN` in server/src/index.ts), so that a
+    pane nobody handed it does not inherit one; a file read on a 401 leaves
+    that exactly as it was. The alternative people reach for when this fails is
+    digging the value out of `/proc/<pid>/environ`, which is worse in every
+    way.
+    """
     try:
+        with open(TOKEN_PATH) as f:
+            return f.read().strip() or None
+    except OSError:
+        return None
+
+
+def call(op, body):
+    def send(token):
+        req = urllib.request.Request(
+            f"{SERVER}/browser/{op}",
+            data=json.dumps(body).encode(),
+            method="POST",
+            headers={
+                "Content-Type": "application/json",
+                # Same-origin is how the server tells a browser tab from
+                # everything else; a CLI on this machine says so plainly.
+                "Origin": SERVER,
+            },
+        )
+        if token:
+            req.add_header("Authorization", f"Bearer {token}")
         with urllib.request.urlopen(req, timeout=120) as r:
-            return _said_redacted(json.loads(r.read() or b"{}"))
+            return json.loads(r.read() or b"{}")
+
+    sent = os.environ.get("AGENTGLASS_TOKEN")
+    tried_disk = False
+    try:
+        return _said_redacted(send(sent))
     except urllib.error.HTTPError as e:
+        if e.code in (401, 403):
+            fresh = _token_on_disk()
+            tried_disk = bool(fresh)
+            if fresh and fresh != sent:
+                try:
+                    return _said_redacted(send(fresh))
+                except urllib.error.HTTPError as again:
+                    e = again
+                except urllib.error.URLError as again:
+                    return {"ok": False, "error": f"no agentglass at {SERVER} ({again.reason})"}
         try:
-            return _said_redacted(json.loads(e.read() or b"{}"))
+            said = _said_redacted(json.loads(e.read() or b"{}"))
         except json.JSONDecodeError:
-            return {"ok": False, "error": f"server said {e.code}"}
+            said = {"ok": False, "error": f"server said {e.code}"}
+        if e.code in (401, 403):
+            # An answer somebody can act on. Bare "unauthorized" is what sends
+            # a reader to /proc to fish the value out of another process.
+            said = dict(said)
+            said["error"] = (
+                f"{said.get('error') or 'unauthorized'} — the token this pane was given is not one the server "
+                f"accepts, and {TOKEN_PATH} "
+                + ("holds one it does not accept either. " if tried_disk else "could not be read. ")
+                + "Open a new pane from agentglass, which hands it the current one.")
+        return said
     except urllib.error.URLError as e:
         return {"ok": False, "error": f"no agentglass at {SERVER} ({e.reason})"}
 

@@ -15,7 +15,6 @@ import {
   validateManifest, validPluginName, manifestHash, installPlugin, updatePlugin, enablePlugin, disablePlugin,
   removePlugin, listPlugins, masterEnabled, setMaster, __resetPlugins,
   MANIFEST_NAME, pluginsConfigDir, pluginsPath, appVersion, versionAtLeast,
-  listCatalogues, addCatalogue, removeCatalogue,
 } from "../src/plugins.ts";
 import { callerFor, pluginTokenCount } from "../src/auth.ts";
 import { blocklistPath } from "../src/plugin-blocklist.ts";
@@ -433,34 +432,3 @@ describe("kill list", () => {
   });
 });
 
-describe("catalogues he has added", () => {
-  test("starts empty", () => {
-    expect(listCatalogues()).toEqual([]);
-  });
-
-  test("add keeps it, remove drops it", () => {
-    const r = addCatalogue("https://example.com/catalogue.json");
-    expect(r.ok).toBe(true);
-    expect(listCatalogues()).toEqual(["https://example.com/catalogue.json"]);
-    expect(removeCatalogue("https://example.com/catalogue.json")).toBe(true);
-    expect(listCatalogues()).toEqual([]);
-  });
-
-  test("adding the same url twice does not duplicate it", () => {
-    addCatalogue("https://example.com/catalogue.json");
-    addCatalogue("https://example.com/catalogue.json");
-    expect(listCatalogues()).toEqual(["https://example.com/catalogue.json"]);
-  });
-
-  test("a credentialed or non-https url is refused, same rule as fetchCatalogue", () => {
-    const r = addCatalogue("https://u:p@example.com/catalogue.json");
-    expect(r.ok).toBe(false);
-    if (r.ok) return;
-    expect(r.error).toContain("credentials");
-    expect(listCatalogues()).toEqual([]);
-  });
-
-  test("removing one that was never added is a no-op, reported honestly", () => {
-    expect(removeCatalogue("https://example.com/never-added.json")).toBe(false);
-  });
-});

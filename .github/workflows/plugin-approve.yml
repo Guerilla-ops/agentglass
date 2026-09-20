@@ -90,10 +90,13 @@ jobs:
       - name: Write the entry
         env:
           BODY: ${{ github.event.issue.body }}
+          SOURCE: ${{ steps.entry.outputs.repo }}
           REPO_URL: https://github.com/${{ steps.entry.outputs.repo }}
         run: |
           python3 - <<'PY'
-          import json, os, re, datetime
+          import json, os, re, datetime, glob
+          shot = next((os.path.basename(f) for f in sorted(glob.glob("/tmp/plugin/preview.*"))
+                       if f.rsplit(".", 1)[-1].lower() in ("png", "jpg", "jpeg", "webp")), None)
           body = os.environ.get("BODY", "")
           v = json.load(open("/tmp/validate.json"))
           def field(label):
@@ -118,6 +121,10 @@ jobs:
                   + [t.strip().lower() for t in field("Tags").split(",") if t.strip() and t.strip() != "_no response_"][:5])),
               "added": datetime.date.today().isoformat(),
               **({"minApp": v["minApp"]} if v.get("minApp") else {}),
+              # A picture if the repository ships one at its root, the way
+              # a README's own screenshot is found: the card shows it, and
+              # a submission without one simply has no picture.
+              **({"preview": f"https://raw.githubusercontent.com/{os.environ['SOURCE']}/HEAD/{shot}"} if shot else {}),
           }
           # `verified` is the catalogue's own word for "this project wrote it",
           # never something a submission can ask for.

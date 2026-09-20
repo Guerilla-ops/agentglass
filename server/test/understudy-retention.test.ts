@@ -275,6 +275,7 @@ describe("every understudy table has a window, enumerated", () => {
       understudy_precedents_fts: "the index over the bank, and it lives and dies with it",
       understudy_quarantine: "what it refused to store — counts only, and they are the privacy record",
       understudy_hold: "one row, overwritten: the nap until the agent's session resets — cleared by writing zero, never grows",
+      understudy_refiled: "one row per one-off re-filing of the bank, written by a release and never by use — it is bounded by how many times the classes have changed, and sweeping it would run the walk again",
     };
 
     const swept = new Set([...src.matchAll(/DELETE FROM (understudy_\w+)/g)].map((m) => m[1]!));

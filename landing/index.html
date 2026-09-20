@@ -36,8 +36,17 @@
     cubic-bezier cannot overshoot 1 and come back more than once, which is
     exactly what a thing does when it lands in its slot. */
  --pop:linear(0, 0.1535 4.2%, 0.4916 8.3%, 0.8499 12.5%, 1.119 16.7%, 1.255 20.8%, 1.268 25.0%, 1.2 29.2%, 1.1 33.3%, 1.008 37.5%, 0.9483 41.7%, 0.925 45.8%, 0.9317 50.0%, 0.9554 54.2%, 0.983 58.3%, 1.005 62.5%, 1.018 66.7%, 1.021 70.8%, 1.017 75.0%, 1.009 79.2%, 1.002 83.3%, 0.9968 87.5%, 0.9945 91.7%, 0.9946 95.8%, 1)}
-html{scroll-behavior:smooth}
-body{background:var(--void);color:var(--txt);overflow-x:hidden;
+/* The sideways clip belongs to the root, not to the body.
+   On `body` it makes the BODY the element that scrolls, and a
+   `animation-timeline: scroll(root)` then has a source that never scrolls: the
+   timeline is inactive, every animation on it holds its fill state, and the
+   header that is supposed to form as you scroll is simply already formed.
+   Measured in Chrome 150 (what this app's own browser is built on), where
+   `getAnimations()` finds `dock` with a ScrollTimeline and `currentTime: null`;
+   Chrome 152 papers over it, which is why it looked fine here and broken
+   there. */
+html{scroll-behavior:smooth;overflow-x:hidden}
+body{background:var(--void);color:var(--txt);
  font:16.5px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
  -webkit-font-smoothing:antialiased}
 a{color:inherit;text-decoration:none}
@@ -52,15 +61,38 @@ svg.ci{width:16px;height:16px;display:block;flex:none}
 
 .one{min-height:100vh;display:flex;flex-direction:column;align-items:center;
  justify-content:center;gap:34px;padding:80px 20px 36px;position:relative}
+/*
+ * The hero is a scene, and the scroll is what plays it.
+ *
+ * Read fast, the claim under the window was a line you scrolled straight
+ * past. So the hero pins itself for a screen and a half of scrolling: the
+ * window starts bigger than the viewport can hold and shrinks, and only then
+ * does the sentence arrive, a word at a time, with the buttons after it. You
+ * can still leave whenever you like — the scroll is never captured or slowed,
+ * it just has something to do for a moment.
+ *
+ * `body.scene` is added by the script, so a page with no scripting keeps the
+ * plain stacked hero it always had.
+ */
+body.scene .one-holder{position:relative}
+/* Start below the band the lockup lives in, rather than centring in it: with
+   `justify-content:center` a hero taller than the viewport — which is what
+   zooming to 140% makes it — overflows UPWARD as well as down, and the window
+   climbed into the lockup. */
+body.scene .one{position:sticky;top:0;z-index:1;justify-content:flex-start}
+body.scene .one-track{height:195vh;pointer-events:none}
+body.scene .field{will-change:transform;transform-origin:50% 0}
+body.scene .cta{opacity:0;transition:opacity .45s}
+body.scene .oneline.on+.cta.here{opacity:1}
 .kick{text-align:center;font:12px var(--mono);letter-spacing:.22em;text-transform:uppercase;
  color:var(--dim2);opacity:0;transition:opacity .9s}
 .go .kick{opacity:1}
 .field{position:relative;width:min(980px,100%);display:grid;place-items:center}
 
-.chip{position:absolute;left:50%;top:50%;display:flex;align-items:center;gap:9px;
+.chip{position:absolute;left:50%;top:50%;z-index:3;display:flex;align-items:center;gap:9px;
  font:12px var(--mono);color:var(--dim);border:1px solid var(--line);border-radius:9px;
  padding:8px 13px 8px 11px;white-space:nowrap;background:rgba(12,10,22,.88);
- transform:translate(calc(-50% + var(--cx)),calc(-50% + var(--cy)));opacity:0;
+ transform:translate(calc(-50% + var(--cx) * var(--spread,1)),calc(-50% + var(--cy) * var(--spread,1)));opacity:0;
  transition:opacity .75s cubic-bezier(.16,1,.3,1)}
 .chip svg{color:var(--dim2)}
 .go .chip{opacity:1}
@@ -87,7 +119,7 @@ svg.ci{width:16px;height:16px;display:block;flex:none}
  30%{opacity:.9;transform:rotate(var(--ang)) translate(-100%,-50%) scaleX(1)}
  100%{opacity:0;transform:rotate(var(--ang)) translate(-100%,-50%) scaleX(0)}}
 
-.win{width:min(800px,100%);border:1px solid var(--line2);border-radius:14px;overflow:hidden;
+.win{position:relative;z-index:1;width:min(800px,100%);border:1px solid var(--line2);border-radius:14px;overflow:hidden;
  background:rgba(11,10,19,.94);box-shadow:0 50px 110px -42px rgba(0,0,0,.95);
  transform:scale(.84);opacity:0;transition:transform 1s cubic-bezier(.16,1,.3,1),opacity .85s}
 .go .win{transform:none;opacity:1}
@@ -97,6 +129,10 @@ svg.ci{width:16px;height:16px;display:block;flex:none}
 .wbody{display:grid;grid-template-columns:46px 1fr;min-height:300px}
 .rail{border-right:1px solid var(--line);padding:9px 0;display:flex;flex-direction:column;
  align-items:center;gap:3px}
+/* The break in the rail. The app's own rail has one: the views you move
+   between are above it, the tools are below, and the eye stops there. */
+.rsep{width:18px;height:1px;background:var(--line);margin:7px 0;flex:none;opacity:0;transition:opacity .4s}
+.go .rsep{opacity:1}
 .rk{position:relative;width:30px;height:30px;border-radius:8px;border:1px solid transparent;background:transparent;
  color:var(--dim2);cursor:pointer;display:grid;place-items:center;opacity:0;
  transform:scale(.4) rotate(-14deg);
@@ -206,10 +242,38 @@ svg.ci{width:16px;height:16px;display:block;flex:none}
 .brow .page{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
 .brow .page span{height:30px;border-radius:6px;background:var(--l);opacity:.5}
 
-.oneline{text-align:center;margin-top:30px;font-size:19px;color:var(--dim);opacity:0;
+/* The one sentence this page exists to leave behind.
+   It was 19px of grey under a screenshot and it read like a caption. It is
+   the claim, so it is the size of a claim — and it arrives a word at a time
+   as you scroll past it, which is the one thing on this page that makes
+   somebody finish reading a line they did not ask for. */
+.oneline{text-align:center;margin-top:52px;font-size:clamp(27px,5.1vw,58px);line-height:1.1;
+ letter-spacing:-.032em;font-weight:600;color:var(--dim);opacity:0;
  transform:translateY(10px);transition:opacity .9s,transform .9s cubic-bezier(.16,1,.3,1)}
 .oneline.on{opacity:1;transform:none}
-.oneline b{color:var(--txt);font-weight:650}
+.oneline b{color:var(--txt);font-weight:750}
+/* One word, surfacing.
+   `display:inline-block` so it can be moved, and the spaces between them stay
+   plain text so the line still wraps like a line. A word that has not arrived
+   yet is not grey — it is out of focus and violet, which reads as something
+   coming rather than something disabled. */
+.oneline i{font-style:normal;display:inline-block;opacity:.09;filter:blur(9px);
+ transform:translateY(.16em) scale(.985);color:var(--vio);
+ transition:opacity .65s cubic-bezier(.16,1,.3,1),filter .65s cubic-bezier(.16,1,.3,1),
+  transform .65s cubic-bezier(.16,1,.3,1),color .65s,text-shadow .65s}
+.oneline i.lit{opacity:1;filter:none;transform:none;color:inherit}
+/* The claim itself carries the light: a slow sweep across the letters, which
+   is the only moving thing on the page once you have stopped scrolling. */
+/* The sweep repaints gradient-clipped TEXT on every frame, so it runs only
+   while the sentence is actually on the screen: measured, an infinite one
+   cost two frames in ten while scrolling the rest of the page. */
+.oneline b{background:linear-gradient(104deg,#c4b5fd 4%,#f5f3ff 26%,#a78bfa 48%,#67e8f9 66%,#c4b5fd 92%);
+ background-size:260% 100%;-webkit-background-clip:text;background-clip:text}
+.oneline.shine b{animation:sheen 11s linear infinite}
+.oneline b i{color:transparent}
+.oneline b i:not(.lit){color:var(--vio);-webkit-text-fill-color:currentColor}
+.oneline b i.lit{-webkit-text-fill-color:transparent;text-shadow:0 0 42px rgba(167,139,250,.5)}
+@keyframes sheen{from{background-position:0% 50%}to{background-position:260% 50%}}
 .cta{display:flex;gap:12px;justify-content:center;margin-top:24px;flex-wrap:wrap;opacity:0;
  transition:opacity .9s .18s}
 .oneline.on+.cta{opacity:1}
@@ -344,13 +408,47 @@ svg.ci{width:16px;height:16px;display:block;flex:none}
  pointer-events:none}
 .hd-bar{position:absolute;left:0;right:0;top:0;height:calc(62px + var(--safe));
  background:rgba(7,6,13,.72);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
- opacity:0;-webkit-mask-image:linear-gradient(#000 calc(100% - 14px),transparent);
- mask-image:linear-gradient(#000 calc(100% - 14px),transparent)}
-.hd-lock{position:absolute;left:26px;top:calc(13px + var(--safe));transform-origin:0 0;
+ opacity:0;-webkit-mask-image:linear-gradient(#000 calc(100% - 4px),transparent);
+ mask-image:linear-gradient(#000 calc(100% - 4px),transparent)}
+.hd-lock{position:absolute;left:26px;top:calc(3px + var(--safe));transform-origin:0 0;
  display:flex;align-items:center;gap:9px;pointer-events:auto}
-.hd-lock .mk{width:30px;height:30px;flex:none;display:block}
-.hd-lock .wd{font:700 17px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
- letter-spacing:-.5px;color:var(--txt);white-space:nowrap}
+.hd-lock .mk{width:3.2em;height:3.2em;font-size:14px;flex:none;display:block;margin-right:.62em;margin-bottom:.8em}
+/*
+ * The wordmark, as a line you could have typed.
+ *
+ * It was the name in a heavy sans, and at four and a half times its size it
+ * was being drawn like a paragraph. What it is now says what the app is in
+ * its own vocabulary: a prompt, the first half on a key you press, the second
+ * half inside a window — the thing this whole page is about — and the caret
+ * still blinking after it.
+ *
+ * Every measurement is `em` off the one font-size, taken from the comp at
+ * 32px: the header draws it at 17px and the hero at 3.2x from the SAME
+ * element, so there is no second set of numbers to keep in step and the dock
+ * animation needs no changes at all. The tag has a fixed height in em rather
+ * than padding, because the two halves have to be exactly as tall as each
+ * other — built out of padding they disagreed by a pixel and the join showed.
+ */
+.hd-lock .lk{display:flex;align-items:flex-end;font:500 14px/1 var(--mono);white-space:nowrap}
+.hd-lock .lk-cue{align-self:flex-end;margin-right:.41em;margin-bottom:.42em;color:var(--vio)}
+.hd-lock .lk-tag{display:flex;align-items:stretch;height:1.94em}
+.hd-lock .lk-pl{display:flex;align-items:center;padding:0 .41em;border-radius:.344em 0 0 .344em;
+ background:var(--vio);color:#120c22}
+.hd-lock .lk-wi{position:relative;display:flex;align-items:center;overflow:hidden;padding:.53em .44em 0;
+ border:1px solid rgba(167,139,250,.45);border-left:0;border-radius:0 .344em .344em 0;color:#ede9fe}
+.hd-lock .lk-bar{position:absolute;left:-1px;right:-1px;top:0;height:.53em;
+ background:rgba(167,139,250,.16);border-bottom:1px solid rgba(167,139,250,.28)}
+/* The dots by name, not by tag: the title bar is an <i> too, and a rule on
+   `.lk-wi i` beat its own and turned the bar into a fourth dot. */
+.hd-lock .lk-d1,.hd-lock .lk-d2,.hd-lock .lk-d3{position:absolute;top:.19em;
+ width:.156em;height:.156em;border-radius:50%}
+.hd-lock .lk-d1{left:.25em;background:rgba(255,255,255,.45)}
+.hd-lock .lk-d2{left:.59em;background:rgba(255,255,255,.26)}
+.hd-lock .lk-d3{left:.94em;background:rgba(255,255,255,.16)}
+.hd-lock .lk-car{align-self:flex-end;margin-left:.41em;margin-bottom:.53em;width:.41em;height:.875em;background:var(--run);
+ animation:blink 1.15s steps(1) infinite}
+@keyframes blink{0%,55%{opacity:1}56%,100%{opacity:.42}}
+@media (prefers-reduced-motion:reduce){.hd-lock .lk-car{animation:none}}
 .hd-nav{position:absolute;right:28px;top:var(--safe);height:62px;display:flex;align-items:center;
  gap:20px;font:12px var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--dim);
  pointer-events:auto;opacity:0}
@@ -363,12 +461,21 @@ svg.ci{width:16px;height:16px;display:block;flex:none}
    happens to it. */
 .hd-ring,.hd-halo{position:fixed;top:0;width:0;height:0;overflow:visible;
  pointer-events:none}
-.hd-ring{left:calc(50% - 430.9px);z-index:79}
-.hd-halo{left:calc(50% - 430.9px);top:140.3px;z-index:78}
+/* Centred on the planet and sized from it: `--ring-x`/`--ring-y` are where
+   the mark actually lands and `--ring-s` is how big it actually is, all
+   measured. The three numbers that used to be typed here were right at one
+   window width and put the planet off-centre at every other. */
+.hd-ring,.hd-halo{left:var(--ring-x,50%);top:var(--ring-y,120px);
+ /* The svg inside already sits at -110,-110, so the point IS the centre:
+    translating the box as well pushed it a radius off. Scale about that
+    same point and the ring grows around the planet. */
+ transform:scale(var(--ring-s,1));transform-origin:0 0}
+.hd-ring{z-index:79}
+.hd-halo{z-index:78}
 .hd-ring svg,.hd-halo svg{overflow:visible;position:absolute;left:-110px;top:-110px;
  width:220px;height:220px}
 .hd-ring g{transform-origin:110px 110px}
-.hd-halo{transform-origin:0 0}
+
 
 /* The rule draws from where the planet was, not from the edge: that is why
    it reads as the ring laid flat and not as a bar that appears. */
@@ -384,7 +491,7 @@ svg.ci{width:16px;height:16px;display:block;flex:none}
   animation-timeline:scroll(root block);animation-range:0 78vh;
   animation-timing-function:linear;animation-fill-mode:both}
  .hd-lock{animation-name:dock}
- @keyframes dock{from{transform:translate(calc(50vw - 521.6px),54px) scale(4.6)}
+ @keyframes dock{from{transform:translate(var(--dock-x,calc(50vw - 521.6px)),64px) scale(4.2)}
   50%{transform:translate(calc(13vw - 44px),12px) scale(1.24)}
   to{transform:translate(0,0) scale(1)}}
  .hd-bar{animation-name:pane}
@@ -396,8 +503,7 @@ svg.ci{width:16px;height:16px;display:block;flex:none}
  @keyframes shorts{0%,62%{opacity:0;transform:translateY(-7px)}100%{opacity:1;transform:none}}
  /* They shrink away instead of sweeping the screen. */
  .hd-ring g{animation-name:shrink}
- @keyframes shrink{from{transform:translateY(140.3px) scale(1)}
-  to{transform:translateY(140.3px) scale(.34)}}
+ @keyframes shrink{from{transform:scale(1)}to{transform:scale(.34)}}
  .hd-ring{animation-name:veil}
  @keyframes veil{0%{opacity:1}58%,100%{opacity:0}}
  .hd-halo{animation-name:fadehalo}
@@ -420,6 +526,15 @@ svg.ci{width:16px;height:16px;display:block;flex:none}
   100%{opacity:1;top:calc(61px + var(--safe))}}
  .one{padding-top:330px}
 }
+/* `html.byhand` means the script is playing the choreography itself, so the
+   no-support fallback has to get out of the way — it exists for the page that
+   has no script at all. */
+html.byhand .hd-ring,html.byhand .hd-halo{display:block}
+html.byhand .hd-rule{transform:scaleX(0)}
+html.byhand .hd-sweep{opacity:0}
+html.byhand .one{min-height:100vh;padding-top:330px}
+@media(max-width:1099px){html.byhand .one{padding-top:280px}}
+@media(max-width:860px){html.byhand .one{padding-top:200px}}
 @supports not (animation-timeline: scroll()) {
  .hd-bar,.hd-nav{opacity:1}
  .hd-ring,.hd-halo{display:none}
@@ -446,27 +561,21 @@ svg.ci{width:16px;height:16px;display:block;flex:none}
 }
 /* Middle tier: the lockup at 4.6x does not fit below 1100. */
 @media(max-width:1099px){
- .hd-ring,.hd-halo{left:calc(50% - 327.9px)}
- .hd-halo{top:115.8px}
  @supports (animation-timeline: scroll()){
-  @keyframes dock{from{transform:translate(calc(50vw - 403.1px),47px) scale(3.5)}
+  @keyframes dock{from{transform:translate(var(--dock-x,calc(50vw - 403.1px)),57px) scale(3.4)}
    50%{transform:translate(calc(11vw - 36px),12px) scale(1.2)}
    to{transform:translate(0,0) scale(1)}}
-  @keyframes shrink{from{transform:translateY(115.8px) scale(0.761)}
-   to{transform:translateY(115.8px) scale(calc(0.761 * .34))}}
+
   .one{padding-top:280px}}
  .hd-halo{transform:scale(0.761)}
 }
 @media(max-width:860px){
  .hd-nav a:not(.dl){display:none}
- .hd-ring,.hd-halo{left:calc(50% - 149.9px)}
- .hd-halo{top:74.5px;transform:scale(0.348)}
  @supports (animation-timeline: scroll()){
-  @keyframes dock{from{transform:translate(calc(50vw - 198.4px),36px) scale(1.6)}
+  @keyframes dock{from{transform:translate(var(--dock-x,calc(50vw - 198.4px)),46px) scale(1.8)}
    50%{transform:translate(7px,10px) scale(1.14)}
    to{transform:translate(0,0) scale(1)}}
-  @keyframes shrink{from{transform:translateY(74.5px) scale(0.348)}
-   to{transform:translateY(74.5px) scale(calc(0.348 * .34))}}
+
   .one{padding-top:200px}}
 }
 
@@ -481,8 +590,76 @@ svg.ci{width:16px;height:16px;display:block;flex:none}
  color:var(--vio);opacity:.75;margin-bottom:14px}
 .sec h2{font-size:clamp(25px,3.4vw,38px);line-height:1.15;font-weight:650;
  letter-spacing:-.02em;color:var(--txt);text-wrap:balance;max-width:24ch}
-.sec .sub{margin-top:13px;color:var(--dim);font-size:15.5px;max-width:52ch;line-height:1.55}
+.sec .sub{margin-top:13px;color:var(--dim);font-size:15.5px;max-width:66ch;line-height:1.55}
 .sec .vis{margin-top:38px}
+/*
+ * The page as a run of scenes rather than a stack of boxes.
+ *
+ * Three things, all of them driven by where you are rather than by a timer:
+ * the copy of every other section sits to the right, so the eye zig-zags down
+ * the page instead of running down one gutter; each block rises into place as
+ * it arrives; and a satellite crosses the page behind everything, tracking
+ * the scroll.
+ *
+ * All three are added by the script and gated on `body.scene`, so the page
+ * without scripting — and the page with reduced motion — is the flat, plain
+ * one it has always been.
+ */
+body.scene .sec{position:relative;z-index:1}
+body.scene .sec.zig .eb,body.scene .sec.zig h2,body.scene .sec.zig .sub{margin-left:auto;margin-right:0;
+ /* Right-aligned, not just right-placed: pushed over with the text still
+    ragged on the right, the three blocks and the mock under them each ended
+    at a different x and the column read as an accident. */
+ text-align:right}
+body.scene .sec.zig .eb{max-width:min(66ch,52%)}
+body.scene .sec.zig .sub,body.scene .sec.zig h2{max-width:min(66ch,52%)}
+@media(max-width:980px){body.scene .sec.zig .eb,body.scene .sec.zig h2,body.scene .sec.zig .sub{margin-left:0}
+ body.scene .sec.zig .sub,body.scene .sec.zig h2{max-width:66ch}}
+/* A promoted layer while it is moving and a plain one afterwards: a big mock
+   card fading and rising is cheap on the GPU and expensive on the main thread,
+   and leaving `will-change` on forever is how a page ends up with thirty
+   layers it never uses again. */
+.rv{opacity:0;transform:translateY(30px);will-change:opacity,transform;
+ transition:opacity .9s cubic-bezier(.16,1,.3,1),transform .9s cubic-bezier(.16,1,.3,1)}
+.rv.in{opacity:1;transform:none}
+.rv.done{will-change:auto;transition:none}
+/* A heading arrives a LINE at a time, each one rising out of its own clip —
+   the one thing that separates a page that fades in from a page that feels
+   made. The lines are found by measuring the rendered text, not by putting
+   breaks in the markup, so they survive any width. */
+.ln{display:block;overflow:hidden}
+.ln>span{display:block;transform:translateY(105%);
+ transition:transform 1.05s cubic-bezier(.16,1,.3,1)}
+.rv.in .ln>span,.ln.in>span{transform:none}
+/* Depth: a soft light behind each section that drifts at its own rate, and a
+   visual that lags the copy as the section passes. Both are parallax, both
+   come off the same scroll handler. */
+/* No `filter: blur()` here on purpose. A radial gradient is already soft, and
+   five blurred layers were five full-screen GPU passes on every scroll frame —
+   measured as the thing that made the page stutter. */
+.orb{position:absolute;border-radius:50%;pointer-events:none;z-index:0;opacity:.9;will-change:transform}
+body.scene .sec>.w{position:relative;z-index:1}
+.par{will-change:transform}
+/* Where you are in the page, as a line down the left with a stop per section.
+   It is the only chrome on the page that knows how far you have come. */
+.rail-p{position:fixed;left:18px;top:50%;transform:translateY(-50%);z-index:60;
+ display:flex;flex-direction:column;gap:14px;align-items:center;opacity:0;transition:opacity .5s}
+.rail-p.on{opacity:1}
+.rail-p a{width:9px;height:9px;border-radius:50%;border:1px solid var(--line2);
+ background:transparent;transition:background .3s,border-color .3s,transform .3s}
+.rail-p a.here{background:var(--vio);border-color:var(--vio);transform:scale(1.35)}
+.rail-p i{position:absolute;left:4px;top:0;width:1px;height:100%;background:var(--line);z-index:-1}
+@media(max-width:1180px){.rail-p{display:none}}
+@media (prefers-reduced-motion:reduce){.orb,.rail-p{display:none}.ln>span{transform:none}}
+/* The satellite. Fixed, behind everything, and it never lands on the reading
+   column: it travels the outer thirds on a sine and is faint enough to be
+   scenery. */
+.sat{position:fixed;left:0;top:0;width:132px;height:132px;z-index:0;pointer-events:none;
+ opacity:0;transition:opacity .8s;will-change:transform}
+.sat.on{opacity:.18}
+.sat svg{width:100%;height:100%;color:var(--vio)}
+@media(max-width:980px){.sat{display:none}}
+@media (prefers-reduced-motion:reduce){.sat{display:none}.rv{opacity:1;transform:none}}
 .facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:1px;
  margin-top:32px;background:var(--line);border:1px solid var(--line);border-radius:10px;
  overflow:hidden}
@@ -805,6 +982,31 @@ svg.ci{width:16px;height:16px;display:block;flex:none}
  overflow-x:auto;white-space:nowrap}
 .verify p{font:11.5px var(--mono);color:var(--dim2);line-height:1.6;margin-top:4px}
 .verify a{color:var(--vio)}
+/* The three other pages, as cards with something in them rather than three
+   links in a footer. The catalogue takes the wide one: it is the one thing
+   here that grows without this page being edited. */
+.nx{margin-top:26px;display:grid;grid-template-columns:1.35fr 1fr 1fr;gap:16px;align-items:stretch}
+@media(max-width:980px){.nx{grid-template-columns:1fr}}
+.nxc{display:flex;flex-direction:column;gap:11px;padding:22px 24px;border-radius:18px;text-decoration:none;
+ border:1px solid var(--line);background:linear-gradient(180deg,rgba(255,255,255,.02),rgba(255,255,255,.004));
+ transition:border-color .16s,transform .16s,background .16s}
+.nxc:hover{border-color:var(--vio);transform:translateY(-2px);
+ background:linear-gradient(180deg,rgba(167,139,250,.08),rgba(167,139,250,.012))}
+.nxc.big{position:relative;overflow:hidden}
+.nxc.big::before{content:"";position:absolute;width:340px;height:340px;right:-150px;top:-200px;border-radius:50%;
+ background:radial-gradient(circle,rgba(167,139,250,.2),transparent 62%);pointer-events:none}
+.nxh{position:relative;display:flex;align-items:center;gap:12px}
+.nxi{flex:none;width:40px;height:40px;border-radius:12px;display:grid;place-items:center;color:var(--vio);
+ background:rgba(167,139,250,.13);border:1px solid rgba(167,139,250,.28)}
+.nxc b{font-size:18px;font-weight:650;color:var(--txt);letter-spacing:-.01em}
+.nxh u{margin-left:auto;font:11.5px var(--mono);text-decoration:none;color:var(--vio);white-space:nowrap;
+ padding:4px 10px;border-radius:999px;background:rgba(167,139,250,.1);border:1px solid rgba(167,139,250,.3)}
+.nxc>span:not(.nxh){position:relative;font-size:14px;line-height:1.65;color:var(--dim)}
+.nxl{display:flex;flex-wrap:wrap;gap:6px}
+.nxl i{font:11.5px var(--mono);font-style:normal;color:var(--dim2);padding:3px 9px;border-radius:999px;
+ border:1px solid var(--line2)}
+.nxq{font:13px/2 var(--mono);color:var(--dim2)}
+.nxc em{position:relative;margin-top:auto;padding-top:6px;font:12.5px var(--mono);font-style:normal;color:var(--vio)}
 @media(max-width:820px){
  .files .fr{grid-template-columns:1fr auto;gap:5px 12px;padding:14px 16px}
  .files .fr.th{display:none}
@@ -843,15 +1045,34 @@ body:not([data-route="home"]) .page{padding-top:calc(118px + var(--safe))}
 .page .w{max-width:1000px;padding:0}
 .page h1{font-size:clamp(30px,4.4vw,46px);line-height:1.1;font-weight:680;
  letter-spacing:-.025em;color:var(--txt);max-width:18ch}
-.page .lead{margin-top:14px;color:var(--dim);font-size:16.5px;max-width:58ch;line-height:1.6}
+.page .lead{margin-top:14px;color:var(--dim);font-size:16.5px;line-height:1.6}
 .page h3{margin-top:52px;font-size:20px;font-weight:650;color:var(--txt);
  letter-spacing:-.01em;scroll-margin-top:calc(84px + var(--safe))}
-.page h3+p,.page p{margin-top:11px;color:var(--dim);font-size:15px;line-height:1.65;max-width:62ch}
+/* `text-wrap:pretty` is what stops the last line of a paragraph being one
+   word — the guide had "▸ Plugins." and "AGENTGLASS_READ_TOKEN" alone on a
+   line of their own, which reads as a mistake rather than as a wrap. */
+/* The prose uses the column, like everything else on the page does. Capped at
+   76ch it stopped at 634px of a 1000px page while the cards beside it ran the
+   full width, so every paragraph broke early and the right third was empty. */
+.page h3+p,.page p{margin-top:11px;color:var(--dim);font-size:15px;line-height:1.65;
+ text-wrap:balance}
+.page li,.pl-desc-full{text-wrap:pretty}
+/* `pretty` only nudges the last line; measured on this page it still left
+   four-line paragraphs ending in one word. `balance` evens every line out and
+   is what a block of two to six lines actually wants — which is all of these.
+   Chrome ignores it past six lines, so the long prose keeps `pretty`. */
+.sec .sub,.page .lead,.steps span,.steps p,.an p,.qa p,.fcap span,.pl-step p,.pl-two p,
+.nxc>span,.pl-hint{text-wrap:balance}
+/* Short blocks get `balance` rather than `pretty`: three lines and a widow
+   ("it waits." alone under two full lines) is the shape `balance` exists for. */
+.lead,.sub,.pl-lead,.oneline,.fcap span,.nxc>span:not(.nxh){text-wrap:balance}
+/* An inline chip never breaks in the middle, and never leaves its punctuation
+   on the next line either: the mark after it travels with it. */
 .page p code,.page li code{font:12.5px var(--mono);color:var(--vio);
- background:rgba(167,139,250,.09);border-radius:4px;padding:1px 5px}
+ background:rgba(167,139,250,.09);border-radius:4px;padding:1px 5px;white-space:nowrap}
 .page a{color:var(--vio)}
 .page a:hover{color:var(--txt)}
-.page ul{margin-top:12px;padding-left:0;list-style:none;max-width:62ch}
+.page ul{margin-top:12px;padding-left:0;list-style:none}
 .page li{position:relative;padding-left:18px;margin-top:8px;color:var(--dim);
  font-size:15px;line-height:1.6}
 .page li:before{content:"";position:absolute;left:2px;top:10px;width:5px;height:5px;
@@ -958,7 +1179,8 @@ body:not([data-route="home"]) .page{padding-top:calc(118px + var(--safe))}
 }
 
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}
- .chip{display:none}.win,.oneline,.cta,.gate{opacity:1;transform:none}.rk{opacity:1;transform:none}}
+ .chip{display:none}.win,.oneline,.cta,.gate{opacity:1;transform:none}.rk{opacity:1;transform:none}
+ .oneline i{opacity:1;transform:none}}
 @media(max-width:860px){.chip{display:none}.wbody{grid-template-columns:42px 1fr}
  .r{grid-template-columns:1fr auto;gap:5px 18px}.r .f{grid-column:1/-1}
  /* the title bar IS the header: at 390px only the mark and one way out fit,
@@ -979,16 +1201,26 @@ body:not([data-route="home"]) .page{padding-top:calc(118px + var(--safe))}
 .pl-q kbd{font:11px var(--mono);color:var(--dim);border:1px solid var(--line2);border-radius:6px;padding:2px 6px}
 .pl-sort{height:46px;border-radius:12px;background:rgba(167,139,250,.06);border:1px solid var(--line2);color:var(--txt);
  font:13px var(--mono);padding:0 12px}
-.pl-jump{margin-top:14px;display:flex;flex-wrap:wrap;gap:16px;font:12.5px var(--mono)}
-.pl-jump a{color:var(--dim);text-decoration:none;border-bottom:1px solid transparent}
-.pl-jump a:hover{color:var(--fg);border-bottom-color:var(--vio)}
+.pl-acts{margin-top:16px;display:flex;flex-wrap:wrap;gap:10px}
+.pl-act{padding:9px 16px;font:12.5px var(--mono);color:var(--dim);text-decoration:none;border:1px solid var(--line2);
+ border-radius:10px;transition:color .15s,border-color .15s,background .15s}
+.pl-act:hover{color:var(--fg);border-color:var(--vio)}
+.pl-act.p{color:var(--void);background:var(--vio);border-color:var(--vio)}
+.pl-act.p:hover{filter:brightness(1.12)}
+.pl-chip-n{margin-left:8px;color:var(--dim2);font-size:11px}
+.pl-chip[aria-pressed="true"] .pl-chip-n{color:inherit;opacity:.7}
 .pl-chips{margin-top:14px;display:flex;flex-wrap:wrap;gap:8px}
 .pl-chip{font:12px var(--mono);color:var(--dim);background:none;border:1px solid var(--line2);border-radius:999px;
  padding:6px 12px;cursor:pointer;transition:color .15s,border-color .15s,background .15s}
 .pl-chip:hover{color:var(--txt)}
 .pl-chip[aria-pressed="true"]{color:var(--void);background:var(--vio);border-color:var(--vio)}
 .pl-count{margin-top:22px;font:12px var(--mono);letter-spacing:.08em;color:var(--dim2);text-transform:uppercase}
-.pl-grid{margin-top:14px;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(300px,100%),1fr));gap:16px}
+.pl-grid{margin-top:14px;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(380px,100%),1fr));gap:18px}
+.pl-shot{margin:-20px -20px 4px;aspect-ratio:16/9;border-radius:16px 16px 0 0;overflow:hidden;position:relative;
+ background:linear-gradient(135deg,rgba(167,139,250,.22),rgba(167,139,250,.04))}
+.pl-shot img{width:100%;height:100%;object-fit:cover;display:block}
+.pl-shot .mark{position:absolute;inset:0;display:grid;place-items:center;color:rgba(167,139,250,.5)}
+.pl-shot .mark svg{width:44px;height:44px}
 .pl-card{min-width:0;display:flex;flex-direction:column;gap:12px;padding:20px;border-radius:16px;
  background:linear-gradient(180deg,rgba(167,139,250,.07),rgba(167,139,250,.02));border:1px solid var(--line);
  transition:border-color .2s,transform .2s}
@@ -996,8 +1228,13 @@ body:not([data-route="home"]) .page{padding-top:calc(118px + var(--safe))}
 .pl-top{display:flex;align-items:flex-start;gap:12px}
 .pl-ic{flex:none;width:40px;height:40px;border-radius:11px;display:grid;place-items:center;
  background:rgba(167,139,250,.14);color:var(--vio)}
-.pl-name{font-size:17px;font-weight:650;color:var(--txt);line-height:1.25}
+.pl-name{display:block;font-size:17px;font-weight:650;color:var(--txt);line-height:1.25;text-decoration:none}
+.pl-name:hover{color:var(--vio)}
+.pl-desc-full{color:var(--dim);font-size:14.5px;line-height:1.7;margin:0 0 18px;max-width:70ch}
+.pl-note{color:var(--dim2);font-size:13px;line-height:1.7;margin:10px 0 0;max-width:70ch}
 .pl-by{margin-top:3px;font:12px var(--mono);color:var(--dim)}
+.pl-at{font:inherit;color:var(--vio);background:none;border:0;padding:0;cursor:pointer}
+.pl-at:hover{text-decoration:underline}
 .pl-ok{color:var(--run)}
 .pl-desc{color:var(--dim);font-size:13.5px;line-height:1.6;flex:1;margin:0;
  display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
@@ -1027,11 +1264,131 @@ body:not([data-route="home"]) .page{padding-top:calc(118px + var(--safe))}
 .pl-go{padding:5px 12px;font:12px var(--mono);color:var(--bg);background:var(--vio);border:0;border-radius:8px;cursor:pointer;white-space:nowrap}
 .pl-go:hover{filter:brightness(1.12)}
 .pl-go.miss{background:transparent;color:var(--dim);border:1px solid var(--line2)}
+/* One plugin's own page. The card on the shelf is a label; this is the thing,
+   and the thing is mostly a picture — so the picture opens the page at the
+   width of the column and enlarges to the width of the screen. Everything
+   else is arranged around it: who made it, what it costs to install, where it
+   will draw. */
+.pl-crumb{font:12px var(--mono);color:var(--dim2);margin-bottom:18px}
+.pl-crumb a{color:var(--dim);text-decoration:none}
+.pl-crumb a:hover{color:var(--vio)}
+.pl-one{animation:pl-in .36s cubic-bezier(.2,.7,.3,1) both}
+@keyframes pl-in{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+.pl-hero{position:relative;overflow:hidden;border:1px solid var(--line2);border-radius:22px;padding:34px;
+ display:grid;grid-template-columns:minmax(0,1fr) 296px;gap:34px;align-items:start;
+ background:linear-gradient(152deg,rgba(167,139,250,.15),rgba(167,139,250,.03) 44%,rgba(255,255,255,.012) 72%)}
+.pl-hero::before{content:"";position:absolute;width:560px;height:560px;right:-140px;top:-330px;border-radius:50%;
+ background:radial-gradient(circle,rgba(167,139,250,.24),transparent 62%);pointer-events:none}
+.pl-hero>div{position:relative;min-width:0}
+@media(max-width:940px){.pl-hero{grid-template-columns:minmax(0,1fr)}}
+.pl-one-top{position:relative;display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+.pl-one-ic{flex:none;width:62px;height:62px;border-radius:17px;display:grid;place-items:center;color:var(--vio);
+ background:rgba(167,139,250,.16);border:1px solid rgba(167,139,250,.32);box-shadow:0 12px 34px -18px rgba(167,139,250,.9)}
+.pl-one-ic svg{width:30px;height:30px}
+.pl-one h2{margin:0;font-size:clamp(26px,4.4vw,38px);line-height:1.08;letter-spacing:-.025em}
+.pl-one-sub{margin-top:6px;font:12.5px var(--mono);color:var(--dim)}
+.pl-badges{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.pl-badge{font:11.5px var(--mono);padding:6px 12px;border-radius:999px;white-space:nowrap;
+ color:var(--vio);border:1px solid rgba(167,139,250,.35);background:rgba(167,139,250,.1)}
+.pl-badge.s{color:var(--run);border-color:rgba(52,211,153,.35);background:rgba(52,211,153,.09)}
+.pl-badge.w{color:var(--wait);border-color:rgba(251,191,36,.35);background:rgba(251,191,36,.09)}
+.pl-lead{position:relative;margin:22px 0 0;font-size:17.5px;line-height:1.62;color:var(--txt);max-width:62ch}
+.pl-cta{position:relative;margin-top:24px;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.pl-big{display:inline-flex;align-items:center;gap:9px;padding:12px 22px;border:0;border-radius:12px;cursor:pointer;
+ font:14px var(--mono);color:var(--void);background:var(--vio);box-shadow:0 16px 40px -20px rgba(167,139,250,1)}
+.pl-big:hover{filter:brightness(1.12)}
+.pl-big.miss{background:transparent;color:var(--dim);border:1px solid var(--line2);box-shadow:none}
+.pl-ghost{display:inline-flex;align-items:center;gap:8px;padding:12px 18px;border-radius:12px;cursor:pointer;
+ font:13px var(--mono);color:var(--dim);text-decoration:none;background:transparent;border:1px solid var(--line2)}
+.pl-ghost:hover{color:var(--fg);border-color:var(--vio)}
+.pl-ghost.done{color:var(--run);border-color:rgba(52,211,153,.5)}
+.pl-hint{position:relative;margin:14px 0 0;font:12px var(--mono);color:var(--dim2);max-width:66ch;line-height:1.65}
+/* The picture, staged. A plugin is bought with its screenshot, and a screenshot
+   inside a 280px column is a thumbnail nobody clicks. */
+.pl-stage{position:relative;margin-top:22px;padding:14px;border-radius:22px;border:1px solid var(--line);
+ background:linear-gradient(180deg,rgba(167,139,250,.11),rgba(167,139,250,.015))}
+.pl-stage img{display:block;width:100%;border-radius:13px;border:1px solid var(--line2);cursor:zoom-in;
+ box-shadow:0 30px 80px -44px #000;transition:transform .32s cubic-bezier(.2,.7,.3,1),box-shadow .32s}
+.pl-stage:hover img{transform:translateY(-3px);box-shadow:0 44px 100px -40px #000}
+.pl-zoom{position:absolute;right:28px;bottom:28px;display:flex;align-items:center;gap:8px;pointer-events:none;
+ padding:8px 14px;border-radius:999px;font:11.5px var(--mono);color:var(--fg);opacity:.72;
+ background:rgba(7,6,13,.76);border:1px solid var(--line2);backdrop-filter:blur(8px);transition:opacity .2s}
+.pl-stage:hover .pl-zoom{opacity:1}
+/* The specification, beside the pitch rather than under it: five lines of
+   fact against a paragraph of prose, which is also what keeps the right half
+   of a wide hero from being empty. */
+.pl-spec{border:1px solid var(--line2);border-radius:16px;padding:6px 0;background:rgba(7,6,13,.45)}
+.pl-fact{display:flex;justify-content:space-between;align-items:baseline;gap:14px;padding:11px 16px}
+.pl-fact+.pl-fact{border-top:1px solid var(--line)}
+.pl-fact dt{flex:none;font:10.5px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--dim2)}
+.pl-fact dd{margin:0;font:12.5px var(--mono);color:var(--fg);text-align:right;word-break:break-word;min-width:0}
+.pl-fact a{color:var(--vio);text-decoration:none}
+.pl-fact a:hover{text-decoration:underline}
+/* The two closing sections sit side by side. Stacked, each one was a column of
+   text down the left of a page as wide as the picture above it, and the right
+   half of the screen was empty twice. */
+.pl-close{margin-top:36px;display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:28px;align-items:start}
+@media(max-width:940px){.pl-close{grid-template-columns:minmax(0,1fr)}}
+.pl-sec h3{margin:0 0 12px;font-size:18px;letter-spacing:-.01em}
+.pl-aside{border:1px solid var(--line);border-radius:16px;padding:20px 22px;background:rgba(255,255,255,.012)}
+.pl-aside h3{font-size:15px}
+.pl-aside .pl-hint{margin:0;max-width:none}
+/* `.page ul` caps prose at 62ch, which is right for a list of sentences and
+   wrong for a grid of cards: it held four cards inside half the width. */
+.page ul.pl-draws{margin:0;padding:0;list-style:none;max-width:none;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.pl-draws li{display:flex;gap:12px;align-items:flex-start;padding:15px 17px;border:1px solid var(--line);border-radius:15px}
+.pl-draws .n{flex:none;width:28px;height:28px;border-radius:9px;display:grid;place-items:center;
+ font:11px var(--mono);color:var(--vio);background:rgba(167,139,250,.14)}
+.pl-draws b{display:block;color:var(--fg);font-weight:550;font-size:14px}
+.pl-draws span{display:block;margin-top:3px;font-size:12.5px;line-height:1.55;color:var(--dim2)}
+.pl-lb{position:fixed;inset:0;z-index:90;background:rgba(4,3,9,.9);backdrop-filter:blur(10px);
+ display:grid;place-items:center;padding:34px;cursor:zoom-out;animation:pl-fade .18s ease both}
+@keyframes pl-fade{from{opacity:0}to{opacity:1}}
+.pl-lb img{max-width:min(1700px,96vw);max-height:88vh;border:1px solid var(--line2);border-radius:14px;
+ box-shadow:0 50px 140px -40px #000;animation:pl-pop .32s cubic-bezier(.2,.7,.3,1) both}
+@keyframes pl-pop{from{opacity:0;transform:scale(.965)}to{opacity:1;transform:none}}
+/* Fit first, then actual pixels: a wide screenshot fitted to the window is
+   still smaller than the window it was taken from, and the point of enlarging
+   it is to read the text in it. */
+.pl-lb.full{padding:0;place-items:start;overflow:auto;cursor:zoom-out}
+.pl-lb.full img{max-width:none;max-height:none;border:0;border-radius:0;animation:none}
+.pl-lb-cap{position:fixed;left:0;right:0;bottom:18px;text-align:center;pointer-events:none;
+ font:12px var(--mono);color:var(--dim)}
+.pl-lb-x{position:fixed;top:18px;right:20px;width:38px;height:38px;border-radius:11px;cursor:pointer;
+ display:grid;place-items:center;font:16px var(--mono);color:var(--fg);
+ background:rgba(7,6,13,.7);border:1px solid var(--line2);backdrop-filter:blur(8px)}
+.pl-lb-x:hover{border-color:var(--vio)}
 .pl-none{margin-top:18px;padding:40px 20px;text-align:center;color:var(--dim);border:1px dashed var(--line2);border-radius:16px}
-.pl-steps{margin-top:18px;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}
-.pl-step{padding:18px;border-radius:14px;border:1px solid var(--line)}
-.pl-step b{display:block;font:12px var(--mono);color:var(--vio);letter-spacing:.1em;margin-bottom:8px}
-.pl-step p{margin-top:0;font-size:14px}
+/* A path through the app is one word for wrapping: "Settings →" on one line
+   and "Plugins" on the next reads as two places. */
+.nb{white-space:nowrap;font-weight:600;color:var(--txt)}
+/* Two columns of prose rather than one 62ch ribbon down a 1000px page. */
+.pl-two{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:10px 34px}
+.pl-two p{max-width:58ch}
+/*
+ * Four cards of very different lengths, packed rather than laid on a grid.
+ *
+ * A grid gives every card in a row the height of the tallest, so the two
+ * short steps were drawn as tall boxes a third empty. Forcing spans fixed
+ * that and left a hole instead, because a spanned row is still a row. Two
+ * text columns pack them: each card takes the height it needs and the next
+ * one starts under it, with `break-inside: avoid` keeping a card whole.
+ */
+.pl-steps{margin-top:18px;columns:2;column-gap:14px}
+.pl-step{break-inside:avoid;display:inline-block;width:100%;margin:0 0 14px}
+@media(max-width:760px){.pl-steps{columns:1}}
+.pl-step{padding:18px;border-radius:14px;border:1px solid var(--line);box-sizing:border-box}
+.pl-step>b{display:block;font:12px var(--mono);color:var(--vio);letter-spacing:.1em;margin-bottom:8px}
+.pl-step p b{font-weight:600;color:var(--txt)}
+.pl-step p{margin-top:0;font-size:14px;max-width:none;text-wrap:pretty}
+.pl-step p+p{margin-top:10px}
+/* The one file an author writes by hand, shown rather than described: the
+   site demanded `agentglass-plugin validate .` on the issue form and never
+   named the command, and showed a catalogue entry — which is generated FOR
+   them — while the manifest stayed prose. */
+.pl-code{margin:10px 0 0;padding:11px 12px;border-radius:10px;overflow-x:auto;
+ background:rgba(0,0,0,.45);border:1px solid var(--line)}
+.pl-code code{font:11.5px/1.65 var(--mono);color:var(--dim);white-space:pre-wrap;word-break:break-word}
 @media (max-width:560px){.pl-sort{flex:1 1 100%}}
 </style>
 <!-- The deploy writes a cookieless page counter between these when one is
@@ -1043,6 +1400,7 @@ body:not([data-route="home"]) .page{padding-top:calc(118px + var(--safe))}
  /* The hero's reveals are gated on a class the script adds. Undo the gate:
     a page with scripting off is a page, not a black screen. */
  .kick,.win,.oneline,.cta,.gate{opacity:1!important;transform:none!important}
+ .oneline i{opacity:1!important;transform:none!important}
  .rk{opacity:1;transform:none}
  /* The tool chips exist to fly into the rail, and the flight is the script.
     A chip that cannot fly is a label sitting on top of the window. */
@@ -1054,11 +1412,10 @@ body:not([data-route="home"]) .page{padding-top:calc(118px + var(--safe))}
 </style></noscript>
 
 
-<div class="hd-halo"><svg viewBox="0 0 220 220"><ellipse cx="110" cy="110" rx="82" ry="82" fill="none" stroke="#a78bfa" stroke-opacity=".11" stroke-width="1" vector-effect="non-scaling-stroke"/></svg></div>
-<div class="hd-ring"><svg viewBox="0 0 220 220"><g><ellipse cx="110" cy="110" rx="100" ry="100" fill="none" stroke="#a78bfa" stroke-opacity=".2" stroke-width="1" vector-effect="non-scaling-stroke"/></g></svg></div>
+
 <div class="hd-rule"></div>
 <div class="hd-sweep"></div>
-<header class="hd"><div class="hd-bar"></div><a class="hd-lock" href="#"><svg class="mk" viewBox="0 0 64 64" aria-hidden="true"><defs><radialGradient id="hsheen" cx=".34" cy=".28" r=".82"><stop offset="0" stop-color="#fff" stop-opacity=".72"/><stop offset=".5" stop-color="#fff" stop-opacity=".15"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient></defs><path d="M14.1 54.9 A29 8 -52 0 1 49.9 9.1" fill="none" stroke="#a78bfa" stroke-opacity=".4" stroke-width="3.2" stroke-linecap="round"/><g opacity="0"><animate attributeName="opacity" values="0;1" keyTimes="0;.5" dur="16s" calcMode="discrete" repeatCount="indefinite"/><animateMotion dur="16s" repeatCount="indefinite" path="M49.9 9.1 A29 8 -52 0 1 14.1 54.9 A29 8 -52 0 1 49.9 9.1"/><circle r="6.8" fill="#34d399" fill-opacity=".18"/><circle r="3.6" fill="#34d399"/></g><circle cx="30" cy="34" r="12.5" fill="#a78bfa"/><circle cx="30" cy="34" r="12.5" fill="url(#hsheen)"/><g fill="none" stroke="#fff" stroke-opacity=".2" stroke-width="1.1"><ellipse cx="30" cy="34" rx="12.5" ry="4.5"/><ellipse cx="30" cy="34" rx="6" ry="12.1"/></g><path d="M30 21.5 A12.5 12.5 0 0 1 30 46.5 A17 17 0 0 0 30 21.5 Z" fill="#1b0b38" fill-opacity=".42"/><path d="M49.9 9.1 A29 8 -52 0 1 14.1 54.9" fill="none" stroke="#a78bfa" stroke-width="3.2" stroke-linecap="round"/><g><animate attributeName="opacity" values="1;0" keyTimes="0;.5" dur="16s" calcMode="discrete" repeatCount="indefinite"/><animateMotion dur="16s" repeatCount="indefinite" path="M49.9 9.1 A29 8 -52 0 1 14.1 54.9 A29 8 -52 0 1 49.9 9.1"/><circle r="6.8" fill="#34d399" fill-opacity=".18"/><circle r="3.6" fill="#34d399"/></g></svg><span class="wd">agentglass</span></a><nav class="hd-nav"><a href="#/" data-r="home">Home</a><a href="#/guide" data-r="guide">Guide</a><a href="#/plugins" data-r="plugins">Plugins</a><a href="#/faq" data-r="faq">Questions</a><a class="dl" href="#/#get">Get it →</a></nav></header>
+<header class="hd"><div class="hd-bar"></div><div class="hd-halo"><svg viewBox="0 0 220 220"><ellipse cx="110" cy="110" rx="82" ry="82" fill="none" stroke="#a78bfa" stroke-opacity=".11" stroke-width="1" vector-effect="non-scaling-stroke"/></svg></div><div class="hd-ring"><svg viewBox="0 0 220 220"><g><ellipse cx="110" cy="110" rx="100" ry="100" fill="none" stroke="#a78bfa" stroke-opacity=".2" stroke-width="1" vector-effect="non-scaling-stroke"/></g></svg></div><a class="hd-lock" href="#"><svg class="mk" viewBox="0 0 64 64" aria-hidden="true"><defs><radialGradient id="hsheen" cx=".34" cy=".28" r=".82"><stop offset="0" stop-color="#fff" stop-opacity=".72"/><stop offset=".5" stop-color="#fff" stop-opacity=".15"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient></defs><path d="M14.1 54.9 A29 8 -52 0 1 49.9 9.1" fill="none" stroke="#a78bfa" stroke-opacity=".4" stroke-width="3.2" stroke-linecap="round"/><g opacity="0"><animate attributeName="opacity" values="0;1" keyTimes="0;.5" dur="16s" calcMode="discrete" repeatCount="indefinite"/><animateMotion dur="16s" repeatCount="indefinite" path="M49.9 9.1 A29 8 -52 0 1 14.1 54.9 A29 8 -52 0 1 49.9 9.1"/><circle r="6.8" fill="#34d399" fill-opacity=".18"/><circle r="3.6" fill="#34d399"/></g><circle cx="30" cy="34" r="12.5" fill="#a78bfa"/><circle cx="30" cy="34" r="12.5" fill="url(#hsheen)"/><g fill="none" stroke="#fff" stroke-opacity=".2" stroke-width="1.1"><ellipse cx="30" cy="34" rx="12.5" ry="4.5"/><ellipse cx="30" cy="34" rx="6" ry="12.1"/></g><path d="M30 21.5 A12.5 12.5 0 0 1 30 46.5 A17 17 0 0 0 30 21.5 Z" fill="#1b0b38" fill-opacity=".42"/><path d="M49.9 9.1 A29 8 -52 0 1 14.1 54.9" fill="none" stroke="#a78bfa" stroke-width="3.2" stroke-linecap="round"/><g><animate attributeName="opacity" values="1;0" keyTimes="0;.5" dur="16s" calcMode="discrete" repeatCount="indefinite"/><animateMotion dur="16s" repeatCount="indefinite" path="M49.9 9.1 A29 8 -52 0 1 14.1 54.9 A29 8 -52 0 1 49.9 9.1"/><circle r="6.8" fill="#34d399" fill-opacity=".18"/><circle r="3.6" fill="#34d399"/></g></svg><span class="lk"><span class="lk-cue">&gt;</span><span class="lk-tag"><span class="lk-pl">agent</span><span class="lk-wi"><i class="lk-bar"></i><i class="lk-d1"></i><i class="lk-d2"></i><i class="lk-d3"></i>glass</span></span><span class="lk-car"></span></span></a><nav class="hd-nav"><a href="#/" data-r="home">Home</a><a href="#/guide" data-r="guide">Guide</a><a href="#/plugins" data-r="plugins">Plugins</a><a href="#/faq" data-r="faq">Questions</a><a class="dl" href="#/#get">Get it →</a></nav></header>
 <main id="home"><section class="one">
  <div class="kick">Everything you alt-tab to</div>
  <div class="field"><div class="chip" data-k="diff" style="--cx:-344px;--cy:-198px"><svg class="ci" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M12 11.5v5M9.5 14h5"/><path d="M9.5 18.4h5"/></svg><span>nvim</span></div><div class="chip" data-k="terminal" style="--cx:322px;--cy:-208px"><svg class="ci" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 10l2.5 2.5L7 15"/><path d="M12.5 15.5H17"/></svg><span>tmux</span></div><div class="chip" data-k="git" style="--cx:-408px;--cy:-52px"><svg class="ci" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="5" r="2.6"/><circle cx="7" cy="19" r="2.6"/><circle cx="17.5" cy="12" r="2.6"/><path d="M7 7.6v8.8"/><path d="M9.6 5h3.4a2 2 0 0 1 2 2v2.6"/></svg><span>lazygit</span></div><div class="chip" data-k="docker" style="--cx:386px;--cy:-46px"><svg class="ci" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="9.5" width="3.2" height="3.2" rx=".5"/><rect x="7.4" y="9.5" width="3.2" height="3.2" rx=".5"/><rect x="11.8" y="9.5" width="3.2" height="3.2" rx=".5"/><rect x="7.4" y="5.8" width="3.2" height="3.2" rx=".5"/><rect x="11.8" y="5.8" width="3.2" height="3.2" rx=".5"/><rect x="11.8" y="2.1" width="3.2" height="3.2" rx=".5"/><path d="M2 14.2c.4 3.4 2.8 5.6 7.2 5.6 5.2 0 8.8-2.6 10-6.6 1.4.2 2.6-.3 3.2-1.3-1.2-.9-2.5-.8-3.5-.2"/></svg><span>lazydocker</span></div><div class="chip" data-k="issues" style="--cx:-366px;--cy:106px"><svg class="ci" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 6.5l2 2 3.5-3.5"/><path d="M12 7h9"/><path d="M3.5 15.5l2 2 3.5-3.5"/><path d="M12 16h9"/></svg><span>ClickUp</span></div><div class="chip" data-k="pr" style="--cx:346px;--cy:94px"><svg class="ci" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><path d="M6 9v12"/><circle cx="18" cy="18" r="3"/><path d="M18 15V8a2 2 0 0 0-2-2h-4.5"/><path d="M13.5 3.5 11 6l2.5 2.5"/></svg><span>GitHub PRs</span></div><div class="chip" data-k="browser" style="--cx:-266px;--cy:218px"><svg class="ci" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18Z"/></svg><span>Chrome</span></div><div class="chip" data-k="chat" style="--cx:272px;--cy:224px"><svg class="ci" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 4.5h-17v12h5v4l5-4h7z"/></svg><span>Claude</span></div>
@@ -1068,7 +1425,7 @@ body:not([data-route="home"]) .page{padding-top:calc(118px + var(--safe))}
      <a class="dl" href="#get">Get it →</a></div></div>
    <div class="appbar"><span>↑3 ↓1</span><span>4 shells</span><span>2 waiting</span>
     <span>5h 61%</span><span>weekly 34%</span><span class="bell">🔔 7</span></div>
-   <div class="wbody"><div class="rail"><button class="rk" data-k="lantern" aria-label="Lantern"><svg class="ic" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3.6v2.6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M5.6 6.4l1.9 1.9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M18.4 6.4l-1.9 1.9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M6.2 20l5-8.6h1.6l5 8.6z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="9.9" r="2.6"/></svg></button><button class="rk" data-k="dash" aria-label="Dashboard"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7.5" height="7.5" rx="1.4"/><rect x="13.5" y="3" width="7.5" height="4.5" rx="1.4"/><rect x="13.5" y="10.5" width="7.5" height="10.5" rx="1.4"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.4"/></svg></button><button class="rk" data-k="diff" aria-label="File changes"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M12 11.5v5M9.5 14h5"/><path d="M9.5 18.4h5"/></svg></button><button class="rk" data-k="git" aria-label="Source control"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="5" r="2.6"/><circle cx="7" cy="19" r="2.6"/><circle cx="17.5" cy="12" r="2.6"/><path d="M7 7.6v8.8"/><path d="M9.6 5h3.4a2 2 0 0 1 2 2v2.6"/></svg></button><button class="rk" data-k="pr" aria-label="Pull requests"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><path d="M6 9v12"/><circle cx="18" cy="18" r="3"/><path d="M18 15V8a2 2 0 0 0-2-2h-4.5"/><path d="M13.5 3.5 11 6l2.5 2.5"/></svg></button><button class="rk" data-k="issues" aria-label="Tasks"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 6.5l2 2 3.5-3.5"/><path d="M12 7h9"/><path d="M3.5 15.5l2 2 3.5-3.5"/><path d="M12 16h9"/></svg></button><button class="rk" data-k="terminal" aria-label="Terminal"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 10l2.5 2.5L7 15"/><path d="M12.5 15.5H17"/></svg></button><button class="rk" data-k="chat" aria-label="Chat"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 4.5h-17v12h5v4l5-4h7z"/></svg></button><button class="rk" data-k="docker" aria-label="Docker"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="9.5" width="3.2" height="3.2" rx=".5"/><rect x="7.4" y="9.5" width="3.2" height="3.2" rx=".5"/><rect x="11.8" y="9.5" width="3.2" height="3.2" rx=".5"/><rect x="7.4" y="5.8" width="3.2" height="3.2" rx=".5"/><rect x="11.8" y="5.8" width="3.2" height="3.2" rx=".5"/><rect x="11.8" y="2.1" width="3.2" height="3.2" rx=".5"/><path d="M2 14.2c.4 3.4 2.8 5.6 7.2 5.6 5.2 0 8.8-2.6 10-6.6 1.4.2 2.6-.3 3.2-1.3-1.2-.9-2.5-.8-3.5-.2"/></svg></button><button class="rk" data-k="browser" aria-label="Browser"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18Z"/></svg></button><button class="rk" data-k="files" aria-label="Files"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6.6a2 2 0 0 1 2-2h3.5l2 2.6H19a2 2 0 0 1 2 2v9.2a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M3 9.7h18"/></svg></button></div><div class="stagearea"><!--slots--><div class="slot" data-k="lantern"><div class="ph"><span>6 running · $8.41 today</span><span>2 need you</span></div><div class="bd"><div class="g" style="grid-template-columns:7px 62px 46px 1fr 42px 44px"><span class="dot" style="background:var(--run)"></span><b>orbit</b><span class="mut">opus</span><span class="bar"><u style="width:72%"></u></span><em>62</em><em>$2.41</em></div><div class="g" style="grid-template-columns:7px 62px 46px 1fr 42px 44px"><span class="dot" style="background:var(--run)"></span><b>orbit-web</b><span class="mut">sonnet</span><span class="bar"><u style="width:44%"></u></span><em>31</em><em>$1.96</em></div><div class="g" style="grid-template-columns:7px 62px 46px 1fr 42px 44px"><span class="dot" style="background:var(--run)"></span><b>billing-api</b><span class="mut">opus</span><span class="bar"><u style="width:58%"></u></span><em>44</em><em>$0.87</em></div><div class="g" style="grid-template-columns:7px 62px 46px 1fr 42px 44px"><span class="dot" style="background:var(--wait)"></span><b>docs</b><span class="mut">haiku</span><span class="bar"><u style="width:26%"></u></span><em>12</em><em>$0.34</em></div><div class="g" style="grid-template-columns:7px 62px 46px 1fr 42px 44px"><span class="dot" style="background:var(--held)"></span><b>infra</b><span class="mut">opus</span><span class="bar"><u style="width:91%"></u></span><em>88</em><em>$4.12</em></div><div class="g" style="grid-template-columns:7px 62px 46px 1fr 42px 44px"><span class="dot" style="background:var(--run)"></span><b>tests</b><span class="mut">sonnet</span><span class="bar"><u style="width:18%"></u></span><em>9</em><em>$0.11</em></div><div class="g" style="grid-template-columns:7px 62px 46px 1fr 42px 44px"><span class="dot" style="background:var(--run)"></span><b>scraper</b><span class="mut">haiku</span><span class="bar"><u style="width:33%"></u></span><em>5</em><em>$0.06</em></div><div class="g" style="grid-template-columns:7px 62px 46px 1fr 42px 44px"><span class="dot" style="background:var(--run)"></span><b>migrations</b><span class="mut">sonnet</span><span class="bar"><u style="width:51%"></u></span><em>17</em><em>$0.44</em></div><div class="g" style="grid-template-columns:7px 62px 46px 1fr 42px 44px"><span class="dot" style="background:var(--run)"></span><b>orbit-api</b><span class="mut">opus</span><span class="bar"><u style="width:67%"></u></span><em>53</em><em>$3.08</em></div><div class="g" style="grid-template-columns:7px 62px 46px 1fr 42px 44px"><span class="dot" style="background:var(--wait)"></span><b>changelog</b><span class="mut">haiku</span><span class="bar"><u style="width:14%"></u></span><em>4</em><em>$0.03</em></div><div class="g" style="grid-template-columns:7px 62px 46px 1fr 42px 44px"><span class="dot" style="background:var(--run)"></span><b>e2e</b><span class="mut">sonnet</span><span class="bar"><u style="width:39%"></u></span><em>21</em><em>$0.62</em></div><div class="g" style="grid-template-columns:7px 62px 46px 1fr 42px 44px"><span class="dot" style="background:var(--run)"></span><b>seed</b><span class="mut">haiku</span><span class="bar"><u style="width:22%"></u></span><em>7</em><em>$0.09</em></div><div class="g" style="grid-template-columns:7px 62px 46px 1fr 42px 44px"><span class="dot" style="background:var(--held)"></span><b>deploy</b><span class="mut">opus</span><span class="bar"><u style="width:78%"></u></span><em>35</em><em>$1.87</em></div><div class="meta"><span>8 worktrees</span><span>214 turns</span><span>1.2M tokens</span><span>$8.41</span></div></div></div><div class="slot" data-k="dash"><div class="ph"><span>today · 4 projects</span><span>since 08:12</span></div><div class="bd"><div class="tiles"><div class="tile"><span class="tl2">spend</span><span class="num">$8.41</span><span class="dl2 up">+$1.20</span><svg viewBox="0 0 60 16" fill="none"><path d="M0 12 L12 8 L24 10 L36 4 L48 6 L60 2" stroke="var(--vio)" stroke-opacity=".5" stroke-width="1.4"/></svg></div><div class="tile"><span class="tl2">turns</span><span class="num">214</span><span class="dl2 up">+38</span><svg viewBox="0 0 60 16" fill="none"><path d="M0 6 L12 10 L24 7 L36 11 L48 8 L60 10" stroke="var(--vio)" stroke-opacity=".5" stroke-width="1.4"/></svg></div><div class="tile"><span class="tl2">tokens</span><span class="num">1.2M</span><span class="dl2 up">+210k</span><svg viewBox="0 0 60 16" fill="none"><path d="M0 11 L12 12 L24 5 L36 7 L48 3 L60 4" stroke="var(--vio)" stroke-opacity=".5" stroke-width="1.4"/></svg></div><div class="tile"><span class="tl2">errors</span><span class="num">3</span><span class="dl2 dn">−2</span><svg viewBox="0 0 60 16" fill="none"><path d="M0 8 L12 4 L24 9 L36 6 L48 10 L60 7" stroke="var(--vio)" stroke-opacity=".5" stroke-width="1.4"/></svg></div></div><div class="sh" style="margin-top:10px">spend by model</div><div class="g" style="grid-template-columns:52px 1fr 44px"><b>opus</b><span class="bar "><u style="width:64%"></u></span><em>$5.38</em></div><div class="g" style="grid-template-columns:52px 1fr 44px"><b>sonnet</b><span class="bar g2"><u style="width:29%"></u></span><em>$2.44</em></div><div class="g" style="grid-template-columns:52px 1fr 44px"><b>haiku</b><span class="bar a2"><u style="width:7%"></u></span><em>$0.59</em></div><div class="sh" style="margin-top:10px">by project</div><div class="g" style="grid-template-columns:52px 1fr 44px"><b>orbit</b><span class="bar "><u style="width:46%"></u></span><em>$3.87</em></div><div class="g" style="grid-template-columns:52px 1fr 44px"><b>orbit-web</b><span class="bar "><u style="width:27%"></u></span><em>$2.27</em></div><div class="g" style="grid-template-columns:52px 1fr 44px"><b>infra</b><span class="bar "><u style="width:19%"></u></span><em>$1.60</em></div></div></div><div class="slot" data-k="diff"><div class="ph"><span>3 files · +18 −7</span><span>reviewed 1 of 3</span></div><div class="split"><div class="a"><div class="sh">changed</div><div class="g sel" style="grid-template-columns:1fr 20px 20px"><b>scan.ts</b><em style="color:var(--run)">+11</em><em style="color:var(--held)">−4</em></div><div class="g" style="grid-template-columns:1fr 20px 20px"><b>App.tsx</b><em style="color:var(--run)">+5</em><em style="color:var(--held)">−1</em></div><div class="g" style="grid-template-columns:1fr 20px 20px"><b>db.ts</b><em style="color:var(--run)">+2</em><em style="color:var(--held)">−2</em></div><div class="g" style="grid-template-columns:1fr 20px 20px"><b>walk.ts</b><em style="color:var(--run)">+6</em><em style="color:var(--held)">−0</em></div><div class="g" style="grid-template-columns:1fr 20px 20px"><b>rail.tsx</b><em style="color:var(--run)">+3</em><em style="color:var(--held)">−5</em></div><div class="sh" style="margin-top:8px">staged</div><div class="g" style="grid-template-columns:11px 1fr"><span class="box t"></span><b>scan.ts</b></div><div class="g" style="grid-template-columns:11px 1fr"><span class="box t"></span><b>db.ts</b></div><div class="sh" style="margin-top:8px">commit</div><div style="height:22px;border-radius:6px;background:rgba(167,139,250,.06);border:1px solid var(--line)"></div><div class="g" style="grid-template-columns:1fr auto;margin-top:2px"><em style="text-align:left">on feat/gate</em><span class="tag g">Commit →</span></div></div><div class="b"><div class="hunk">@@ −38,9 +38,13 @@ scanRoots()</div><div class="code"><u>38</u><b style="color:transparent;width:7px;flex:none"></b><i style="width:62%;height:6px;border-radius:3px;background:var(--l);display:block"></i></div><div class="code"><u>39</u><b style="color:transparent;width:7px;flex:none"></b><i style="width:44%;height:6px;border-radius:3px;background:var(--l);display:block"></i></div><div class="code"><u>40</u><b style="color:transparent;width:7px;flex:none"></b><i style="width:71%;height:6px;border-radius:3px;background:var(--l);display:block"></i></div><div class="code"><u>41</u><b style="color:var(--held);width:7px;flex:none">−</b><i style="width:58%;height:6px;border-radius:3px;background:rgba(244,114,182,.42);display:block"></i></div><div class="code"><u>42</u><b style="color:var(--held);width:7px;flex:none">−</b><i style="width:37%;height:6px;border-radius:3px;background:rgba(244,114,182,.42);display:block"></i></div><div class="code"><u>43</u><b style="color:var(--run);width:7px;flex:none">+</b><i style="width:66%;height:6px;border-radius:3px;background:rgba(52,211,153,.42);display:block"></i></div><div class="code"><u>44</u><b style="color:var(--run);width:7px;flex:none">+</b><i style="width:49%;height:6px;border-radius:3px;background:rgba(52,211,153,.42);display:block"></i></div><div class="code"><u>45</u><b style="color:var(--run);width:7px;flex:none">+</b><i style="width:72%;height:6px;border-radius:3px;background:rgba(52,211,153,.42);display:block"></i></div><div class="code"><u>46</u><b style="color:var(--run);width:7px;flex:none">+</b><i style="width:31%;height:6px;border-radius:3px;background:rgba(52,211,153,.42);display:block"></i></div><div class="code"><u>47</u><b style="color:transparent;width:7px;flex:none"></b><i style="width:54%;height:6px;border-radius:3px;background:var(--l);display:block"></i></div><div class="code"><u>48</u><b style="color:transparent;width:7px;flex:none"></b><i style="width:40%;height:6px;border-radius:3px;background:var(--l);display:block"></i></div><div class="hunk">@@ −102,6 +106,9 @@ walkOne()</div><div class="code"><u>106</u><b style="color:transparent;width:7px;flex:none"></b><i style="width:48%;height:6px;border-radius:3px;background:var(--l);display:block"></i></div><div class="code"><u>107</u><b style="color:transparent;width:7px;flex:none"></b><i style="width:69%;height:6px;border-radius:3px;background:var(--l);display:block"></i></div><div class="code"><u>108</u><b style="color:var(--held);width:7px;flex:none">−</b><i style="width:43%;height:6px;border-radius:3px;background:rgba(244,114,182,.42);display:block"></i></div><div class="code"><u>109</u><b style="color:var(--run);width:7px;flex:none">+</b><i style="width:57%;height:6px;border-radius:3px;background:rgba(52,211,153,.42);display:block"></i></div><div class="code"><u>110</u><b style="color:var(--run);width:7px;flex:none">+</b><i style="width:35%;height:6px;border-radius:3px;background:rgba(52,211,153,.42);display:block"></i></div><div class="code"><u>111</u><b style="color:var(--run);width:7px;flex:none">+</b><i style="width:62%;height:6px;border-radius:3px;background:rgba(52,211,153,.42);display:block"></i></div><div class="code"><u>112</u><b style="color:transparent;width:7px;flex:none"></b><i style="width:51%;height:6px;border-radius:3px;background:var(--l);display:block"></i></div></div></div></div><div class="slot" data-k="git"><div class="ph"><span>main ↑3 ↓1</span><span>4 staged · 2 changed</span></div><div class="split"><div class="a"><div class="sh">branches</div><div class="g" style="grid-template-columns:7px 1fr 28px"><span class="dot" style="background:var(--vio)"></span><b>main</b><em>↑3</em></div><div class="g" style="grid-template-columns:7px 1fr 28px"><span class="dot" style="background:var(--run)"></span><b>feat/gate</b><em>↑2</em></div><div class="g" style="grid-template-columns:7px 1fr 28px"><span class="dot" style="background:var(--dim2)"></span><b>fix/rail</b><em>—</em></div><div class="sh" style="margin-top:9px">changes</div><div class="g" style="grid-template-columns:13px 1fr"><em style="color:var(--run);text-align:left">A</em><b>modifiers.ts</b></div><div class="g" style="grid-template-columns:13px 1fr"><em style="color:var(--wait);text-align:left">M</em><b>keys.ts</b></div><div class="g" style="grid-template-columns:13px 1fr"><em style="color:var(--wait);text-align:left">M</em><b>keyLayout.ts</b></div><div class="g" style="grid-template-columns:13px 1fr"><em style="color:var(--held);text-align:left">D</em><b>old.ts</b></div><div class="g" style="grid-template-columns:13px 1fr"><em style="color:var(--wait);text-align:left">M</em><b>TopBar.tsx</b></div><div class="g" style="grid-template-columns:13px 1fr"><em style="color:var(--run);text-align:left">A</em><b>fit.ts</b></div><div class="g" style="grid-template-columns:13px 1fr"><em style="color:var(--wait);text-align:left">M</em><b>Rail.tsx</b></div><div class="g" style="grid-template-columns:13px 1fr"><em style="color:var(--run);text-align:left">A</em><b>gate.ts</b></div><div class="g" style="grid-template-columns:13px 1fr"><em style="color:var(--wait);text-align:left">M</em><b>index.css</b></div><div class="g" style="grid-template-columns:13px 1fr"><em style="color:var(--run);text-align:left">A</em><b>tree.ts</b></div></div><div class="b" style="justify-content:center"><svg viewBox="0 0 230 190" fill="none" style="width:100%;height:auto;max-height:100%"><path d="M26 16 V178" stroke="var(--vio)" stroke-opacity=".4" stroke-width="1.5"/><path d="M26 62 C26 92 96 84 96 116 V172" stroke="var(--run)" stroke-opacity=".45" stroke-width="1.5"/><path d="M26 108 C26 128 160 122 160 142 V170" stroke="var(--wait)" stroke-opacity=".4" stroke-width="1.5"/><circle cx="26" cy="20" r="4" fill="var(--vio)"/><rect x="38" y="16" width="74" height="8" rx="4" fill="var(--l)"/><circle cx="26" cy="40" r="4" fill="var(--vio)"/><rect x="38" y="36" width="52" height="8" rx="4" fill="var(--l)"/><circle cx="26" cy="62" r="4" fill="var(--vio)"/><rect x="38" y="58" width="88" height="8" rx="4" fill="var(--l)"/><circle cx="26" cy="85" r="4" fill="var(--vio)"/><rect x="38" y="81" width="46" height="8" rx="4" fill="var(--l)"/><circle cx="26" cy="108" r="4" fill="var(--vio)"/><rect x="38" y="104" width="66" height="8" rx="4" fill="var(--l)"/><circle cx="26" cy="132" r="4" fill="var(--vio)"/><rect x="38" y="128" width="58" height="8" rx="4" fill="var(--l)"/><circle cx="26" cy="155" r="4" fill="var(--vio)"/><rect x="38" y="151" width="80" height="8" rx="4" fill="var(--l)"/><circle cx="26" cy="178" r="4" fill="var(--vio)"/><rect x="38" y="174" width="44" height="8" rx="4" fill="var(--l)"/><circle cx="96" cy="116" r="4" fill="var(--run)"/><rect x="108" y="112" width="60" height="8" rx="4" fill="rgba(52,211,153,.22)"/><circle cx="96" cy="144" r="4" fill="var(--run)"/><rect x="108" y="140" width="44" height="8" rx="4" fill="rgba(52,211,153,.22)"/><circle cx="96" cy="172" r="4" fill="var(--run)"/><rect x="108" y="168" width="52" height="8" rx="4" fill="rgba(52,211,153,.22)"/><circle cx="160" cy="142" r="4" fill="var(--wait)"/><rect x="172" y="138" width="40" height="8" rx="4" fill="rgba(251,191,36,.2)"/><circle cx="160" cy="170" r="4" fill="var(--wait)"/><rect x="172" y="166" width="30" height="8" rx="4" fill="rgba(251,191,36,.2)"/><text x="38" y="9" fill="#57546e" font-size="8.5" font-family="ui-monospace,monospace">main</text><text x="108" y="108" fill="#57546e" font-size="8.5" font-family="ui-monospace,monospace">feat/gate</text><text x="172" y="130" fill="#57546e" font-size="8.5" font-family="ui-monospace,monospace">fix/rail</text></svg></div></div></div><div class="slot" data-k="pr"><div class="ph"><span>needs my review</span><span>4 of 11 open</span></div><div class="bd"><div class="tabs" style="margin-bottom:4px"><b class="on">needs me</b><b>mine</b><b>all</b></div><div class="g" style="grid-template-columns:14px 1fr 74px 56px 36px"><span class="av"></span><span class="bar"><u style="width:64%"></u></span><span class="mut">feat/gate</span><span class="tag g">12 ✓</span><em>#594</em></div><div class="g sel" style="grid-template-columns:14px 1fr 74px 56px 36px"><span class="av"></span><span class="bar"><u style="width:42%"></u></span><span class="mut">fix/rail</span><span class="tag a">running</span><em>#596</em></div><div class="g" style="grid-template-columns:14px 1fr 74px 56px 36px"><span class="av"></span><span class="bar"><u style="width:71%"></u></span><span class="mut">chore/dep</span><span class="tag p">1 ✗</span><em>#591</em></div><div class="g" style="grid-template-columns:14px 1fr 74px 56px 36px"><span class="av"></span><span class="bar"><u style="width:55%"></u></span><span class="mut">feat/keys</span><span class="tag g">9 ✓</span><em>#588</em></div><div class="g" style="grid-template-columns:14px 1fr 74px 56px 36px"><span class="av"></span><span class="bar"><u style="width:38%"></u></span><span class="mut">docs/readme</span><span class="tag g">6 ✓</span><em>#585</em></div><div class="g" style="grid-template-columns:14px 1fr 74px 56px 36px"><span class="av"></span><span class="bar"><u style="width:60%"></u></span><span class="mut">fix/scan</span><span class="tag ">queued</span><em>#583</em></div><div class="g" style="grid-template-columns:14px 1fr 74px 56px 36px"><span class="av"></span><span class="bar"><u style="width:46%"></u></span><span class="mut">feat/tree</span><span class="tag g">14 ✓</span><em>#579</em></div><div class="g" style="grid-template-columns:14px 1fr 74px 56px 36px"><span class="av"></span><span class="bar"><u style="width:68%"></u></span><span class="mut">fix/gate</span><span class="tag p">3 ✗</span><em>#576</em></div><div class="g" style="grid-template-columns:14px 1fr 74px 56px 36px"><span class="av"></span><span class="bar"><u style="width:35%"></u></span><span class="mut">chore/ci</span><span class="tag g">8 ✓</span><em>#572</em></div><div class="g" style="grid-template-columns:14px 1fr 74px 56px 36px"><span class="av"></span><span class="bar"><u style="width:57%"></u></span><span class="mut">feat/theme</span><span class="tag a">running</span><em>#570</em></div><div class="meta"><span>3 approved</span><span>1 changes requested</span><span>2 draft</span><span>11 open</span></div></div></div><div class="slot" data-k="issues"><div class="ph"><span>assigned to me</span><span>5 open · 3 done</span></div><div class="bd"><div class="tabs" style="margin-bottom:4px"><b class="on">ORBIT</b><b>sprint 14</b></div><div class="g" style="grid-template-columns:11px 1fr 44px 30px 14px 60px"><span class="box"></span><span class="bar"><u style="width:58%"></u></span><span class="tag p">bug</span><span class="mut">3</span><span class="av"></span><span class="tag g">Start →</span></div><div class="g" style="grid-template-columns:11px 1fr 44px 30px 14px 60px"><span class="box"></span><span class="bar"><u style="width:44%"></u></span><span class="tag ">feat</span><span class="mut">5</span><span class="av"></span><em></em></div><div class="g" style="grid-template-columns:11px 1fr 44px 30px 14px 60px"><span class="box"></span><span class="bar"><u style="width:66%"></u></span><span class="tag p">bug</span><span class="mut">2</span><span class="av"></span><span class="tag g">Start →</span></div><div class="g" style="grid-template-columns:11px 1fr 44px 30px 14px 60px"><span class="box"></span><span class="bar"><u style="width:37%"></u></span><span class="tag ">docs</span><span class="mut">1</span><span class="av"></span><em></em></div><div class="g" style="grid-template-columns:11px 1fr 44px 30px 14px 60px"><span class="box"></span><span class="bar"><u style="width:52%"></u></span><span class="tag ">feat</span><span class="mut">8</span><span class="av"></span><em></em></div><div class="g" style="grid-template-columns:11px 1fr 44px 30px 14px 60px"><span class="box t"></span><span class="bar"><u style="width:48%"></u></span><span class="tag ">chore</span><span class="mut">1</span><span class="av"></span><em></em></div><div class="g" style="grid-template-columns:11px 1fr 44px 30px 14px 60px"><span class="box t"></span><span class="bar"><u style="width:61%"></u></span><span class="tag ">feat</span><span class="mut">3</span><span class="av"></span><em></em></div><div class="g" style="grid-template-columns:11px 1fr 44px 30px 14px 60px"><span class="box"></span><span class="bar"><u style="width:43%"></u></span><span class="tag p">bug</span><span class="mut">2</span><span class="av"></span><span class="tag g">Start →</span></div><div class="g" style="grid-template-columns:11px 1fr 44px 30px 14px 60px"><span class="box"></span><span class="bar"><u style="width:55%"></u></span><span class="tag ">feat</span><span class="mut">5</span><span class="av"></span><em></em></div><div class="g" style="grid-template-columns:11px 1fr 44px 30px 14px 60px"><span class="box"></span><span class="bar"><u style="width:39%"></u></span><span class="tag ">docs</span><span class="mut">1</span><span class="av"></span><em></em></div><div class="g" style="grid-template-columns:11px 1fr 44px 30px 14px 60px"><span class="box"></span><span class="bar"><u style="width:64%"></u></span><span class="tag ">chore</span><span class="mut">3</span><span class="av"></span><em></em></div><div class="meta"><span>ORBIT-1042 … 1049</span><span>20 pts</span><span>Start cuts a worktree</span></div></div></div><div class="slot" data-k="terminal"><div class="ph"><span>tmux · orbit</span><span>2 panes · 4 shells</span></div><div class="bd term"><div class="two"><div class="pane"><div class="sh">pane 0 — bun test</div><div class="tl "><b>❯</b> bun test</div><div class="tl d">scan.test.ts   <s style="color:var(--run)">18 pass</s></div><div class="tl d">keys.test.ts   <s style="color:var(--run)">24 pass</s></div><div class="tl d">gate.test.ts   <s style="color:var(--run)">31 pass</s></div><div class="tl d">rail.test.ts   <s style="color:var(--wait)">2 skip</s></div><div class="tl d">gate.test.ts   <s style="color:var(--run)">19 pass</s></div><div class="tl d">tree.test.ts   <s style="color:var(--run)">28 pass</s></div><div class="tl d">fit.test.ts    <s style="color:var(--run)">20 pass</s></div><div class="tl d">142 pass · 0 fail · 1.2s</div><div class="tl "><b>❯</b> git status --short</div><div class="tl d"> M src/engine/scan.ts</div><div class="tl d">?? src/engine/walk.ts</div><div class="tl "><b>❯</b> <s class="cur"></s></div></div><div class="pane"><div class="sh">pane 1 — nvim</div><div class="tl c"><u>38</u> export function scan(</div><div class="tl c"><u>39</u>   root: string,</div><div class="tl c"><u>40</u> ) {</div><div class="tl c"><u>41</u>   const out = [];</div><div class="tl c"><u>42</u>   for (const e of walk(</div><div class="tl c"><u>43</u>     root,</div><div class="tl c"><u>44</u>     { depth: 6 },</div><div class="tl c"><u>45</u>   )) {</div><div class="tl c"><u>46</u>     if (skip(e)) continue;</div><div class="tl c"><u>47</u>     out.push(e);</div><div class="tl c"><u>48</u>   }</div><div class="tl c"><u>49</u>   return out;</div><div class="tl c"><u>50</u> }</div><div class="tl d">-- INSERT --  41,17  Top</div></div></div></div></div><div class="slot" data-k="chat"><div class="ph"><span>claude · opus-5</span><span>turn 38 · $2.41</span></div><div class="bd"><div class="bub t">​</div><div class="tool"><s>⌕</s><span>Read src/engine/scan.ts · 218 lines</span></div><div class="bub">​</div><div class="tool"><s>✎</s><span>Edit src/engine/scan.ts</span><span style="margin-left:auto;color:var(--run)">+9</span><span style="color:var(--held)">−2</span></div><div class="tool"><s>❯</s><span>bun test scan.test.ts</span><span style="margin-left:auto;color:var(--run)">18 pass</span></div><div class="bub s">​</div><div class="bub t" style="width:46%">​</div><div class="tool"><s>⌕</s><span>Grep "canHide" · 3 files</span></div><div class="tool"><s>✎</s><span>Edit src/ui/keyLayout.ts</span><span style="margin-left:auto;color:var(--run)">+4</span><span style="color:var(--held)">−1</span></div><div class="bub" style="width:62%">​</div><div class="typing"><b></b><b></b><b></b></div><div class="meta"><span>38 turns</span><span>142k in</span><span>9.1k out</span><span>$2.41</span></div></div></div><div class="slot" data-k="docker"><div class="ph"><span>4 running · 1 unhealthy</span><span>compose · orbit</span></div><div class="bd"><div class="g" style="grid-template-columns:7px 64px 66px 1fr 1fr 34px"><span></span><b style="color:var(--dim2)">name</b><span class="sh" style="margin:0">image</span><span class="sh" style="margin:0">cpu</span><span class="sh" style="margin:0">mem</span><em>port</em></div><div class="g" style="grid-template-columns:7px 64px 66px 1fr 1fr 34px"><span class="dot" style="background:var(--run)"></span><b>postgres</b><span class="mut">16-alpine</span><span class="bar"><u style="width:22%"></u></span><span class="bar g2"><u style="width:48%"></u></span><em>5432</em></div><div class="g" style="grid-template-columns:7px 64px 66px 1fr 1fr 34px"><span class="dot" style="background:var(--run)"></span><b>redis</b><span class="mut">7.2</span><span class="bar"><u style="width:8%"></u></span><span class="bar g2"><u style="width:12%"></u></span><em>6379</em></div><div class="g" style="grid-template-columns:7px 64px 66px 1fr 1fr 34px"><span class="dot" style="background:var(--wait)"></span><b>worker</b><span class="mut">orbit:dev</span><span class="bar"><u style="width:71%"></u></span><span class="bar g2"><u style="width:83%"></u></span><em>—</em></div><div class="g" style="grid-template-columns:7px 64px 66px 1fr 1fr 34px"><span class="dot" style="background:var(--run)"></span><b>api</b><span class="mut">orbit:dev</span><span class="bar"><u style="width:34%"></u></span><span class="bar g2"><u style="width:39%"></u></span><em>8080</em></div><div class="g" style="grid-template-columns:7px 64px 66px 1fr 1fr 34px"><span class="dot" style="background:var(--run)"></span><b>minio</b><span class="mut">latest</span><span class="bar"><u style="width:5%"></u></span><span class="bar g2"><u style="width:21%"></u></span><em>9000</em></div><div class="g" style="grid-template-columns:7px 64px 66px 1fr 1fr 34px"><span class="dot" style="background:var(--held)"></span><b>mailhog</b><span class="mut">v1.0</span><span class="bar"><u style="width:0%"></u></span><span class="bar g2"><u style="width:4%"></u></span><em>8025</em></div><div class="g" style="grid-template-columns:7px 64px 66px 1fr 1fr 34px"><span class="dot" style="background:var(--run)"></span><b>traefik</b><span class="mut">v3.1</span><span class="bar"><u style="width:11%"></u></span><span class="bar g2"><u style="width:17%"></u></span><em>8081</em></div><div class="g" style="grid-template-columns:7px 64px 66px 1fr 1fr 34px"><span class="dot" style="background:var(--run)"></span><b>otel</b><span class="mut">contrib</span><span class="bar"><u style="width:3%"></u></span><span class="bar g2"><u style="width:9%"></u></span><em>4317</em></div><div class="sh" style="margin-top:8px">worker · last lines</div><div class="code"><u></u><i style="width:72%;height:5px;border-radius:3px;background:var(--l);display:block"></i></div><div class="code"><u></u><i style="width:54%;height:5px;border-radius:3px;background:rgba(251,191,36,.34);display:block"></i></div><div class="code"><u></u><i style="width:64%;height:5px;border-radius:3px;background:var(--l);display:block"></i></div><div class="code"><u></u><i style="width:41%;height:5px;border-radius:3px;background:var(--l);display:block"></i></div></div></div><div class="slot" data-k="browser"><div class="ph"><span>localhost:4000</span><span>driven by the agent</span></div><div class="bd brow"><div class="tabs"><b class="on">localhost:4000</b><b>docs</b><b>issue #1042</b></div><div class="url"><i style="width:44%"></i><span style="margin-left:auto;font:9px var(--mono);color:var(--run)">200 · 412ms</span></div><div class="pane" style="flex:1"><div class="g" style="grid-template-columns:22px 1fr 40px"><span class="av"></span><span class="bar"><u style="width:38%"></u></span><em>menu</em></div><div class="two" style="margin-top:4px"><div style="display:flex;flex-direction:column;gap:5px"><i style="width:92%;height:6px;border-radius:3px;background:var(--l);display:block"></i><i style="width:78%;height:6px;border-radius:3px;background:var(--l);display:block"></i><i style="width:86%;height:6px;border-radius:3px;background:var(--l);display:block"></i><i style="width:64%;height:6px;border-radius:3px;background:var(--l);display:block"></i><i style="width:80%;height:6px;border-radius:3px;background:var(--l);display:block"></i><i style="width:71%;height:6px;border-radius:3px;background:var(--l);display:block"></i><i style="width:88%;height:6px;border-radius:3px;background:var(--l);display:block"></i><i style="width:59%;height:6px;border-radius:3px;background:var(--l);display:block"></i><i style="width:83%;height:6px;border-radius:3px;background:var(--l);display:block"></i><span style="display:flex;gap:6px;align-items:center;margin-top:3px"><span class="ring"></span><span style="font:9px var(--mono);color:var(--vio)">click</span></span></div><div style="display:flex;flex-direction:column;gap:5px"><i style="width:70%;height:6px;border-radius:3px;background:var(--l);display:block"></i><i style="width:88%;height:6px;border-radius:3px;background:var(--l);display:block"></i><i style="width:56%;height:6px;border-radius:3px;background:var(--l);display:block"></i><i style="width:74%;height:6px;border-radius:3px;background:var(--l);display:block"></i><i style="width:81%;height:6px;border-radius:3px;background:var(--l);display:block"></i><i style="width:62%;height:6px;border-radius:3px;background:var(--l);display:block"></i><span style="height:34px;border-radius:6px;background:rgba(167,139,250,.1);border:1px solid var(--line);display:block;margin-top:3px"></span></div></div></div></div></div><div class="slot" data-k="files"><div class="ph"><span>orbit/</span><span>342 files · 12 open</span></div><div class="split" style="grid-template-columns:152px 1fr"><div class="a"><div class="g" style="grid-template-columns:0px 11px 1fr 22px"><span></span><span class="fo"></span><b>src</b><em></em></div><div class="g" style="grid-template-columns:10px 11px 1fr 22px"><span></span><span class="fo"></span><b>engine</b><em></em></div><div class="g sel" style="grid-template-columns:20px 11px 1fr 22px"><span></span><span class="fi"></span><b>scan.ts</b><em>ts</em></div><div class="g" style="grid-template-columns:20px 11px 1fr 22px"><span></span><span class="fi"></span><b>walk.ts</b><em>ts</em></div><div class="g" style="grid-template-columns:20px 11px 1fr 22px"><span></span><span class="fi"></span><b>db.ts</b><em>ts</em></div><div class="g" style="grid-template-columns:10px 11px 1fr 22px"><span></span><span class="fo"></span><b>ui</b><em></em></div><div class="g" style="grid-template-columns:20px 11px 1fr 22px"><span></span><span class="fi"></span><b>App.tsx</b><em>tsx</em></div><div class="g" style="grid-template-columns:20px 11px 1fr 22px"><span></span><span class="fi"></span><b>Rail.tsx</b><em>tsx</em></div><div class="g" style="grid-template-columns:0px 11px 1fr 22px"><span></span><span class="fo"></span><b>test</b><em></em></div><div class="g" style="grid-template-columns:10px 11px 1fr 22px"><span></span><span class="fi"></span><b>scan.test.ts</b><em>ts</em></div><div class="g" style="grid-template-columns:10px 11px 1fr 22px"><span></span><span class="fi"></span><b>keys.test.ts</b><em>ts</em></div><div class="g" style="grid-template-columns:10px 11px 1fr 22px"><span></span><span class="fi"></span><b>gate.test.ts</b><em>ts</em></div><div class="g" style="grid-template-columns:0px 11px 1fr 22px"><span></span><span class="fo"></span><b>docs</b><em></em></div><div class="g" style="grid-template-columns:10px 11px 1fr 22px"><span></span><span class="fi"></span><b>WORKSPACE.md</b><em>md</em></div><div class="g" style="grid-template-columns:0px 11px 1fr 22px"><span></span><span class="fi"></span><b>package.json</b><em>json</em></div><div class="g" style="grid-template-columns:0px 11px 1fr 22px"><span></span><span class="fi"></span><b>tsconfig.json</b><em>json</em></div></div><div class="b"><div class="sh">scan.ts · 218 lines</div><div class="code"><u>1</u><i style="width:54%;height:6px;border-radius:3px;background:var(--l);display:block"></i></div><div class="code"><u>2</u><i style="width:38%;height:6px;border-radius:3px;background:var(--l);display:block"></i></div><div class="code"><u>3</u><i style="width:72%;height:6px;border-radius:3px;background:var(--l);display:block"></i></div><div class="code"><u>4</u><i style="width:61%;height:6px;border-radius:3px;background:var(--l);display:block"></i></div><div class="code"><u>5</u><i style="width:45%;height:6px;border-radius:3px;background:var(--l);display:block"></i></div><div class="code"><u>6</u><i style="width:80%;height:6px;border-radius:3px;background:var(--l);display:block"></i></div><div class="code"><u>7</u><i style="width:33%;height:6px;border-radius:3px;background:var(--l);display:block"></i></div><div class="code"><u>8</u><i style="width:66%;height:6px;border-radius:3px;background:var(--l);display:block"></i></div><div class="code"><u>9</u><i style="width:50%;height:6px;border-radius:3px;background:var(--l);display:block"></i></div><div class="code"><u>10</u><i style="width:74%;height:6px;border-radius:3px;background:var(--l);display:block"></i></div><div class="code"><u>11</u><i style="width:42%;height:6px;border-radius:3px;background:var(--l);display:block"></i></div><div class="code"><u>12</u><i style="width:68%;height:6px;border-radius:3px;background:var(--l);display:block"></i></div><div class="code"><u>13</u><i style="width:56%;height:6px;border-radius:3px;background:var(--l);display:block"></i></div><div class="code"><u>14</u><i style="width:77%;height:6px;border-radius:3px;background:var(--l);display:block"></i></div><div class="code"><u>15</u><i style="width:35%;height:6px;border-radius:3px;background:var(--l);display:block"></i></div><div class="code"><u>16</u><i style="width:63%;height:6px;border-radius:3px;background:var(--l);display:block"></i></div><div class="meta"><span>typescript</span><span>utf-8</span><span>LF</span><span>7.4 kB</span></div></div></div></div><!--/slots--><!--/slots--></div></div>
+   <div class="wbody"><div class="rail"><button class="rk" data-k="git" aria-label="Git"><svg class="ic" viewBox="0 0 15 15" fill="currentColor"><path d="M6.79286 1.20708L7.14642 1.56063L7.14642 1.56063L6.79286 1.20708ZM1.20708 6.79287L0.853524 6.43931H0.853524L1.20708 6.79287ZM1.20708 8.20708L1.56063 7.85352L1.56063 7.85352L1.20708 8.20708ZM6.79287 13.7929L6.43931 14.1464L6.79287 13.7929ZM8.20708 13.7929L7.85352 13.4393L8.20708 13.7929ZM13.7929 8.20708L14.1464 8.56063L13.7929 8.20708ZM13.7929 6.79286L13.4393 7.14642L13.7929 6.79286ZM8.20708 1.20708L8.56063 0.853524V0.853524L8.20708 1.20708ZM6.43931 0.853525L0.853524 6.43931L1.56063 7.14642L7.14642 1.56063L6.43931 0.853525ZM0.853525 8.56063L6.43931 14.1464L7.14642 13.4393L1.56063 7.85352L0.853525 8.56063ZM8.56063 14.1464L14.1464 8.56063L13.4393 7.85352L7.85352 13.4393L8.56063 14.1464ZM14.1464 6.43931L8.56063 0.853524L7.85352 1.56063L13.4393 7.14642L14.1464 6.43931ZM14.1464 8.56063C14.7322 7.97484 14.7322 7.0251 14.1464 6.43931L13.4393 7.14642C13.6346 7.34168 13.6346 7.65826 13.4393 7.85352L14.1464 8.56063ZM6.43931 14.1464C7.0251 14.7322 7.97485 14.7322 8.56063 14.1464L7.85352 13.4393C7.65826 13.6346 7.34168 13.6346 7.14642 13.4393L6.43931 14.1464ZM0.853524 6.43931C0.267737 7.0251 0.267739 7.97485 0.853525 8.56063L1.56063 7.85352C1.36537 7.65826 1.36537 7.34168 1.56063 7.14642L0.853524 6.43931ZM7.14642 1.56063C7.34168 1.36537 7.65826 1.36537 7.85352 1.56063L8.56063 0.853524C7.97484 0.267737 7.0251 0.267739 6.43931 0.853525L7.14642 1.56063ZM5.14642 2.85352L6.14642 3.85352L6.85352 3.14642L5.85352 2.14642L5.14642 2.85352ZM7.49997 4.99997C7.22383 4.99997 6.99997 4.77611 6.99997 4.49997H5.99997C5.99997 5.3284 6.67154 5.99997 7.49997 5.99997V4.99997ZM7.99997 4.49997C7.99997 4.77611 7.77611 4.99997 7.49997 4.99997V5.99997C8.3284 5.99997 8.99997 5.3284 8.99997 4.49997H7.99997ZM7.49997 3.99997C7.77611 3.99997 7.99997 4.22383 7.99997 4.49997H8.99997C8.99997 3.67154 8.3284 2.99997 7.49997 2.99997V3.99997ZM7.49997 2.99997C6.67154 2.99997 5.99997 3.67154 5.99997 4.49997H6.99997C6.99997 4.22383 7.22383 3.99997 7.49997 3.99997V2.99997ZM8.14642 5.85352L9.64642 7.35352L10.3535 6.64642L8.85352 5.14642L8.14642 5.85352ZM10.5 7.99997C10.2238 7.99997 9.99997 7.77611 9.99997 7.49997H8.99997C8.99997 8.3284 9.67154 8.99997 10.5 8.99997V7.99997ZM11 7.49997C11 7.77611 10.7761 7.99997 10.5 7.99997V8.99997C11.3284 8.99997 12 8.3284 12 7.49997H11ZM10.5 6.99997C10.7761 6.99997 11 7.22383 11 7.49997H12C12 6.67154 11.3284 5.99997 10.5 5.99997V6.99997ZM10.5 5.99997C9.67154 5.99997 8.99997 6.67154 8.99997 7.49997H9.99997C9.99997 7.22383 10.2238 6.99997 10.5 6.99997V5.99997ZM6.99997 5.49997V9.49997H7.99997V5.49997H6.99997ZM7.49997 11C7.22383 11 6.99997 10.7761 6.99997 10.5H5.99997C5.99997 11.3284 6.67154 12 7.49997 12V11ZM7.99997 10.5C7.99997 10.7761 7.77611 11 7.49997 11V12C8.3284 12 8.99997 11.3284 8.99997 10.5H7.99997ZM7.49997 9.99997C7.77611 9.99997 7.99997 10.2238 7.99997 10.5H8.99997C8.99997 9.67154 8.3284 8.99997 7.49997 8.99997V9.99997ZM7.49997 8.99997C6.67154 8.99997 5.99997 9.67154 5.99997 10.5H6.99997C6.99997 10.2238 7.22383 9.99997 7.49997 9.99997V8.99997Z"/></svg></button><button class="rk" data-k="diff" aria-label="File changes"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M12 11.5v5M9.5 14h5"/><path d="M9.5 18.4h5"/></svg></button><button class="rk" data-k="pr" aria-label="Pull requests"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><path d="M6 9v12"/><circle cx="18" cy="18" r="3"/><path d="M18 15V8a2 2 0 0 0-2-2h-4.5"/><path d="M13.5 3.5 11 6l2.5 2.5"/></svg></button><button class="rk" data-k="issues" aria-label="Tasks"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 6.5l2 2 3.5-3.5"/><path d="M12 7h9"/><path d="M3.5 15.5l2 2 3.5-3.5"/><path d="M12 16h9"/></svg></button><button class="rk" data-k="terminal" aria-label="Term"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 10l2.5 2.5L7 15"/><path d="M12.5 15.5H17"/></svg></button><button class="rk" data-k="browser" aria-label="Browser"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18Z"/></svg></button><i class="rsep" aria-hidden="true"></i><button class="rk" data-k="docker" aria-label="Docker"><svg class="ic" viewBox="-3.06 -3.06 30.12 30.12" fill="currentColor"><path d="M13.983 11.078h2.119a.186.186 0 00.186-.185V9.006a.186.186 0 00-.186-.186h-2.119a.185.185 0 00-.185.185v1.888c0 .102.083.185.185.185m-2.954-5.43h2.118a.186.186 0 00.186-.186V3.574a.186.186 0 00-.186-.185h-2.118a.185.185 0 00-.185.185v1.888c0 .102.082.185.185.185m0 2.716h2.118a.187.187 0 00.186-.186V6.29a.186.186 0 00-.186-.185h-2.118a.185.185 0 00-.185.185v1.887c0 .102.082.185.185.186m-2.93 0h2.12a.186.186 0 00.184-.186V6.29a.185.185 0 00-.185-.185H8.1a.185.185 0 00-.185.185v1.887c0 .102.083.185.185.186m-2.964 0h2.119a.186.186 0 00.185-.186V6.29a.185.185 0 00-.185-.185H5.136a.186.186 0 00-.186.185v1.887c0 .102.084.185.186.186m5.893 2.715h2.118a.186.186 0 00.186-.185V9.006a.186.186 0 00-.186-.186h-2.118a.185.185 0 00-.185.185v1.888c0 .102.082.185.185.185m-2.93 0h2.12a.185.185 0 00.184-.185V9.006a.185.185 0 00-.184-.186h-2.12a.185.185 0 00-.184.185v1.888c0 .102.083.185.185.185m-2.964 0h2.119a.185.185 0 00.185-.185V9.006a.185.185 0 00-.184-.186h-2.12a.186.186 0 00-.186.186v1.887c0 .102.084.185.186.185m-2.92 0h2.12a.185.185 0 00.184-.185V9.006a.185.185 0 00-.184-.186h-2.12a.185.185 0 00-.184.185v1.888c0 .102.082.185.185.185M23.763 9.89c-.065-.051-.672-.51-1.954-.51-.338.001-.676.03-1.01.087-.248-1.7-1.653-2.53-1.716-2.566l-.344-.199-.226.327c-.284.438-.49.922-.612 1.43-.23.97-.09 1.882.403 2.661-.595.332-1.55.413-1.744.42H.751a.751.751 0 00-.75.748 11.376 11.376 0 00.692 4.062c.545 1.428 1.355 2.48 2.41 3.124 1.18.723 3.1 1.137 5.275 1.137.983.003 1.963-.086 2.93-.266a12.248 12.248 0 003.823-1.389c.98-.567 1.86-1.288 2.61-2.136 1.252-1.418 1.998-2.997 2.553-4.4h.221c1.372 0 2.215-.549 2.68-1.009.309-.293.55-.65.707-1.046l.098-.288Z"/></svg></button><button class="rk" data-k="lantern" aria-label="Lantern"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.6v2.6"/><path d="M5.6 6.4l1.9 1.9"/><path d="M18.4 6.4l-1.9 1.9"/><path d="M6.2 20l5-8.6h1.6l5 8.6z"/><circle cx="12" cy="9.9" r="2.6" fill="currentColor" stroke="none"/></svg></button><button class="rk" data-k="chat" aria-label="Chat"><svg class="ic" viewBox="1.16 1.16 21.69 21.69" fill="none" stroke="currentColor" stroke-width="1.81" stroke-linecap="round" stroke-linejoin="round"><path d="M20 4H4v12h5v4l5-4h6z"/></svg></button><button class="rk" data-k="files" aria-label="Files"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6.6a2 2 0 0 1 2-2h3.5l2 2.6H19a2 2 0 0 1 2 2v9.2a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M3 9.7h18"/></svg></button><button class="rk" data-k="dash" aria-label="Dashboard"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7.5" height="7.5" rx="1.4"/><rect x="13.5" y="3" width="7.5" height="4.5" rx="1.4"/><rect x="13.5" y="10.5" width="7.5" height="10.5" rx="1.4"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.4"/></svg></button></div><div class="stagearea"><!--slots--><div class="slot" data-k="lantern"><div class="ph"><span>6 running · $8.41 today</span><span>2 need you</span></div><div class="bd"><div class="g" style="grid-template-columns:7px 62px 46px 1fr 42px 44px"><span class="dot" style="background:var(--run)"></span><b>orbit</b><span class="mut">opus</span><span class="bar"><u style="width:72%"></u></span><em>62</em><em>$2.41</em></div><div class="g" style="grid-template-columns:7px 62px 46px 1fr 42px 44px"><span class="dot" style="background:var(--run)"></span><b>orbit-web</b><span class="mut">sonnet</span><span class="bar"><u style="width:44%"></u></span><em>31</em><em>$1.96</em></div><div class="g" style="grid-template-columns:7px 62px 46px 1fr 42px 44px"><span class="dot" style="background:var(--run)"></span><b>billing-api</b><span class="mut">opus</span><span class="bar"><u style="width:58%"></u></span><em>44</em><em>$0.87</em></div><div class="g" style="grid-template-columns:7px 62px 46px 1fr 42px 44px"><span class="dot" style="background:var(--wait)"></span><b>docs</b><span class="mut">haiku</span><span class="bar"><u style="width:26%"></u></span><em>12</em><em>$0.34</em></div><div class="g" style="grid-template-columns:7px 62px 46px 1fr 42px 44px"><span class="dot" style="background:var(--held)"></span><b>infra</b><span class="mut">opus</span><span class="bar"><u style="width:91%"></u></span><em>88</em><em>$4.12</em></div><div class="g" style="grid-template-columns:7px 62px 46px 1fr 42px 44px"><span class="dot" style="background:var(--run)"></span><b>tests</b><span class="mut">sonnet</span><span class="bar"><u style="width:18%"></u></span><em>9</em><em>$0.11</em></div><div class="g" style="grid-template-columns:7px 62px 46px 1fr 42px 44px"><span class="dot" style="background:var(--run)"></span><b>scraper</b><span class="mut">haiku</span><span class="bar"><u style="width:33%"></u></span><em>5</em><em>$0.06</em></div><div class="g" style="grid-template-columns:7px 62px 46px 1fr 42px 44px"><span class="dot" style="background:var(--run)"></span><b>migrations</b><span class="mut">sonnet</span><span class="bar"><u style="width:51%"></u></span><em>17</em><em>$0.44</em></div><div class="g" style="grid-template-columns:7px 62px 46px 1fr 42px 44px"><span class="dot" style="background:var(--run)"></span><b>orbit-api</b><span class="mut">opus</span><span class="bar"><u style="width:67%"></u></span><em>53</em><em>$3.08</em></div><div class="g" style="grid-template-columns:7px 62px 46px 1fr 42px 44px"><span class="dot" style="background:var(--wait)"></span><b>changelog</b><span class="mut">haiku</span><span class="bar"><u style="width:14%"></u></span><em>4</em><em>$0.03</em></div><div class="g" style="grid-template-columns:7px 62px 46px 1fr 42px 44px"><span class="dot" style="background:var(--run)"></span><b>e2e</b><span class="mut">sonnet</span><span class="bar"><u style="width:39%"></u></span><em>21</em><em>$0.62</em></div><div class="g" style="grid-template-columns:7px 62px 46px 1fr 42px 44px"><span class="dot" style="background:var(--run)"></span><b>seed</b><span class="mut">haiku</span><span class="bar"><u style="width:22%"></u></span><em>7</em><em>$0.09</em></div><div class="g" style="grid-template-columns:7px 62px 46px 1fr 42px 44px"><span class="dot" style="background:var(--held)"></span><b>deploy</b><span class="mut">opus</span><span class="bar"><u style="width:78%"></u></span><em>35</em><em>$1.87</em></div><div class="meta"><span>8 worktrees</span><span>214 turns</span><span>1.2M tokens</span><span>$8.41</span></div></div></div><div class="slot" data-k="dash"><div class="ph"><span>today · 4 projects</span><span>since 08:12</span></div><div class="bd"><div class="tiles"><div class="tile"><span class="tl2">spend</span><span class="num">$8.41</span><span class="dl2 up">+$1.20</span><svg viewBox="0 0 60 16" fill="none"><path d="M0 12 L12 8 L24 10 L36 4 L48 6 L60 2" stroke="var(--vio)" stroke-opacity=".5" stroke-width="1.4"/></svg></div><div class="tile"><span class="tl2">turns</span><span class="num">214</span><span class="dl2 up">+38</span><svg viewBox="0 0 60 16" fill="none"><path d="M0 6 L12 10 L24 7 L36 11 L48 8 L60 10" stroke="var(--vio)" stroke-opacity=".5" stroke-width="1.4"/></svg></div><div class="tile"><span class="tl2">tokens</span><span class="num">1.2M</span><span class="dl2 up">+210k</span><svg viewBox="0 0 60 16" fill="none"><path d="M0 11 L12 12 L24 5 L36 7 L48 3 L60 4" stroke="var(--vio)" stroke-opacity=".5" stroke-width="1.4"/></svg></div><div class="tile"><span class="tl2">errors</span><span class="num">3</span><span class="dl2 dn">−2</span><svg viewBox="0 0 60 16" fill="none"><path d="M0 8 L12 4 L24 9 L36 6 L48 10 L60 7" stroke="var(--vio)" stroke-opacity=".5" stroke-width="1.4"/></svg></div></div><div class="sh" style="margin-top:10px">spend by model</div><div class="g" style="grid-template-columns:52px 1fr 44px"><b>opus</b><span class="bar "><u style="width:64%"></u></span><em>$5.38</em></div><div class="g" style="grid-template-columns:52px 1fr 44px"><b>sonnet</b><span class="bar g2"><u style="width:29%"></u></span><em>$2.44</em></div><div class="g" style="grid-template-columns:52px 1fr 44px"><b>haiku</b><span class="bar a2"><u style="width:7%"></u></span><em>$0.59</em></div><div class="sh" style="margin-top:10px">by project</div><div class="g" style="grid-template-columns:52px 1fr 44px"><b>orbit</b><span class="bar "><u style="width:46%"></u></span><em>$3.87</em></div><div class="g" style="grid-template-columns:52px 1fr 44px"><b>orbit-web</b><span class="bar "><u style="width:27%"></u></span><em>$2.27</em></div><div class="g" style="grid-template-columns:52px 1fr 44px"><b>infra</b><span class="bar "><u style="width:19%"></u></span><em>$1.60</em></div></div></div><div class="slot" data-k="diff"><div class="ph"><span>3 files · +18 −7</span><span>reviewed 1 of 3</span></div><div class="split"><div class="a"><div class="sh">changed</div><div class="g sel" style="grid-template-columns:1fr 20px 20px"><b>scan.ts</b><em style="color:var(--run)">+11</em><em style="color:var(--held)">−4</em></div><div class="g" style="grid-template-columns:1fr 20px 20px"><b>App.tsx</b><em style="color:var(--run)">+5</em><em style="color:var(--held)">−1</em></div><div class="g" style="grid-template-columns:1fr 20px 20px"><b>db.ts</b><em style="color:var(--run)">+2</em><em style="color:var(--held)">−2</em></div><div class="g" style="grid-template-columns:1fr 20px 20px"><b>walk.ts</b><em style="color:var(--run)">+6</em><em style="color:var(--held)">−0</em></div><div class="g" style="grid-template-columns:1fr 20px 20px"><b>rail.tsx</b><em style="color:var(--run)">+3</em><em style="color:var(--held)">−5</em></div><div class="sh" style="margin-top:8px">staged</div><div class="g" style="grid-template-columns:11px 1fr"><span class="box t"></span><b>scan.ts</b></div><div class="g" style="grid-template-columns:11px 1fr"><span class="box t"></span><b>db.ts</b></div><div class="sh" style="margin-top:8px">commit</div><div style="height:22px;border-radius:6px;background:rgba(167,139,250,.06);border:1px solid var(--line)"></div><div class="g" style="grid-template-columns:1fr auto;margin-top:2px"><em style="text-align:left">on feat/gate</em><span class="tag g">Commit →</span></div></div><div class="b"><div class="hunk">@@ −38,9 +38,13 @@ scanRoots()</div><div class="code"><u>38</u><b style="color:transparent;width:7px;flex:none"></b><i style="width:62%;height:6px;border-radius:3px;background:var(--l);display:block"></i></div><div class="code"><u>39</u><b style="color:transparent;width:7px;flex:none"></b><i style="width:44%;height:6px;border-radius:3px;background:var(--l);display:block"></i></div><div class="code"><u>40</u><b style="color:transparent;width:7px;flex:none"></b><i style="width:71%;height:6px;border-radius:3px;background:var(--l);display:block"></i></div><div class="code"><u>41</u><b style="color:var(--held);width:7px;flex:none">−</b><i style="width:58%;height:6px;border-radius:3px;background:rgba(244,114,182,.42);display:block"></i></div><div class="code"><u>42</u><b style="color:var(--held);width:7px;flex:none">−</b><i style="width:37%;height:6px;border-radius:3px;background:rgba(244,114,182,.42);display:block"></i></div><div class="code"><u>43</u><b style="color:var(--run);width:7px;flex:none">+</b><i style="width:66%;height:6px;border-radius:3px;background:rgba(52,211,153,.42);display:block"></i></div><div class="code"><u>44</u><b style="color:var(--run);width:7px;flex:none">+</b><i style="width:49%;height:6px;border-radius:3px;background:rgba(52,211,153,.42);display:block"></i></div><div class="code"><u>45</u><b style="color:var(--run);width:7px;flex:none">+</b><i style="width:72%;height:6px;border-radius:3px;background:rgba(52,211,153,.42);display:block"></i></div><div class="code"><u>46</u><b style="color:var(--run);width:7px;flex:none">+</b><i style="width:31%;height:6px;border-radius:3px;background:rgba(52,211,153,.42);display:block"></i></div><div class="code"><u>47</u><b style="color:transparent;width:7px;flex:none"></b><i style="width:54%;height:6px;border-radius:3px;background:var(--l);display:block"></i></div><div class="code"><u>48</u><b style="color:transparent;width:7px;flex:none"></b><i style="width:40%;height:6px;border-radius:3px;background:var(--l);display:block"></i></div><div class="hunk">@@ −102,6 +106,9 @@ walkOne()</div><div class="code"><u>106</u><b style="color:transparent;width:7px;flex:none"></b><i style="width:48%;height:6px;border-radius:3px;background:var(--l);display:block"></i></div><div class="code"><u>107</u><b style="color:transparent;width:7px;flex:none"></b><i style="width:69%;height:6px;border-radius:3px;background:var(--l);display:block"></i></div><div class="code"><u>108</u><b style="color:var(--held);width:7px;flex:none">−</b><i style="width:43%;height:6px;border-radius:3px;background:rgba(244,114,182,.42);display:block"></i></div><div class="code"><u>109</u><b style="color:var(--run);width:7px;flex:none">+</b><i style="width:57%;height:6px;border-radius:3px;background:rgba(52,211,153,.42);display:block"></i></div><div class="code"><u>110</u><b style="color:var(--run);width:7px;flex:none">+</b><i style="width:35%;height:6px;border-radius:3px;background:rgba(52,211,153,.42);display:block"></i></div><div class="code"><u>111</u><b style="color:var(--run);width:7px;flex:none">+</b><i style="width:62%;height:6px;border-radius:3px;background:rgba(52,211,153,.42);display:block"></i></div><div class="code"><u>112</u><b style="color:transparent;width:7px;flex:none"></b><i style="width:51%;height:6px;border-radius:3px;background:var(--l);display:block"></i></div></div></div></div><div class="slot" data-k="git"><div class="ph"><span>main ↑3 ↓1</span><span>4 staged · 2 changed</span></div><div class="split"><div class="a"><div class="sh">branches</div><div class="g" style="grid-template-columns:7px 1fr 28px"><span class="dot" style="background:var(--vio)"></span><b>main</b><em>↑3</em></div><div class="g" style="grid-template-columns:7px 1fr 28px"><span class="dot" style="background:var(--run)"></span><b>feat/gate</b><em>↑2</em></div><div class="g" style="grid-template-columns:7px 1fr 28px"><span class="dot" style="background:var(--dim2)"></span><b>fix/rail</b><em>—</em></div><div class="sh" style="margin-top:9px">changes</div><div class="g" style="grid-template-columns:13px 1fr"><em style="color:var(--run);text-align:left">A</em><b>modifiers.ts</b></div><div class="g" style="grid-template-columns:13px 1fr"><em style="color:var(--wait);text-align:left">M</em><b>keys.ts</b></div><div class="g" style="grid-template-columns:13px 1fr"><em style="color:var(--wait);text-align:left">M</em><b>keyLayout.ts</b></div><div class="g" style="grid-template-columns:13px 1fr"><em style="color:var(--held);text-align:left">D</em><b>old.ts</b></div><div class="g" style="grid-template-columns:13px 1fr"><em style="color:var(--wait);text-align:left">M</em><b>TopBar.tsx</b></div><div class="g" style="grid-template-columns:13px 1fr"><em style="color:var(--run);text-align:left">A</em><b>fit.ts</b></div><div class="g" style="grid-template-columns:13px 1fr"><em style="color:var(--wait);text-align:left">M</em><b>Rail.tsx</b></div><div class="g" style="grid-template-columns:13px 1fr"><em style="color:var(--run);text-align:left">A</em><b>gate.ts</b></div><div class="g" style="grid-template-columns:13px 1fr"><em style="color:var(--wait);text-align:left">M</em><b>index.css</b></div><div class="g" style="grid-template-columns:13px 1fr"><em style="color:var(--run);text-align:left">A</em><b>tree.ts</b></div></div><div class="b" style="justify-content:center"><svg viewBox="0 0 230 190" fill="none" style="width:100%;height:auto;max-height:100%"><path d="M26 16 V178" stroke="var(--vio)" stroke-opacity=".4" stroke-width="1.5"/><path d="M26 62 C26 92 96 84 96 116 V172" stroke="var(--run)" stroke-opacity=".45" stroke-width="1.5"/><path d="M26 108 C26 128 160 122 160 142 V170" stroke="var(--wait)" stroke-opacity=".4" stroke-width="1.5"/><circle cx="26" cy="20" r="4" fill="var(--vio)"/><rect x="38" y="16" width="74" height="8" rx="4" fill="var(--l)"/><circle cx="26" cy="40" r="4" fill="var(--vio)"/><rect x="38" y="36" width="52" height="8" rx="4" fill="var(--l)"/><circle cx="26" cy="62" r="4" fill="var(--vio)"/><rect x="38" y="58" width="88" height="8" rx="4" fill="var(--l)"/><circle cx="26" cy="85" r="4" fill="var(--vio)"/><rect x="38" y="81" width="46" height="8" rx="4" fill="var(--l)"/><circle cx="26" cy="108" r="4" fill="var(--vio)"/><rect x="38" y="104" width="66" height="8" rx="4" fill="var(--l)"/><circle cx="26" cy="132" r="4" fill="var(--vio)"/><rect x="38" y="128" width="58" height="8" rx="4" fill="var(--l)"/><circle cx="26" cy="155" r="4" fill="var(--vio)"/><rect x="38" y="151" width="80" height="8" rx="4" fill="var(--l)"/><circle cx="26" cy="178" r="4" fill="var(--vio)"/><rect x="38" y="174" width="44" height="8" rx="4" fill="var(--l)"/><circle cx="96" cy="116" r="4" fill="var(--run)"/><rect x="108" y="112" width="60" height="8" rx="4" fill="rgba(52,211,153,.22)"/><circle cx="96" cy="144" r="4" fill="var(--run)"/><rect x="108" y="140" width="44" height="8" rx="4" fill="rgba(52,211,153,.22)"/><circle cx="96" cy="172" r="4" fill="var(--run)"/><rect x="108" y="168" width="52" height="8" rx="4" fill="rgba(52,211,153,.22)"/><circle cx="160" cy="142" r="4" fill="var(--wait)"/><rect x="172" y="138" width="40" height="8" rx="4" fill="rgba(251,191,36,.2)"/><circle cx="160" cy="170" r="4" fill="var(--wait)"/><rect x="172" y="166" width="30" height="8" rx="4" fill="rgba(251,191,36,.2)"/><text x="38" y="9" fill="#57546e" font-size="8.5" font-family="ui-monospace,monospace">main</text><text x="108" y="108" fill="#57546e" font-size="8.5" font-family="ui-monospace,monospace">feat/gate</text><text x="172" y="130" fill="#57546e" font-size="8.5" font-family="ui-monospace,monospace">fix/rail</text></svg></div></div></div><div class="slot" data-k="pr"><div class="ph"><span>needs my review</span><span>4 of 11 open</span></div><div class="bd"><div class="tabs" style="margin-bottom:4px"><b class="on">needs me</b><b>mine</b><b>all</b></div><div class="g" style="grid-template-columns:14px 1fr 74px 56px 36px"><span class="av"></span><span class="bar"><u style="width:64%"></u></span><span class="mut">feat/gate</span><span class="tag g">12 ✓</span><em>#594</em></div><div class="g sel" style="grid-template-columns:14px 1fr 74px 56px 36px"><span class="av"></span><span class="bar"><u style="width:42%"></u></span><span class="mut">fix/rail</span><span class="tag a">running</span><em>#596</em></div><div class="g" style="grid-template-columns:14px 1fr 74px 56px 36px"><span class="av"></span><span class="bar"><u style="width:71%"></u></span><span class="mut">chore/dep</span><span class="tag p">1 ✗</span><em>#591</em></div><div class="g" style="grid-template-columns:14px 1fr 74px 56px 36px"><span class="av"></span><span class="bar"><u style="width:55%"></u></span><span class="mut">feat/keys</span><span class="tag g">9 ✓</span><em>#588</em></div><div class="g" style="grid-template-columns:14px 1fr 74px 56px 36px"><span class="av"></span><span class="bar"><u style="width:38%"></u></span><span class="mut">docs/readme</span><span class="tag g">6 ✓</span><em>#585</em></div><div class="g" style="grid-template-columns:14px 1fr 74px 56px 36px"><span class="av"></span><span class="bar"><u style="width:60%"></u></span><span class="mut">fix/scan</span><span class="tag ">queued</span><em>#583</em></div><div class="g" style="grid-template-columns:14px 1fr 74px 56px 36px"><span class="av"></span><span class="bar"><u style="width:46%"></u></span><span class="mut">feat/tree</span><span class="tag g">14 ✓</span><em>#579</em></div><div class="g" style="grid-template-columns:14px 1fr 74px 56px 36px"><span class="av"></span><span class="bar"><u style="width:68%"></u></span><span class="mut">fix/gate</span><span class="tag p">3 ✗</span><em>#576</em></div><div class="g" style="grid-template-columns:14px 1fr 74px 56px 36px"><span class="av"></span><span class="bar"><u style="width:35%"></u></span><span class="mut">chore/ci</span><span class="tag g">8 ✓</span><em>#572</em></div><div class="g" style="grid-template-columns:14px 1fr 74px 56px 36px"><span class="av"></span><span class="bar"><u style="width:57%"></u></span><span class="mut">feat/theme</span><span class="tag a">running</span><em>#570</em></div><div class="meta"><span>3 approved</span><span>1 changes requested</span><span>2 draft</span><span>11 open</span></div></div></div><div class="slot" data-k="issues"><div class="ph"><span>assigned to me</span><span>5 open · 3 done</span></div><div class="bd"><div class="tabs" style="margin-bottom:4px"><b class="on">ORBIT</b><b>sprint 14</b></div><div class="g" style="grid-template-columns:11px 1fr 44px 30px 14px 60px"><span class="box"></span><span class="bar"><u style="width:58%"></u></span><span class="tag p">bug</span><span class="mut">3</span><span class="av"></span><span class="tag g">Start →</span></div><div class="g" style="grid-template-columns:11px 1fr 44px 30px 14px 60px"><span class="box"></span><span class="bar"><u style="width:44%"></u></span><span class="tag ">feat</span><span class="mut">5</span><span class="av"></span><em></em></div><div class="g" style="grid-template-columns:11px 1fr 44px 30px 14px 60px"><span class="box"></span><span class="bar"><u style="width:66%"></u></span><span class="tag p">bug</span><span class="mut">2</span><span class="av"></span><span class="tag g">Start →</span></div><div class="g" style="grid-template-columns:11px 1fr 44px 30px 14px 60px"><span class="box"></span><span class="bar"><u style="width:37%"></u></span><span class="tag ">docs</span><span class="mut">1</span><span class="av"></span><em></em></div><div class="g" style="grid-template-columns:11px 1fr 44px 30px 14px 60px"><span class="box"></span><span class="bar"><u style="width:52%"></u></span><span class="tag ">feat</span><span class="mut">8</span><span class="av"></span><em></em></div><div class="g" style="grid-template-columns:11px 1fr 44px 30px 14px 60px"><span class="box t"></span><span class="bar"><u style="width:48%"></u></span><span class="tag ">chore</span><span class="mut">1</span><span class="av"></span><em></em></div><div class="g" style="grid-template-columns:11px 1fr 44px 30px 14px 60px"><span class="box t"></span><span class="bar"><u style="width:61%"></u></span><span class="tag ">feat</span><span class="mut">3</span><span class="av"></span><em></em></div><div class="g" style="grid-template-columns:11px 1fr 44px 30px 14px 60px"><span class="box"></span><span class="bar"><u style="width:43%"></u></span><span class="tag p">bug</span><span class="mut">2</span><span class="av"></span><span class="tag g">Start →</span></div><div class="g" style="grid-template-columns:11px 1fr 44px 30px 14px 60px"><span class="box"></span><span class="bar"><u style="width:55%"></u></span><span class="tag ">feat</span><span class="mut">5</span><span class="av"></span><em></em></div><div class="g" style="grid-template-columns:11px 1fr 44px 30px 14px 60px"><span class="box"></span><span class="bar"><u style="width:39%"></u></span><span class="tag ">docs</span><span class="mut">1</span><span class="av"></span><em></em></div><div class="g" style="grid-template-columns:11px 1fr 44px 30px 14px 60px"><span class="box"></span><span class="bar"><u style="width:64%"></u></span><span class="tag ">chore</span><span class="mut">3</span><span class="av"></span><em></em></div><div class="meta"><span>ORBIT-1042 … 1049</span><span>20 pts</span><span>Start cuts a worktree</span></div></div></div><div class="slot" data-k="terminal"><div class="ph"><span>tmux · orbit</span><span>2 panes · 4 shells</span></div><div class="bd term"><div class="two"><div class="pane"><div class="sh">pane 0 — bun test</div><div class="tl "><b>❯</b> bun test</div><div class="tl d">scan.test.ts   <s style="color:var(--run)">18 pass</s></div><div class="tl d">keys.test.ts   <s style="color:var(--run)">24 pass</s></div><div class="tl d">gate.test.ts   <s style="color:var(--run)">31 pass</s></div><div class="tl d">rail.test.ts   <s style="color:var(--wait)">2 skip</s></div><div class="tl d">gate.test.ts   <s style="color:var(--run)">19 pass</s></div><div class="tl d">tree.test.ts   <s style="color:var(--run)">28 pass</s></div><div class="tl d">fit.test.ts    <s style="color:var(--run)">20 pass</s></div><div class="tl d">142 pass · 0 fail · 1.2s</div><div class="tl "><b>❯</b> git status --short</div><div class="tl d"> M src/engine/scan.ts</div><div class="tl d">?? src/engine/walk.ts</div><div class="tl "><b>❯</b> <s class="cur"></s></div></div><div class="pane"><div class="sh">pane 1 — nvim</div><div class="tl c"><u>38</u> export function scan(</div><div class="tl c"><u>39</u>   root: string,</div><div class="tl c"><u>40</u> ) {</div><div class="tl c"><u>41</u>   const out = [];</div><div class="tl c"><u>42</u>   for (const e of walk(</div><div class="tl c"><u>43</u>     root,</div><div class="tl c"><u>44</u>     { depth: 6 },</div><div class="tl c"><u>45</u>   )) {</div><div class="tl c"><u>46</u>     if (skip(e)) continue;</div><div class="tl c"><u>47</u>     out.push(e);</div><div class="tl c"><u>48</u>   }</div><div class="tl c"><u>49</u>   return out;</div><div class="tl c"><u>50</u> }</div><div class="tl d">-- INSERT --  41,17  Top</div></div></div></div></div><div class="slot" data-k="chat"><div class="ph"><span>claude · opus-5</span><span>turn 38 · $2.41</span></div><div class="bd"><div class="bub t">​</div><div class="tool"><s>⌕</s><span>Read src/engine/scan.ts · 218 lines</span></div><div class="bub">​</div><div class="tool"><s>✎</s><span>Edit src/engine/scan.ts</span><span style="margin-left:auto;color:var(--run)">+9</span><span style="color:var(--held)">−2</span></div><div class="tool"><s>❯</s><span>bun test scan.test.ts</span><span style="margin-left:auto;color:var(--run)">18 pass</span></div><div class="bub s">​</div><div class="bub t" style="width:46%">​</div><div class="tool"><s>⌕</s><span>Grep "canHide" · 3 files</span></div><div class="tool"><s>✎</s><span>Edit src/ui/keyLayout.ts</span><span style="margin-left:auto;color:var(--run)">+4</span><span style="color:var(--held)">−1</span></div><div class="bub" style="width:62%">​</div><div class="typing"><b></b><b></b><b></b></div><div class="meta"><span>38 turns</span><span>142k in</span><span>9.1k out</span><span>$2.41</span></div></div></div><div class="slot" data-k="docker"><div class="ph"><span>4 running · 1 unhealthy</span><span>compose · orbit</span></div><div class="bd"><div class="g" style="grid-template-columns:7px 64px 66px 1fr 1fr 34px"><span></span><b style="color:var(--dim2)">name</b><span class="sh" style="margin:0">image</span><span class="sh" style="margin:0">cpu</span><span class="sh" style="margin:0">mem</span><em>port</em></div><div class="g" style="grid-template-columns:7px 64px 66px 1fr 1fr 34px"><span class="dot" style="background:var(--run)"></span><b>postgres</b><span class="mut">16-alpine</span><span class="bar"><u style="width:22%"></u></span><span class="bar g2"><u style="width:48%"></u></span><em>5432</em></div><div class="g" style="grid-template-columns:7px 64px 66px 1fr 1fr 34px"><span class="dot" style="background:var(--run)"></span><b>redis</b><span class="mut">7.2</span><span class="bar"><u style="width:8%"></u></span><span class="bar g2"><u style="width:12%"></u></span><em>6379</em></div><div class="g" style="grid-template-columns:7px 64px 66px 1fr 1fr 34px"><span class="dot" style="background:var(--wait)"></span><b>worker</b><span class="mut">orbit:dev</span><span class="bar"><u style="width:71%"></u></span><span class="bar g2"><u style="width:83%"></u></span><em>—</em></div><div class="g" style="grid-template-columns:7px 64px 66px 1fr 1fr 34px"><span class="dot" style="background:var(--run)"></span><b>api</b><span class="mut">orbit:dev</span><span class="bar"><u style="width:34%"></u></span><span class="bar g2"><u style="width:39%"></u></span><em>8080</em></div><div class="g" style="grid-template-columns:7px 64px 66px 1fr 1fr 34px"><span class="dot" style="background:var(--run)"></span><b>minio</b><span class="mut">latest</span><span class="bar"><u style="width:5%"></u></span><span class="bar g2"><u style="width:21%"></u></span><em>9000</em></div><div class="g" style="grid-template-columns:7px 64px 66px 1fr 1fr 34px"><span class="dot" style="background:var(--held)"></span><b>mailhog</b><span class="mut">v1.0</span><span class="bar"><u style="width:0%"></u></span><span class="bar g2"><u style="width:4%"></u></span><em>8025</em></div><div class="g" style="grid-template-columns:7px 64px 66px 1fr 1fr 34px"><span class="dot" style="background:var(--run)"></span><b>traefik</b><span class="mut">v3.1</span><span class="bar"><u style="width:11%"></u></span><span class="bar g2"><u style="width:17%"></u></span><em>8081</em></div><div class="g" style="grid-template-columns:7px 64px 66px 1fr 1fr 34px"><span class="dot" style="background:var(--run)"></span><b>otel</b><span class="mut">contrib</span><span class="bar"><u style="width:3%"></u></span><span class="bar g2"><u style="width:9%"></u></span><em>4317</em></div><div class="sh" style="margin-top:8px">worker · last lines</div><div class="code"><u></u><i style="width:72%;height:5px;border-radius:3px;background:var(--l);display:block"></i></div><div class="code"><u></u><i style="width:54%;height:5px;border-radius:3px;background:rgba(251,191,36,.34);display:block"></i></div><div class="code"><u></u><i style="width:64%;height:5px;border-radius:3px;background:var(--l);display:block"></i></div><div class="code"><u></u><i style="width:41%;height:5px;border-radius:3px;background:var(--l);display:block"></i></div></div></div><div class="slot" data-k="browser"><div class="ph"><span>localhost:4000</span><span>driven by the agent</span></div><div class="bd brow"><div class="tabs"><b class="on">localhost:4000</b><b>docs</b><b>issue #1042</b></div><div class="url"><i style="width:44%"></i><span style="margin-left:auto;font:9px var(--mono);color:var(--run)">200 · 412ms</span></div><div class="pane" style="flex:1"><div class="g" style="grid-template-columns:22px 1fr 40px"><span class="av"></span><span class="bar"><u style="width:38%"></u></span><em>menu</em></div><div class="two" style="margin-top:4px"><div style="display:flex;flex-direction:column;gap:5px"><i style="width:92%;height:6px;border-radius:3px;background:var(--l);display:block"></i><i style="width:78%;height:6px;border-radius:3px;background:var(--l);display:block"></i><i style="width:86%;height:6px;border-radius:3px;background:var(--l);display:block"></i><i style="width:64%;height:6px;border-radius:3px;background:var(--l);display:block"></i><i style="width:80%;height:6px;border-radius:3px;background:var(--l);display:block"></i><i style="width:71%;height:6px;border-radius:3px;background:var(--l);display:block"></i><i style="width:88%;height:6px;border-radius:3px;background:var(--l);display:block"></i><i style="width:59%;height:6px;border-radius:3px;background:var(--l);display:block"></i><i style="width:83%;height:6px;border-radius:3px;background:var(--l);display:block"></i><span style="display:flex;gap:6px;align-items:center;margin-top:3px"><span class="ring"></span><span style="font:9px var(--mono);color:var(--vio)">click</span></span></div><div style="display:flex;flex-direction:column;gap:5px"><i style="width:70%;height:6px;border-radius:3px;background:var(--l);display:block"></i><i style="width:88%;height:6px;border-radius:3px;background:var(--l);display:block"></i><i style="width:56%;height:6px;border-radius:3px;background:var(--l);display:block"></i><i style="width:74%;height:6px;border-radius:3px;background:var(--l);display:block"></i><i style="width:81%;height:6px;border-radius:3px;background:var(--l);display:block"></i><i style="width:62%;height:6px;border-radius:3px;background:var(--l);display:block"></i><span style="height:34px;border-radius:6px;background:rgba(167,139,250,.1);border:1px solid var(--line);display:block;margin-top:3px"></span></div></div></div></div></div><div class="slot" data-k="files"><div class="ph"><span>orbit/</span><span>342 files · 12 open</span></div><div class="split" style="grid-template-columns:152px 1fr"><div class="a"><div class="g" style="grid-template-columns:0px 11px 1fr 22px"><span></span><span class="fo"></span><b>src</b><em></em></div><div class="g" style="grid-template-columns:10px 11px 1fr 22px"><span></span><span class="fo"></span><b>engine</b><em></em></div><div class="g sel" style="grid-template-columns:20px 11px 1fr 22px"><span></span><span class="fi"></span><b>scan.ts</b><em>ts</em></div><div class="g" style="grid-template-columns:20px 11px 1fr 22px"><span></span><span class="fi"></span><b>walk.ts</b><em>ts</em></div><div class="g" style="grid-template-columns:20px 11px 1fr 22px"><span></span><span class="fi"></span><b>db.ts</b><em>ts</em></div><div class="g" style="grid-template-columns:10px 11px 1fr 22px"><span></span><span class="fo"></span><b>ui</b><em></em></div><div class="g" style="grid-template-columns:20px 11px 1fr 22px"><span></span><span class="fi"></span><b>App.tsx</b><em>tsx</em></div><div class="g" style="grid-template-columns:20px 11px 1fr 22px"><span></span><span class="fi"></span><b>Rail.tsx</b><em>tsx</em></div><div class="g" style="grid-template-columns:0px 11px 1fr 22px"><span></span><span class="fo"></span><b>test</b><em></em></div><div class="g" style="grid-template-columns:10px 11px 1fr 22px"><span></span><span class="fi"></span><b>scan.test.ts</b><em>ts</em></div><div class="g" style="grid-template-columns:10px 11px 1fr 22px"><span></span><span class="fi"></span><b>keys.test.ts</b><em>ts</em></div><div class="g" style="grid-template-columns:10px 11px 1fr 22px"><span></span><span class="fi"></span><b>gate.test.ts</b><em>ts</em></div><div class="g" style="grid-template-columns:0px 11px 1fr 22px"><span></span><span class="fo"></span><b>docs</b><em></em></div><div class="g" style="grid-template-columns:10px 11px 1fr 22px"><span></span><span class="fi"></span><b>WORKSPACE.md</b><em>md</em></div><div class="g" style="grid-template-columns:0px 11px 1fr 22px"><span></span><span class="fi"></span><b>package.json</b><em>json</em></div><div class="g" style="grid-template-columns:0px 11px 1fr 22px"><span></span><span class="fi"></span><b>tsconfig.json</b><em>json</em></div></div><div class="b"><div class="sh">scan.ts · 218 lines</div><div class="code"><u>1</u><i style="width:54%;height:6px;border-radius:3px;background:var(--l);display:block"></i></div><div class="code"><u>2</u><i style="width:38%;height:6px;border-radius:3px;background:var(--l);display:block"></i></div><div class="code"><u>3</u><i style="width:72%;height:6px;border-radius:3px;background:var(--l);display:block"></i></div><div class="code"><u>4</u><i style="width:61%;height:6px;border-radius:3px;background:var(--l);display:block"></i></div><div class="code"><u>5</u><i style="width:45%;height:6px;border-radius:3px;background:var(--l);display:block"></i></div><div class="code"><u>6</u><i style="width:80%;height:6px;border-radius:3px;background:var(--l);display:block"></i></div><div class="code"><u>7</u><i style="width:33%;height:6px;border-radius:3px;background:var(--l);display:block"></i></div><div class="code"><u>8</u><i style="width:66%;height:6px;border-radius:3px;background:var(--l);display:block"></i></div><div class="code"><u>9</u><i style="width:50%;height:6px;border-radius:3px;background:var(--l);display:block"></i></div><div class="code"><u>10</u><i style="width:74%;height:6px;border-radius:3px;background:var(--l);display:block"></i></div><div class="code"><u>11</u><i style="width:42%;height:6px;border-radius:3px;background:var(--l);display:block"></i></div><div class="code"><u>12</u><i style="width:68%;height:6px;border-radius:3px;background:var(--l);display:block"></i></div><div class="code"><u>13</u><i style="width:56%;height:6px;border-radius:3px;background:var(--l);display:block"></i></div><div class="code"><u>14</u><i style="width:77%;height:6px;border-radius:3px;background:var(--l);display:block"></i></div><div class="code"><u>15</u><i style="width:35%;height:6px;border-radius:3px;background:var(--l);display:block"></i></div><div class="code"><u>16</u><i style="width:63%;height:6px;border-radius:3px;background:var(--l);display:block"></i></div><div class="meta"><span>typescript</span><span>utf-8</span><span>LF</span><span>7.4 kB</span></div></div></div></div><!--/slots--><!--/slots--></div></div>
   </div>
  </div>
  <div class="oneline">One window. <b>Nothing to jump to.</b></div>
@@ -1230,6 +1587,37 @@ body:not([data-route="home"]) .page{padding-top:calc(118px + var(--safe))}
 </div></section>
 
 
+<!-- The three other pages, on the page people actually land on.
+     At 860px and under the header keeps only the mark and the download — four
+     links broke "Get it →" across three lines — so on a phone the catalogue,
+     the guide and the questions lived in the footer, which is the one place
+     nobody scrolls to on purpose. Above the download rather than below it:
+     under it is after the only thing this page asks anybody to do. -->
+<section class="sec" id="more"><div class="w">
+ <div class="eb">Not on this page</div>
+ <h2>A catalogue, a manual, and the awkward questions.</h2>
+ <p class="sub">Three pages of their own, because this one is about the window.</p>
+ <div class="nx">
+  <a class="nxc big" href="#/plugins">
+   <span class="nxh"><span class="nxi"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M5 7.2h3.7a2.3 2.3 0 1 1 4.6 0H17v3.7a2.3 2.3 0 1 1 0 4.6v3.7h-3.7a2.3 2.3 0 1 0-4.6 0H5v-3.7a2.3 2.3 0 1 0 0-4.6z"/></svg></span><b>Plugins</b><u id="nx-n">&nbsp;</u></span>
+   <span>A plugin is its own git repository and installs from its URL — no account, no registry, nobody's permission. It runs as its own process with the scope you approve, and draws with the app's own parts: a panel, a settings page, notes in a pull request, a button in its header.</span>
+   <span class="nxl" id="nx-list"></span>
+   <em>Browse the catalogue &rarr;</em>
+  </a>
+  <a class="nxc" href="#/guide">
+   <span class="nxh"><span class="nxi"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H11v16H5.5A1.5 1.5 0 0 1 4 18.5z"/><path d="M20 5.5A1.5 1.5 0 0 0 18.5 4H13v16h5.5a1.5 1.5 0 0 0 1.5-1.5z"/></svg></span><b>The guide</b></span>
+   <span>Every view, in the order somebody meets them on the first day.</span>
+   <span class="nxl"><i>Lantern</i><i>Pull requests</i><i>Terminal</i><i>Worktrees</i><i>Tasks</i></span>
+   <em>Read it &rarr;</em>
+  </a>
+  <a class="nxc" href="#/faq">
+   <span class="nxh"><span class="nxi"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.4 9.2a2.7 2.7 0 1 1 3.4 3.1c-.6.2-.9.7-.9 1.3v.4"/><path d="M12 17.2h.01"/></svg></span><b>Questions</b></span>
+   <span class="nxq">What does it cost to run?<br>What leaves this machine?<br>Can a plugin approve a gate for me?<br>Why does macOS say the app is damaged?</span>
+   <em>The answers &rarr;</em>
+  </a>
+ </div>
+</div></section>
+
 <section class="sec" id="get"><div class="w">
  <div class="eb">Download &middot; <span data-agx="version">the latest release</span> &middot; MIT</div>
  <h2>Six files, and a way to check them.</h2>
@@ -1265,7 +1653,6 @@ body:not([data-route="home"]) .page{padding-top:calc(118px + var(--safe))}
   <p>The release publishes <a href="https://github.com/SirAllap/agentglass/releases/latest">SHA256SUMS</a> beside the binaries, and every desktop build carries a build attestation from the workflow that made it. macOS is unsigned, so Gatekeeper wants right-click &rarr; Open the first time; Windows builds and passes CI but nobody has run it on real hardware yet (<a href="https://github.com/SirAllap/agentglass/issues/231">#231</a>).</p>
  </div>
 </div></section>
-
 </main>
 
 <main id="guide" hidden><section class="page"><div class="w">
@@ -1321,7 +1708,7 @@ body:not([data-route="home"]) .page{padding-top:calc(118px + var(--safe))}
  <p>A plugin is a program somebody else wrote that watches or drives agentglass
   over HTTP. It is a folder with a <code>plugin.json</code>, and installing it, reading
   what it asks for, and switching it on are three separate acts you perform in
-  <b style="display:inline;font-weight:600;color:var(--dim)">Settings ▸ Plugins</b>.</p>
+  <b style="display:inline;font-weight:600;color:var(--dim);white-space:nowrap">Settings ▸ Plugins</b>.</p>
  <p>Nothing runs at install. When you enable one, the server mints a token at the
   scope you granted and starts the entrypoint as <b style="display:inline;font-weight:600;color:var(--dim)">its
   own process</b>, with exactly four variables in its environment: <code>PATH</code>,
@@ -1355,7 +1742,7 @@ body:not([data-route="home"]) .page{padding-top:calc(118px + var(--safe))}
   "plugins": [{
     "id": "someone.hello-stream",
     "source": { "kind": "git", "url": "https://example.com/someone/hello-stream.git" },
-    "description": "Writes a line to its own log whenever an agent finishes a turn.",
+    "description": "Writes a line to its log when an agent finishes.",
     "categories": ["monitoring"]
   }]
 }</pre>
@@ -1429,6 +1816,8 @@ body:not([data-route="home"]) .page{padding-top:calc(118px + var(--safe))}
  </div>
 </div></section></main>
 <main id="plugins" hidden><section class="page"><div class="w">
+ <div id="pl-one" hidden></div>
+ <div id="pl-list">
  <div class="eb">Plugins</div>
  <h1>Plugins that draw in agentglass.</h1>
  <p class="lead">Each one is its own git repository. It runs as its own process with a token scoped to
@@ -1437,12 +1826,13 @@ body:not([data-route="home"]) .page{padding-top:calc(118px + var(--safe))}
  <div class="pl-bar">
   <label class="pl-q"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" style="color:var(--dim)"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
    <input id="pl-q" type="search" placeholder="Search plugins, tags, authors" autocomplete="off" aria-label="Search plugins"><kbd>/</kbd></label>
+  <select id="pl-by" class="pl-sort" aria-label="Author"><option value="">Every author</option></select>
   <select id="pl-sort" class="pl-sort" aria-label="Sort"><option value="new">Recently added</option><option value="az">A–Z</option></select>
  </div>
- <div class="pl-jump">
-  <a href="#install">Install one →</a>
-  <a href="#publish">Publish yours →</a>
-  <a href="https://github.com/SirAllap/agentglass/issues/new?template=plugin_submission.yml">Ask to be listed →</a>
+ <div class="pl-acts">
+  <a class="pl-act" href="#install">Install one</a>
+  <a class="pl-act" href="#publish">Publish yours</a>
+  <a class="pl-act p" href="https://github.com/SirAllap/agentglass/issues/new?template=plugin_submission.yml">Ask to be listed →</a>
  </div>
  <div class="pl-chips" id="pl-chips" role="group" aria-label="Filter"></div>
  <div class="pl-count" id="pl-count"></div>
@@ -1450,29 +1840,63 @@ body:not([data-route="home"]) .page{padding-top:calc(118px + var(--safe))}
  <button class="pl-more" id="pl-more" type="button" hidden></button>
  <div class="pl-none" id="pl-none" hidden>Nothing matches. <a href="https://github.com/SirAllap/agentglass/blob/main/docs/PLUGINS.md" style="color:var(--vio)">Write it?</a></div>
 
+ </div>
+
+ <div id="pl-tail">
  <h3 id="publish">Publish one</h3>
  <div class="pl-steps">
-  <div class="pl-step"><b>01 · WRITE</b><p>A repository with <code>plugin.json</code> at its root: a name, what it runs,
-   the scope it needs, and where it draws. Listing is not auditing: a plugin here has a public
-   repository, a manifest the app accepts, a README and a licence — that is what a machine can tell, and
-   whoever installs it still approves what it asks for. <a href="https://github.com/SirAllap/agentglass/blob/main/docs/PLUGINS.md" style="color:var(--vio)">The guide</a>
-   has the manifest, the routes and the vocabulary.</p></div>
-  <div class="pl-step"><b>02 · PUSH</b><p>Any host <code>git clone</code> reaches. The URL is already the
+  <div class="pl-step"><b>01 · WRITE</b><p>One file at the root of a public repository. It is the whole
+   manifest: what it runs, the scope it asks for, and where it draws.</p>
+   <pre class="pl-code"><code>{
+  "name": "hello-stream",
+  "publisher": "you",
+  "description": "Writes a line to its log when an agent finishes.",
+  "entrypoint": "python3 -u main.py",
+  "scope": "read",
+  "minApp": "0.17.0",
+  "contributes": {
+    "panels": [{ "id": "log", "title": "Hello" }]
+  }
+}</code></pre>
+   <p>Add a <code>preview.png</code> beside it — a wide screenshot of the thing working. It is what the
+   card above draws, and without one your plugin is listed as a puzzle piece. A README and a licence are
+   the other two the check looks for.</p>
+   <p><b class="nb">Where it may write:</b> its own folder, and what you ask the app to keep for you
+   through <code>/plugin/self/settings</code>. Not the person's configuration — naming
+   <code>~/.claude</code>, <code>~/.config/agentglass</code>, a shell rc, <code>crontab</code> or
+   <code>systemctl --user</code> is enough to be flagged, because that directory holds the machine token
+   and every other plugin on disk.</p></div>
+  <div class="pl-step"><b>02 · TRY IT</b><p>Install it on your own machine before you ask anybody to
+   list it. Four commands, and the last one leaves nothing behind:</p>
+   <pre class="pl-code"><code>agentglass-plugin validate .
+agentglass-plugin add /abs/path/to/plugin --approve
+# look at it in Settings → Plugins
+agentglass-plugin remove your-plugin</code></pre>
+   <p><code>validate</code> is the same check the listing runs, so it is the cheapest way to find out
+   that a manifest is wrong. <code>--approve</code> prints the scope, the command and every surface it
+   draws on before it switches anything on.</p></div>
+  <div class="pl-step"><b>03 · PUSH</b><p>Any host <code>git clone</code> reaches. The URL is already the
    publication: pasting it into Settings → Plugins installs it, with no account, no registry and nobody's
    permission. Being listed below is only about being found.</p></div>
-  <div class="pl-step"><b>03 · LIST IT</b><p>Open the <a href="https://github.com/SirAllap/agentglass/issues/new?template=plugin_submission.yml" style="color:var(--vio)">List a plugin</a> issue.
-   A check clones what you named, validates the manifest, reads the source for a short list of patterns
-   and writes what it found on the issue — it never runs your code. A maintainer then approves, and the
-   entry is written from your manifest into <code>landing/plugins.json</code> by a pull request somebody
-   merges. The plugin shows here and in the app's catalogue.</p></div>
+  <div class="pl-step"><b>04 · LIST IT</b><p>Open the <a href="https://github.com/SirAllap/agentglass/issues/new?template=plugin_submission.yml" style="color:var(--vio)">List a plugin</a> issue.
+   A check clones what you named, runs <code>validate</code> and reads the source for a short list of
+   patterns — it never runs your code. A maintainer then approves, and the entry is written from your
+   manifest into <code>landing/plugins.json</code> by a pull request somebody merges. Listing is not
+   auditing: a plugin here has a public repository, a manifest the app accepts, a README and a licence.
+   That is what a machine can tell, and whoever installs it still approves what it asks for.
+   <a href="https://github.com/SirAllap/agentglass/blob/main/docs/PLUGINS.md" style="color:var(--vio)">The guide</a>
+   has the routes and the drawing vocabulary.</p></div>
  </div>
  <h3 id="install">Install one</h3>
- <p>In agentglass, open Settings → Plugins. This page's catalogue is offered there by name — press Add,
-  open it, and install from the card. Or paste a plugin's URL straight in; the catalogue is a
-  convenience, not a gate. Nothing runs at install: you read what it asks for and switch it on, and an
-  update that changes what it asks for is asked about again.</p>
- <p>Verified means a maintainer read that plugin at the listed source. It does not vouch for
-  later changes, which is why an update always asks again.</p>
+ <div class="pl-two">
+  <p>In agentglass, open <b class="nb">Settings → Plugins</b>. This page's catalogue is offered there by
+   name — press Add, open it, and install from the card. Or paste a plugin's URL straight in; the
+   catalogue is a convenience, not a gate.</p>
+  <p>Nothing runs at install: you read what it asks for and switch it on, and an update that changes
+   what it asks for is asked about again. Verified means a maintainer read that plugin at the listed
+   source — it does not vouch for later changes, which is why an update always asks.</p>
+ </div>
+ </div>
 </div></section></main>
 
 <footer class="foot2">
@@ -1488,6 +1912,146 @@ body:not([data-route="home"]) .page{padding-top:calc(118px + var(--safe))}
 </footer>
 <script>
 const calm=matchMedia('(prefers-reduced-motion: reduce)').matches;
+/*
+ * The header's scroll choreography, for an engine that says yes and means no.
+ *
+ * `@supports (animation-timeline: scroll())` is true in Chrome 150 — which is
+ * what this app's own browser is built on — and the timeline never becomes
+ * active: `getAnimations()` finds `dock` on a ScrollTimeline whose
+ * `currentTime` is null. An inactive timeline holds every animation at its
+ * fill state, so the header that is meant to FORM as you scroll is already
+ * formed at the top of the page, and the whole thing silently disappears.
+ * Chrome 152 runs it, which is exactly why it looked fine from here.
+ *
+ * The same keyframes driven by hand cost twelve lines and one scroll
+ * listener. Measured before it was written: patched live in that browser, the
+ * bar is 230px and the mark is at 4.6x at the top again.
+ */
+if(!calm){
+ const NAMES=new Set(['dock','pane','shorts','shrink','veil','fadehalo','draw','armsweep']);
+ let saved=false;
+ /* One rAF was not enough: on a heavier page the callback can run before the
+    animations are registered, and the rescue silently did nothing — the
+    header was already formed at the top of the page again. It now tries
+    until it finds them, and stops the moment it has. */
+ /* Every attempt re-scans. Stopping at the first success left whatever was
+    not registered yet holding its fill state for ever — the rings sat at full
+    size over the page and never faded, because `veil` and `shrink` arrived
+    after `dock` did. */
+ const driven=new Set();
+ let wired=false, drive=()=>{};
+ const rescue=()=>{
+  const mine=document.getAnimations().filter((a)=>NAMES.has(a.animationName));
+  if(!mine.length) return;
+  const dead=mine.filter((a)=>!driven.has(a)&&a.timeline&&a.timeline.currentTime===null);
+  if(!dead.length){ if(driven.size===0) saved=true; return; }
+  for(const a of dead){
+   a.timeline=document.timeline;
+   a.effect.updateTiming({duration:1000,fill:'both'});
+   a.pause();
+   driven.add(a);
+  }
+  if(!wired){
+   wired=true;
+   let queued=false;
+   /* The other pages have no hero for the header to come out of, and the
+      stylesheet says so — but a Web Animations animation outranks a
+      stylesheet, so the driver has to hold it at the end itself. Reported as
+      the lockup drawn at hero size across the guide. */
+   const paint=()=>{queued=false;
+    const home=document.body.dataset.route==='home';
+    const p=home?Math.min(1,Math.max(0,scrollY/(innerHeight*0.78))):1;
+    for(const a of driven)a.currentTime=p*1000;};
+   drive=()=>{ if(!queued){queued=true;requestAnimationFrame(paint);} };
+   addEventListener('scroll',drive,{passive:true});
+   addEventListener('resize',paint);
+   addEventListener('hashchange',()=>setTimeout(paint,0));
+   paint();
+  } else drive();
+  saved=true;
+ };
+ requestAnimationFrame(rescue);
+ for(const t of [120,400,1000,2000]) setTimeout(rescue,t);
+
+ /*
+  * And for the engine that does not pretend: Firefox has no scroll-driven
+  * animations at all, so `@supports` is false, the keyframes are never
+  * attached to anything, and `getAnimations()` has nothing to rescue. The
+  * header is simply already formed — a valid state, and the one that throws
+  * away the only thing on this page worth watching.
+  *
+  * The keyframes are still in the CSSOM even inside an `@supports` that does
+  * not match, so they are read back out and played through the Web Animations
+  * API instead. Read, not copied: two descriptions of one choreography drift.
+  */
+ const byHand=()=>{
+  if(saved||CSS.supports('animation-timeline','scroll()')) return;
+  try{
+   const frames={};
+   const dig=(rules)=>{ for(const r of rules){
+    if(r.media&&!matchMedia(r.conditionText||r.media.mediaText).matches) continue;
+    if(r.constructor.name==='CSSKeyframesRule'){
+     const out=[];
+     for(const k of r.cssRules){
+      const props={};
+      for(const prop of k.style) props[prop.replace(/-([a-z])/g,(m,c)=>c.toUpperCase())]=k.style.getPropertyValue(prop);
+      /* `58%,100%` is TWO keyframes sharing one block. Parsed as one, the end
+         of the animation went missing and the rings never faded. */
+      for(const stop of k.keyText.split(',')) out.push(Object.assign({offset:parseFloat(stop)/100},props));
+     }
+     frames[r.name]=out.sort((a,b)=>a.offset-b.offset);
+    }
+    if(r.cssRules) dig(r.cssRules);
+   }};
+   for(const sheet of document.styleSheets){ try{ dig(sheet.cssRules); }catch{} }
+   const pairs=[['.hd-lock','dock'],['.hd-bar','pane'],['.hd-nav','shorts'],['.hd-ring g','shrink'],
+                ['.hd-ring','veil'],['.hd-halo','fadehalo'],['.hd-rule','draw'],['.hd-sweep','armsweep']];
+   const made=[];
+   for(const [sel,name] of pairs){
+    const el=document.querySelector(sel), kf=frames[name];
+    if(!el||!kf||kf.length<2) continue;
+    const a=el.animate(kf,{duration:1000,fill:'both',easing:'linear'});
+    a.pause();
+    a.currentTime=0;
+    made.push(a);
+   }
+   /* All of it or none of it: half a choreography is the broken thing, and
+      the fallback it would replace is not broken. */
+   if(made.length!==pairs.length){ for(const a of made) a.cancel(); return; }
+   document.documentElement.classList.add('byhand');
+   dispatchEvent(new Event('agx:relayout'));
+   let q=false;
+   const paint=()=>{q=false;
+    const home=document.body.dataset.route==='home';
+    const p=home?Math.min(1,Math.max(0,scrollY/(innerHeight*0.78))):1;
+    for(const a of made)a.currentTime=p*1000;};
+   addEventListener('scroll',()=>{if(!q){q=true;requestAnimationFrame(paint);}},{passive:true});
+   addEventListener('resize',paint);
+   addEventListener('hashchange',()=>setTimeout(paint,0));
+   paint();
+   saved=true;
+  }catch{ /* the page it has today */ }
+ };
+ requestAnimationFrame(byHand);
+ for(const t of [150,500,1200]) setTimeout(byHand,t);
+}
+/* The chips start on a ring 408px wide and 208px tall around the middle. That
+   is a fine ring on a 1500px viewport and off the screen at 140% zoom, where
+   the viewport is 1160 CSS px — measured: half of them landed outside it and
+   the flight happened where nobody could see it. The ring is scaled to
+   whatever room there actually is. */
+let heroK=1;
+const spread=(k)=>{
+ if(k) heroK=k;
+ /* The ring is inside the hero, so the hero's own scale multiplies it: the
+    room it has to fit in is the viewport divided by that scale. */
+ const room=Math.min((innerWidth/2-104)/(430*heroK),(innerHeight*0.46)/(232*heroK));
+ /* Never wider than the ring was drawn, only narrower when there is no room:
+    the ring itself is the shape somebody recognises. */
+ document.documentElement.style.setProperty('--spread',String(Math.max(0.36,Math.min(1,room))));
+};
+spread();
+addEventListener('resize',spread);
 const chips=[...document.querySelectorAll('.chip')];
 const rks=[...document.querySelectorAll('.rk')];
 const slots=[...document.querySelectorAll('.slot')];
@@ -1500,11 +2064,19 @@ if(calm){document.body.classList.add('go');rks.forEach(r=>r.classList.add('shown
  setTimeout(()=>document.body.classList.add('go'),140);
  ['lantern','dash'].forEach((k,i)=>setTimeout(()=>byKey(k).classList.add('shown'),900+i*170));
  const win=document.querySelector('.win');
- const FLIGHT=620;
+ const FLIGHT=820;
  /* FLIP: measure where the icon is and where ITS slot is, and fly from one
     to the other. It used to fly to the centre of the box, which is a point
     that means nothing: the eye saw eight things shrink and then, separately,
     eleven icons appear, with nothing joining the two. */
+ /*
+  * One chip's flight.
+  *
+  * The path is measured WHEN IT LEAVES, not in advance. Armed ahead of time
+  * and scrubbed by the scroll, every flight was aimed at where the rail was
+  * at the top of the page — and the rail moves, because the whole mock
+  * shrinks as you come down. They landed in the air beside the window.
+  */
  const fly=(chip)=>{
   const rail=byKey(chip.dataset.k), ico=chip.querySelector('svg');
   if(!rail||!ico) return;
@@ -1513,8 +2085,12 @@ if(calm){document.body.classList.add('go');rks.forEach(r=>r.classList.add('shown
   const dx=b.left+b.width/2-x0, dy=b.top+b.height/2-y0;
   /* The control point comes off PERPENDICULAR to the chord, so the path
      arcs. A straight line reads as a tween; an arc reads as something
-     falling inward. */
-  const len=Math.hypot(dx,dy)||1, bow=Math.min(len*.32,130)*(dx<0?1:-1);
+     falling inward. Every chip gets its own bow — its own size and, for some
+     of them, the other side: one shared rule sent half a dozen of them
+     across the middle of the window together. */
+  const len=Math.hypot(dx,dy)||1;
+  const side=(chip.dataset.k.charCodeAt(0)%3===0?-1:1)*(dx<0?1:-1);
+  const bow=Math.min(len*.32,150)*side*(0.55+((chip.dataset.k.length*37)%60)/100);
   const qx=dx/2+(-dy/len)*bow, qy=dy/2+(dx/len)*bow;
   const f=document.createElement('div');
   f.className='flyer';
@@ -1537,12 +2113,47 @@ if(calm){document.body.classList.add('go');rks.forEach(r=>r.classList.add('shown
  /* 105ms between launches against 620 of flight: six are in the air at once.
     What impresses is the density, not the duration — with the old 340 there
     were never more than two. */
- const GAP=105, T0=900;
- chips.forEach((c,i)=>setTimeout(()=>{
-  c.classList.add('shed');
-  setTimeout(()=>{fly(c);c.classList.add('flown');},170);
- },T0+i*GAP));
- const done=T0+chips.length*GAP+170+FLIGHT;
+ /* 128ms between launches against 820 of flight: six are in the air at once.
+    What impresses is the density, not the duration — with the old 340 there
+    were never more than two.
+    Tried and reverted: firing them off scroll position instead, so the flight
+    could never be missed. It could not be missed and it was not worth
+    watching — one chip every few hundred pixels is a queue, not a swarm. */
+ /*
+  * The swarm waits for you, then plays itself.
+  *
+  * Two things had to be true and only together: you have scrolled at all —
+  * so somebody is actually there — and most of the mock is on the screen, so
+  * there is something for them to fly INTO. Then the whole swarm goes, once,
+  * in its own time. It does not run backwards when you scroll back up: an
+  * animation that undoes itself reads as a glitch, not as a rewind.
+  *
+  * Tried and rejected: scrubbing it frame by frame with the scroll position.
+  * It is a queue, not a swarm, and the flights are aimed at a rail that has
+  * moved by the time they arrive.
+  */
+ const GAP=128;
+ let launched=false;
+ const seen=()=>{ const r=win.getBoundingClientRect();
+  return Math.max(0,Math.min(r.bottom,innerHeight)-Math.max(r.top,0))/(r.height||1); };
+ const launch=()=>{
+  if(launched) return;
+  launched=true;
+  /* Shuffled: written in order they go down one side and up the other, which
+     reads as a rota. Eight arriving from everywhere at once is the point. */
+  const order=chips.map((c,i)=>i).sort(()=>Math.random()-0.5);
+  order.forEach((idx,n)=>setTimeout(()=>{
+   const c=chips[idx];
+   c.classList.add('shed');
+   setTimeout(()=>{fly(c);c.classList.add('flown');},170);
+  },n*GAP));
+ };
+ const ready=()=>{ if(!launched&&scrollY>40&&seen()>0.62) launch(); };
+ addEventListener('scroll',ready,{passive:true});
+ /* Someone who never scrolls still gets it, after a breath. */
+ setTimeout(()=>{ if(seen()>0.62) launch(); },4200);
+ setTimeout(launch,9000);
+ const done=1000+chips.length*GAP+170+FLIGHT;
  setTimeout(()=>byKey('files').classList.add('shown'),done+600);
  setTimeout(()=>document.querySelector('.oneline').classList.add('on'),done+900);
  const order=['lantern','dash','diff','git','pr','issues','terminal','chat','docker','browser','files'];
@@ -1552,6 +2163,325 @@ if(calm){document.body.classList.add('go');rks.forEach(r=>r.classList.add('shown
  rks.forEach(r=>r.onclick=()=>{auto=false;show(r.dataset.k);
   n=Math.max(0,order.indexOf(r.dataset.k));setTimeout(()=>auto=true,9000);});
 }
+/*
+ * The claim arrives a word at a time, and it arrives BY SCROLLING.
+ *
+ * Not a scroll-driven CSS animation: the engine this app's own browser is
+ * built on parses those and never runs them (see the header fallback above).
+ * A rAF-coalesced scroll listener lighting one class is the version that
+ * works in every browser this page is read in.
+ *
+ * The words are wrapped here rather than in the markup so the sentence stays
+ * one readable line in the file, and so a page with no scripting shows it
+ * whole — the noscript rule lights them all.
+ */
+(()=>{
+ const line=document.querySelector('.oneline');
+ const one=document.querySelector('.one');
+ const field=document.querySelector('.field');
+ const cta=document.querySelector('.cta');
+ const kick=document.querySelector('.kick');
+ if(!line) return;
+ const wrap=(node)=>{for(const n of [...node.childNodes]){
+  if(n.nodeType===3){
+   const frag=document.createDocumentFragment();
+   n.textContent.split(/(\s+)/).forEach(t=>{
+    if(!t.trim()){frag.append(t);return;}
+    const w=document.createElement('i');w.textContent=t;frag.append(w);});
+   n.replaceWith(frag);
+  } else if(n.nodeType===1) wrap(n);
+ }};
+ wrap(line);
+ const words=[...line.querySelectorAll('i')];
+ new IntersectionObserver((es)=>es.forEach((e)=>line.classList.toggle('shine',e.isIntersecting)),
+  {threshold:0}).observe(line);
+ if(calm||!one||!field||!cta){words.forEach(w=>w.classList.add('lit'));if(cta)cta.classList.add('here');return;}
+
+ /* The track is what the pinned hero scrolls against. It is added here, not
+    in the markup, so the page without scripting is the page it always was. */
+ const track=document.createElement('div');
+ track.className='one-track';
+ track.setAttribute('aria-hidden','true');
+ one.after(track);
+ /* A sticky element is released by the END OF ITS CONTAINING BLOCK, not by
+    whatever follows it — pinned directly inside <main> it sailed over the
+    next three sections with the window still on top of them. The holder is
+    the hero plus its track and nothing else, so the scene ends where the
+    track does. */
+ const holder=document.createElement('div');
+ holder.className='one-holder';
+ one.before(holder);
+ holder.append(one,track);
+ document.body.classList.add('scene');
+
+ /* How much bigger than its own box the window starts. On a wide screen it
+    is meant to run past both edges — that is the point, you are inside it.
+    On a phone there is nothing to spare, so it barely grows: a mock scaled
+    past a 390px screen is a mock nobody can read. */
+ /*
+  * How big it starts, and how the things under it get out of the way.
+  *
+  * It used to cap the scale by measuring the room down to the buttons. That
+  * number moves: a scrollbar appearing fires `resize`, and the measurement
+  * taken at that moment disagreed with the one taken at load, so the window
+  * was small on the first paint and jumped bigger on the first scroll —
+  * reported twice, and the cap was the cause both times.
+  *
+  * There is no cap now. The window starts as big as the width allows, and the
+  * sentence and the buttons are simply PUSHED DOWN by however far it
+  * overflows, with a transform, which moves them without moving the layout.
+  * They are invisible at that point anyway, and by the time they matter the
+  * window has shrunk and the push is zero. Nothing can end up underneath it.
+  */
+ let baseH=0, gaugedAt=0;
+ const gauge=()=>{
+  const had=field.style.transform;
+  field.style.transform='none';
+  baseH=field.offsetHeight||0;
+  field.style.transform=had;
+  /* The room the hero keeps for the lockup is a stylesheet decision and it
+     changes when the script decides to play the choreography by hand, so it
+     is read back rather than captured once. */
+  const hadP=one.style.paddingTop;
+  one.style.paddingTop='';
+  PAD=parseFloat(getComputedStyle(one).paddingTop)||88;
+  one.style.paddingTop=hadP;
+  gaugedAt=innerWidth;
+ };
+ const bigness=()=>innerWidth<760?1.04:Math.min(1.5,Math.max(1.12,(innerWidth-24)/980));
+ const SMALL=0.95;
+ let PAD=parseFloat(getComputedStyle(one).paddingTop)||88;
+ let queued=false;
+ /* Nothing is written unless it changed. The hero is pinned for a screen and
+    a half and then never moves again, and `paddingTop` in particular is a
+    layout of the whole hero every time it is set — measured as the frames
+    that went over 30ms while scrolling the sections below it. */
+ let was=-1, wasPad=-1, wasTf='';
+ const paint=()=>{queued=false;
+  const run=innerHeight*1.95;
+  const p=Math.min(1,Math.max(0,scrollY/run));
+  if(p===was) return;
+  was=p;
+  /* First half: the window shrinks to its place. Second half: the sentence
+     arrives a word at a time, and the buttons last. */
+  const big=bigness();
+  const k=p<0.5?big+(SMALL-big)*(p/0.5):SMALL;
+  /* The lift is only for the shrunk state; while it is oversized any
+     downward nudge is the sliver that lands on the buttons. */
+  const tf='scale('+k.toFixed(3)+') translateY('+Math.round(k>1?0:(k-1)*26)+'px)';
+  if(tf!==wasTf){ wasTf=tf; field.style.transform=tf; }
+  /* Whatever the window overflows downward, the sentence and the buttons move
+     down by exactly that much. */
+  spread(k);
+  const push='translateY('+Math.round(Math.max(0,k-1)*baseH)+'px)';
+  line.style.transform=push; cta.style.transform=push;
+  /* The kicker is the first line anybody reads, so it does not go anywhere.
+     The window grows downward from its own top edge (transform-origin) rather
+     than outward from its middle, which is what used to swallow it. */
+  /* The hero keeps a tall band of room at the top for the lockup that is four
+     times the size of the header mark. Once the header has formed that band
+     is a hole, and a pinned hero cannot scroll past its own hole — so it
+     closes as the window shrinks. */
+  const pad=Math.round(PAD+(88-PAD)*Math.min(1,p/0.5));
+  if(pad!==wasPad){ wasPad=pad; one.style.paddingTop=pad+'px'; }
+  line.style.opacity=String(Math.min(1,Math.max(0,(p-0.40)/0.07)));
+  const q=Math.min(1,Math.max(0,(p-0.46)/0.34));
+  const lit=Math.round(q*words.length);
+  words.forEach((w,i)=>w.classList.toggle('lit',i<lit));
+  cta.classList.toggle('here',q>0.9);
+ };
+ addEventListener('scroll',()=>{if(!queued){queued=true;requestAnimationFrame(paint);}},{passive:true});
+ addEventListener('resize',()=>{ if(innerWidth!==gaugedAt) gauge(); paint(); });
+ /* The by-hand driver says when it has changed what the hero reserves. */
+ addEventListener('agx:relayout',()=>{ gauge(); was=-1; paint(); });
+ gauge();
+
+ /*
+  * The hero lockup, centred on what it actually measures.
+  *
+  * The three keyframe tiers each carried a typed half-width — 521.6px, 403.1
+  * and 198.4 — which is only the centre at the exact zoom and font the number
+  * was taken at. Reported as "the name sits off to the left". The scale of
+  * the tier times the lockup's own width, halved, is the same number and is
+  * right at every width.
+  */
+ const lock=document.querySelector('.hd-lock');
+ const centre=()=>{
+  if(!lock) return;
+  const tier=innerWidth<=860?1.8:innerWidth<=1099?3.4:4.2;
+  /* `transform-origin: 0 0` and the lockup sits at left:26px, so the travel
+     that centres it is: half the viewport, minus half the SCALED width, minus
+     where the box already starts. Measured, not typed — the three constants
+     that used to be here were each right at exactly one window width. */
+  const w=lock.offsetWidth*tier;
+  const x=innerWidth/2-w/2-lock.offsetLeft;
+  document.documentElement.style.setProperty('--dock-x',x.toFixed(1)+'px');
+  /* The rings belong to the PLANET, not to the lockup: centred on the whole
+     thing they sat out to the left of it with nothing inside them. */
+  /* `.mk` is an <svg>, and an SVG element has no `offsetLeft` — reading it
+     gave NaN and the rings parked at x=0, empty, off to the left. It is the
+     first thing in the lockup, so its centre is half its own width in. */
+  const mk=lock.querySelector('.mk');
+  const mw=mk?parseFloat(getComputedStyle(mk).width)||30:30;
+  const dy=innerWidth<=860?46:innerWidth<=1099?57:64;
+  /* The planet is not in the middle of its own box — it sits at (30,34) of a
+     64 viewBox — so the rings are centred on THAT, not on the svg. */
+  const st=document.documentElement.style;
+  st.setProperty('--ring-x',(lock.offsetLeft+x+mw*(30/64)*tier).toFixed(1)+'px');
+  st.setProperty('--ring-y',(lock.offsetTop+dy+mw*(34/64)*tier).toFixed(1)+'px');
+  st.setProperty('--ring-s',((mw*tier*1.45)/200).toFixed(3));
+ };
+ centre();
+ addEventListener('resize',centre);
+ paint();
+})();
+/*
+ * The rest of the page, moving.
+ *
+ * Every other section's copy goes to the right; every block rises as it
+ * arrives; and one satellite crosses the whole page on a sine, turning as it
+ * goes. The satellite is `position:fixed` and driven by the scroll rather
+ * than by an animation, so it is where the page is, not where a clock is.
+ */
+if(!calm) requestAnimationFrame(()=>{
+ const secs=[...document.querySelectorAll('#home .sec')];
+ secs.forEach((s,i)=>{ if(i%2===1) s.classList.add('zig'); });
+ /* Each block of a section rises on its own beat: the eyebrow, then the
+    heading, then the prose, then whatever it is showing you. */
+ const io=new IntersectionObserver((es)=>es.forEach(e=>{
+  if(!e.isIntersecting) return;
+  e.target.classList.add('in');
+  io.unobserve(e.target);
+  setTimeout(()=>{ if(!e.target.classList.contains('par')) e.target.classList.add('done'); },1400);
+ }),{rootMargin:'0px 0px -12% 0px',threshold:.08});
+ secs.forEach((s)=>{
+  const kids=[...s.querySelector('.w').children];
+  kids.forEach((k,i)=>{ k.classList.add('rv'); k.style.transitionDelay=(i*90)+'ms'; io.observe(k); });
+ });
+
+ const sat=document.createElement('div');
+ sat.className='sat';
+ sat.setAttribute('aria-hidden','true');
+ sat.innerHTML='<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="30" cy="34" r="15" fill="currentColor" fill-opacity=".55"/><path d="M14.1 54.9 A29 8.5 -52 0 1 49.9 9.1" fill="none" stroke="currentColor" stroke-opacity=".5" stroke-width="5" stroke-linecap="round"/><path d="M49.9 9.1 A29 8.5 -52 0 1 14.1 54.9" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"/><circle cx="50.7" cy="10.4" r="5" fill="var(--success)" fill-opacity=".8"/></svg>';
+ document.body.append(sat);
+ const home=document.getElementById('home');
+ let queued=false;
+ const fly=()=>{queued=false;
+  /* It only exists on the home page, and only after the hero has played:
+     inside the hero there is already a mark this size doing a job. */
+  const start=innerHeight*1.6;
+  const run=Math.max(1,document.documentElement.scrollHeight-innerHeight-start);
+  const p=(scrollY-start)/run;
+  const on=!home.hidden&&p>0&&p<1;
+  sat.classList.toggle('on',on);
+  if(!on) return;
+  /* One slow crossing, upright. It used to tumble through 540° and read as a
+     loose object rather than something in orbit, and a rotation on a fixed
+     element is a composited layer redrawn on every frame for nothing. */
+  const wave=Math.sin(p*Math.PI*1.5);
+  const x=innerWidth/2+wave*(innerWidth*0.42)-66;
+  const y=innerHeight*(0.24+0.52*(0.5+0.5*Math.cos(p*Math.PI*2.2)));
+  sat.style.transform='translate3d('+Math.round(x)+'px,'+Math.round(y)+'px,0)';
+ };
+ addEventListener('hashchange',fly);
+ fly();
+
+ /*
+  * The layer that makes it look made rather than assembled.
+  *
+  *  · Every heading is cut into its RENDERED lines — measured with a Range,
+  *    because the markup has no breaks in it and should not — and each line
+  *    rises out of its own clip.
+  *  · A soft light sits behind each section and drifts at its own rate, and
+  *    the thing a section is showing you lags its own words a little. Both
+  *    are parallax off this one handler; neither is a second scroll listener.
+  *  · A stop per section down the left edge says where you are.
+  */
+ const TINT=['167,139,250','52,211,153','251,191,36','167,139,250','96,165,250'];
+ const lines=(h)=>{
+  const text=h.textContent;
+  const r=document.createRange();
+  const rows=new Map();
+  const walk=(n)=>{ if(n.nodeType===3){ for(let i=0;i<n.length;i++){ r.setStart(n,i); r.setEnd(n,i+1);
+     const t=Math.round(r.getBoundingClientRect().top); if(!rows.has(t)) rows.set(t,''); rows.set(t,rows.get(t)+n.textContent[i]); } }
+   else for(const c of n.childNodes) walk(c); };
+  walk(h);
+  const parts=[...rows.entries()].sort((a,b)=>a[0]-b[0]).map(([,v])=>v.trim()).filter(Boolean);
+  if(parts.length<1||parts.join(' ').replace(/\\s+/g,' ')!==text.replace(/\\s+/g,' ').trim()) return;
+  h.replaceChildren(...parts.map((t,i)=>{
+   const ln=document.createElement('span'); ln.className='ln';
+   const inner=document.createElement('span');
+   /* The trailing space is the line break as far as selecting, copying or a
+      screen reader is concerned: without it the heading reads as one word. */
+   inner.textContent=i<parts.length-1?t+' ':t;
+   ln.append(inner); return ln;
+  }));
+  [...h.querySelectorAll('.ln>span')].forEach((e,i)=>{ e.style.transitionDelay=(i*110)+'ms'; });
+ };
+ secs.forEach((s)=>{ const h=s.querySelector('h2'); if(h) lines(h); });
+
+ const arts=[];
+ secs.forEach((s,i)=>{
+  const orb=document.createElement('div');
+  orb.className='orb';
+  const size=Math.round(420+i*90);
+  orb.style.cssText+=`width:${size}px;height:${size}px;background:radial-gradient(circle,rgba(${TINT[i%TINT.length]},.20),transparent 66%);`;
+  orb.style.left=(i%2?'58%':'-8%');
+  orb.style.top='8%';
+  s.prepend(orb);
+  const art=s.querySelector('.w')?.lastElementChild;
+  if(art&&art.classList.contains('rv')) art.classList.add('par');
+  arts.push({s,orb,art:art&&art.classList.contains('par')?art:null});
+ });
+
+ const dots=document.createElement('nav');
+ dots.className='rail-p';
+ dots.setAttribute('aria-label','Sections');
+ dots.append(document.createElement('i'));
+ secs.forEach((s)=>{ const a=document.createElement('a'); a.href='#'+s.id;
+  a.setAttribute('aria-label',s.id); dots.append(a); });
+ document.body.append(dots);
+ const links=[...dots.querySelectorAll('a')];
+
+ let q2=false;
+ /*
+  * Where every section sits in the document, measured once.
+  *
+  * Reading `getBoundingClientRect()` inside a scroll handler asks the browser
+  * to lay the page out again, and doing it for five sections twice a frame is
+  * what made this stutter: measured against the committed page, 18 frames out
+  * of 89 went past 20ms where it had 7. The geometry only changes when the
+  * page does, so it is cached here and refreshed on resize and on reveal.
+  */
+ let geo=[];
+ const measure=()=>{ geo=arts.map((a)=>{ const b=a.s.getBoundingClientRect();
+  return {mid:b.top+scrollY+b.height/2, h:b.height}; }); };
+ const depth=()=>{q2=false;
+  const mid=scrollY+innerHeight/2;
+  let near=-1,best=1e9;
+  for(let i=0;i<arts.length;i++){
+   const a=arts[i], g=geo[i]; if(!g) continue;
+   const d=Math.abs(g.mid-mid);
+   if(d<best){best=d;near=i;}
+   if(d>innerHeight+g.h/2+200) continue;
+   const off=(g.mid-mid)/innerHeight;
+   a.orb.style.transform='translate3d(0,'+Math.round(off*-140)+'px,0)';
+   if(a.art) a.art.style.transform='translate3d(0,'+Math.round(off*-26)+'px,0)';
+  }
+  dots.classList.toggle('on',!home.hidden&&scrollY>innerHeight*1.6);
+  links.forEach((l,i)=>l.classList.toggle('here',i===near));
+ };
+ /* One listener for the whole page. Two rAF callbacks in the same frame is
+    two layout passes, and they were asking for the same numbers. */
+ let tick=false;
+ addEventListener('scroll',()=>{ if(tick) return; tick=true;
+  requestAnimationFrame(()=>{ tick=false; fly(); depth(); }); },{passive:true});
+ addEventListener('resize',()=>{ measure(); fly(); depth(); });
+ /* The reveals change how tall things are, so the geometry is taken again
+    once they have all landed. */
+ setTimeout(()=>{ measure(); depth(); },1200);
+ measure(); depth();
+});
 const g=document.querySelector('.gate');
 new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){g.classList.add('in');
  let s=0;const el=document.getElementById('clock');
@@ -1613,20 +2543,82 @@ new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){g.classList.add
    send pull requests to, so nothing in it is ever treated as markup. */
 (() => {
  const DRAW = { "panel": "adds a panel", "panels": "adds a panel", "settings": "settings page", "pr-notes": "notes in pull requests", "prNotes": "notes in pull requests", "pr-button": "a button in pull requests", "prActions": "a button in pull requests" };
+ /* What each surface is, on the plugin's own page: the short name is the card's
+    word, and the sentence under it says where the person will actually meet it. */
+ const WHERE = {
+  "panel": "Its own panel in the Plugins view, drawn with agentglass's parts.",
+  "panels": "Its own panel in the Plugins view, drawn with agentglass's parts.",
+  "settings": "A page of fields in Settings, filled in by you.",
+  "pr-notes": "Notes inside a pull request — shown here only, never sent to GitHub.",
+  "prNotes": "Notes inside a pull request — shown here only, never sent to GitHub.",
+  "pr-button": "A button in the header of every pull request.",
+  "prActions": "A button in the header of every pull request.",
+ };
  const SCOPE = { read: ["reads only", "s"], answer: ["can answer chats", "w"], full: ["full access", "w"] };
  let all = null, cat = "all";
  const $ = (id) => document.getElementById(id);
  const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
  const safe = (u) => { try { const x = new URL(u); return x.protocol === "https:" ? x.href : null; } catch { return null; } };
+ /*
+  * Who to credit, and who to filter by.
+  *
+  * `publisher` in a manifest is a name a plugin gives itself — "agentglass"
+  * here — and two people can write the same one. The account that actually
+  * published it is the owner of the repository the catalogue points at, which
+  * is also the thing somebody means by "show me everything by them".
+  */
+ const authorOf = (p) => {
+  const u = safe(p.source && p.source.url) || "";
+  const m = u.match(/^https:\/\/[^/]*github\.com\/([^/]+)\//);
+  return m ? m[1] : (p.publisher || "unknown");
+ };
+ /** Show that author's plugins, from wherever you pressed their name. */
+ const byAuthor = (a) => {
+  const sel = $("pl-by");
+  if (sel) sel.value = a;
+  if (location.hash.startsWith("#/plugins/")) location.hash = "#/plugins";
+  else render();
+  const bar = $("pl-q");
+  if (bar) bar.scrollIntoView({ block: "center", behavior: "smooth" });
+ };
  const PIECE = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M5 7.2h3.7a2.3 2.3 0 1 1 4.6 0H17v3.7a2.3 2.3 0 1 1 0 4.6v3.7h-3.7a2.3 2.3 0 1 0-4.6 0H5v-3.7a2.3 2.3 0 1 0 0-4.6z"/></svg>';
  const card = (p) => {
   const c = el("article", "pl-card");
+  /* The picture, when the plugin ships one: `preview` is a raw URL inside its
+     own repository, so a card can show what it looks like before anybody
+     installs it. Without one the mark fills the same space — a grid where
+     some cards have a picture and others have a hole reads as broken. */
+  const shot = el("div", "pl-shot");
+  const preview = safe(p.preview) || "";
+  if (preview) {
+   const img = el("img");
+   img.src = preview;
+   img.alt = "";
+   img.loading = "lazy";
+   img.onerror = () => { img.remove(); const m = el("div", "mark"); m.innerHTML = PIECE; shot.append(m); };
+   shot.append(img);
+  } else {
+   const m = el("div", "mark");
+   m.innerHTML = PIECE;
+   shot.append(m);
+  }
+  shot.style.cursor = "pointer";
+  shot.title = "Open " + (p.title || p.id);
+  shot.onclick = () => { location.hash = "#/plugins/" + encodeURIComponent(p.id); };
+  c.append(shot);
   const top = el("div", "pl-top");
   const ic = el("div", "pl-ic");
   ic.innerHTML = PIECE;
   const who = el("div");
-  who.append(el("div", "pl-name", p.title || p.id));
-  const by = el("div", "pl-by", "by " + (p.publisher || "unknown"));
+  const nameLink = el("a", "pl-name", p.title || p.id);
+  nameLink.href = "#/plugins/" + encodeURIComponent(p.id);
+  who.append(nameLink);
+  const by = el("div", "pl-by", "by ");
+  const who2 = el("button", "pl-at", "@" + authorOf(p));
+  who2.type = "button";
+  who2.title = "Everything by @" + authorOf(p);
+  who2.onclick = (e) => { e.preventDefault(); byAuthor(authorOf(p)); };
+  by.append(who2);
   if (p.verified) by.append(el("span", "pl-ok", " · verified"));
   who.append(by);
   top.append(ic, who);
@@ -1641,26 +2633,14 @@ new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){g.classList.add
   draws.slice(0, 3).forEach((d) => tags.append(el("span", "pl-tag d", DRAW[d])));
   if (draws.length > 3) tags.append(el("span", "pl-tag d", "+" + (draws.length - 3) + " more"));
   if (p.minApp) tags.append(el("span", "pl-tag w", "needs " + p.minApp + "+"));
-  const seen = Object.create(null);
-  const cats = (p.categories || []).map(String).filter((t) => {
-   const k = t.trim().toLowerCase();
-   if (!k || seen[k]) return false;
-   seen[k] = 1;
-   return true;
-  });
-  cats.slice(0, 3).forEach((t) => tags.append(el("span", "pl-tag t", "#" + t)));
-  if (cats.length > 3) tags.append(el("span", "pl-tag t", "+" + (cats.length - 3)));
+  /* No topics on the card. They are the filter chips above it, where they
+     do something; repeated here they were four more grey pills between the
+     description and the button, on every card. */
   const url = safe(p.source && p.source.url);
   const inst = el("div", "pl-inst");
   const btn = el("button", "pl-copy", "Copy");
   btn.type = "button";
-  btn.onclick = () => {
-   if (!navigator.clipboard || !url) return;
-   navigator.clipboard.writeText(url).then(() => {
-    btn.textContent = "Copied"; btn.classList.add("done");
-    setTimeout(() => { btn.textContent = "Copy"; btn.classList.remove("done"); }, 1400);
-   });
-  };
+  btn.onclick = () => copyClick(btn, url);
   /*
    * "Install", which is a link the app claims rather than anything this page
    * can do. agentglass registers `agentglass://`, and the click hands over a
@@ -1676,22 +2656,7 @@ new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){g.classList.add
   const go = el("button", "pl-go", "Install");
   go.type = "button";
   go.title = "Opens agentglass and fills its install box — nothing installs until you approve it";
-  go.onclick = () => {
-   if (!url) return;
-   let answered = false;
-   const away = () => { answered = true; };
-   window.addEventListener("blur", away, { once: true });
-   document.addEventListener("visibilitychange", away, { once: true });
-   window.location.href = "agentglass://plugin/install?url=" + encodeURIComponent(url);
-   setTimeout(() => {
-    window.removeEventListener("blur", away);
-    document.removeEventListener("visibilitychange", away);
-    if (answered) return;
-    go.textContent = "No agentglass here — copy instead";
-    go.classList.add("miss");
-    setTimeout(() => { go.textContent = "Install"; go.classList.remove("miss"); }, 4000);
-   }, 1500);
-  };
+  go.onclick = () => installClick(go, url);
   inst.append(el("code", null, url || ""), go, btn);
   const links = el("div", "pl-links");
   if (url) { const a = el("a", null, "Source ↗"); a.href = url; a.target = "_blank"; a.rel = "noopener"; links.append(a); }
@@ -1712,13 +2677,242 @@ new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){g.classList.add
   c.append(tags, inst, links);
   return c;
  };
+ /* The picture, full size, over everything. A card's preview is 380 pixels
+    wide and the thing it shows is a screen: without this the only way to read
+    it is to open the raw file in another tab. */
+ const copyClick = (btn, url, label) => {
+  if (!navigator.clipboard || !url) return;
+  navigator.clipboard.writeText(url).then(() => {
+   btn.textContent = "Copied"; btn.classList.add("done");
+   setTimeout(() => { btn.textContent = label || "Copy"; btn.classList.remove("done"); }, 1400);
+  });
+ };
+
+ /*
+  * "Install", which is a link the app claims rather than anything this page
+  * can do. agentglass registers `agentglass://`, and the click hands over a
+  * URL: the app opens its install box with it and the person approves what
+  * the plugin declares. This page never installs anything and cannot.
+  *
+  * A browser cannot be asked whether an application is installed — it either
+  * hands the link over or does nothing at all, silently. So: if this page
+  * still has the focus a moment later, nothing took it, and the button says
+  * so and offers the thing that always works.
+  */
+ const installClick = (go, url, label) => {
+  if (!url) return;
+  const back = label || "Install";
+  let answered = false;
+  const away = () => { answered = true; };
+  window.addEventListener("blur", away, { once: true });
+  document.addEventListener("visibilitychange", away, { once: true });
+  window.location.href = "agentglass://plugin/install?url=" + encodeURIComponent(url);
+  setTimeout(() => {
+   window.removeEventListener("blur", away);
+   document.removeEventListener("visibilitychange", away);
+   if (answered) return;
+   go.textContent = "No agentglass here — copy instead";
+   go.classList.add("miss");
+   setTimeout(() => { go.textContent = back; go.classList.remove("miss"); }, 4000);
+  }, 1500);
+ };
+
+ /*
+  * The picture, at the size of the screen. Two steps rather than one: fitted
+  * to the window first, and on a second click at its own pixels with the page
+  * scrolling under it — a 1760px wide screenshot fitted into a 1200px window
+  * is smaller than the window it was taken from, and the only reason to
+  * enlarge a screenshot is to read what is written in it.
+  */
+ const lightbox = (src, caption) => {
+  const box = el("div", "pl-lb");
+  const img = el("img");
+  img.src = src;
+  img.alt = caption || "";
+  const cap = el("div", "pl-lb-cap", "Click the image for actual size  ·  Esc to close");
+  const x = el("button", "pl-lb-x", "×");
+  x.type = "button";
+  x.setAttribute("aria-label", "Close");
+  const close = () => { box.remove(); x.remove(); cap.remove(); removeEventListener("keydown", esc); };
+  const esc = (e) => { if (e.key === "Escape") close(); };
+  img.onclick = (e) => {
+   e.stopPropagation();
+   const full = box.classList.toggle("full");
+   cap.textContent = full ? "Click again to fit  ·  Esc to close" : "Click the image for actual size  ·  Esc to close";
+  };
+  box.onclick = close;
+  x.onclick = close;
+  addEventListener("keydown", esc);
+  box.append(img);
+  document.body.append(box, x, cap);
+ };
+
+ /*
+  * One plugin's own page: `#/plugins/<id>`.
+  *
+  * A card is a thing on a shelf — enough to choose by. This is what somebody
+  * reads before installing: the whole description, the picture at a size you
+  * can read, what it draws, what it asks for, and the command. Same data as
+  * the card; nothing here is fetched from anywhere else.
+  */
+ const detail = (p) => {
+  const w = el("div", "pl-one");
+  const crumb = el("div", "pl-crumb");
+  const back = el("a", null, "Plugins");
+  back.href = "#/plugins";
+  crumb.append(back, document.createTextNode("  /  " + (p.title || p.id)));
+  w.append(crumb);
+
+  const url = safe(p.source && p.source.url);
+  const scope = SCOPE[p.scope] || ["unknown", "w"];
+  const drawn = (p.draws || []).filter((d) => DRAW[d]);
+
+  /* The hero says the four things somebody decides on — what it is, who wrote
+     it, what it may do, and the one button — before any scrolling. */
+  const hero = el("div", "pl-hero");
+  const pitch = el("div");
+  const top = el("div", "pl-one-top");
+  const ic = el("div", "pl-one-ic");
+  ic.innerHTML = PIECE;
+  const who = el("div");
+  who.append(el("h2", null, p.title || p.id));
+  const sub = el("div", "pl-one-sub", p.id + "  ·  by ");
+  const at = el("button", "pl-at", "@" + authorOf(p));
+  at.type = "button";
+  at.title = "Everything by @" + authorOf(p);
+  at.onclick = () => byAuthor(authorOf(p));
+  sub.append(at);
+  who.append(sub);
+  top.append(ic, who);
+  pitch.append(top);
+  const badges = el("div", "pl-badges");
+  badges.append(el("span", "pl-badge " + scope[1], scope[0]));
+  badges.append(el("span", "pl-badge", String(drawn.length) + (drawn.length === 1 ? " surface" : " surfaces")));
+  if (p.verified) badges.append(el("span", "pl-badge s", "verified"));
+  pitch.append(badges);
+  pitch.append(el("p", "pl-lead", p.description || ""));
+
+  const cta = el("div", "pl-cta");
+  const go = el("button", "pl-big", "Install in agentglass");
+  go.type = "button";
+  go.onclick = () => installClick(go, url, "Install in agentglass");
+  const cp = el("button", "pl-ghost", "Copy URL");
+  cp.type = "button";
+  cp.onclick = () => copyClick(cp, url, "Copy URL");
+  cta.append(go, cp);
+  if (url) {
+   const src = el("a", "pl-ghost", "Read the source ↗");
+   src.href = url; src.target = "_blank"; src.rel = "noopener";
+   cta.append(src);
+  }
+  pitch.append(cta);
+  pitch.append(el("p", "pl-hint", "The button hands this URL to agentglass and it opens its install box. Nothing runs until you have read what the plugin declares and switched it on — and an update that changes what it asks for asks again."));
+
+  const spec = el("div");
+  const facts = el("div", "pl-spec");
+  const fact = (k, v, href) => {
+   const d = el("div", "pl-fact");
+   d.append(el("dt", null, k));
+   const dd = el("dd");
+   if (href) { const a = el("a", null, v); a.href = href; a.target = "_blank"; a.rel = "noopener"; dd.append(a); }
+   else dd.textContent = v;
+   d.append(dd);
+   facts.append(d);
+  };
+  const author = el("div", "pl-fact");
+  author.append(el("dt", null, "Author"));
+  const addd = el("dd");
+  const alink = el("button", "pl-at", "@" + authorOf(p));
+  alink.type = "button";
+  alink.onclick = () => byAuthor(authorOf(p));
+  addd.append(alink);
+  author.append(addd);
+  facts.append(author);
+  fact("Scope", scope[0]);
+  fact("Draws", String(drawn.length) + (drawn.length === 1 ? " place" : " places"));
+  fact("Needs", p.minApp ? "agentglass " + p.minApp + "+" : "any version");
+  if (p.added) fact("Listed", p.added);
+  if (url) fact("Source", url.replace(/^https:\/\/(www\.)?github\.com\//, "").replace(/^https:\/\//, ""), url);
+  spec.append(facts);
+  hero.append(pitch, spec);
+  w.append(hero);
+
+  const preview = safe(p.preview) || "";
+  if (preview) {
+   const stage = el("div", "pl-stage");
+   const img = el("img");
+   img.src = preview;
+   img.alt = (p.title || p.id) + ", running in agentglass";
+   img.onerror = () => stage.remove();
+   const zoom = el("div", "pl-zoom", "Click to enlarge");
+   stage.onclick = () => lightbox(preview, img.alt);
+   stage.append(img, zoom);
+   w.append(stage);
+  }
+
+  const close = el("div", "pl-close");
+  if (drawn.length) {
+   const sec = el("div", "pl-sec");
+   sec.append(el("h3", null, "Where it draws"));
+   const ul = el("ul", "pl-draws");
+   drawn.forEach((d, i) => {
+    const li = el("li");
+    li.append(el("span", "n", String(i + 1)));
+    const body = el("div");
+    body.append(el("b", null, DRAW[d]));
+    if (WHERE[d]) body.append(el("span", null, WHERE[d]));
+    li.append(body);
+    ul.append(li);
+   });
+   sec.append(ul);
+   close.append(sec);
+  }
+
+  const note = el("div", "pl-sec pl-aside");
+  note.append(el("h3", null, "What being listed means"));
+  note.append(el("p", "pl-hint", "The repository is public, its manifest is one agentglass accepts, and it has a README and a licence. A check read its source for a short list of patterns and never ran it. That is what a machine can tell: listing is not auditing, and whoever installs it still approves the scope and the places it draws."));
+  close.append(note);
+  w.append(close);
+  return w;
+ };
+
  const PAGE = 24;
  let shown = PAGE;
+ let loaded = false;
+ /** Which plugin the hash names, if it names one. */
+ const wanted = () => {
+  const h = location.hash.replace(/^#\/?/, "").split("#")[0].split("/");
+  return h[0] === "plugins" && h[1] ? decodeURIComponent(h[1]) : "";
+ };
+
  const render = () => {
   if (!all) return;
-  const q = $("pl-q").value.trim().toLowerCase();
+  const one = wanted();
+  const found = one && all.find((p) => p.id === one);
+  $("pl-list").hidden = !!found;
+  $("pl-one").hidden = !found;
+  /* "Publish one" and "Install one" belong to the shelf, not to one plugin:
+     they stood under the detail page offering to list a plugin that is listed. */
+  $("pl-tail").hidden = !!found;
+  if (found) {
+   $("pl-one").replaceChildren(detail(found));
+   return;
+  }
+  /* Only once the document has actually arrived: `all` is set to an empty
+     list the moment the fetch starts, and redirecting on that sent every
+     deep link back to the list before it could find anything. */
+  if (one && !found && loaded) location.hash = "#/plugins";
+  const raw = $("pl-q").value.trim();
   let rows = all.filter((p) => cat === "all" || (p.categories || []).includes(cat) || (p.draws || []).includes(cat));
-  if (q) rows = rows.filter((p) => [p.id, p.title, p.publisher, p.description, ...(p.categories || [])].join(" ").toLowerCase().includes(q));
+  /* "@name" in the box is a search for an author, because that is what people
+     type when they mean one. The dropdown beside it is the same filter for
+     people who would rather pick than type. */
+  const at = raw.startsWith("@") ? raw.slice(1).toLowerCase() : "";
+  const who = $("pl-by").value;
+  if (who) rows = rows.filter((p) => authorOf(p) === who);
+  if (at) rows = rows.filter((p) => authorOf(p).toLowerCase().includes(at));
+  const q = at ? "" : raw.toLowerCase();
+  if (q) rows = rows.filter((p) => [p.id, p.title, p.publisher, authorOf(p), p.description, ...(p.categories || [])].join(" ").toLowerCase().includes(q));
   rows.sort($("pl-sort").value === "az"
    ? (a, b) => (a.title || a.id).localeCompare(b.title || b.id)
    : (a, b) => String(b.added || "").localeCompare(String(a.added || "")));
@@ -1739,30 +2933,68 @@ new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){g.classList.add
   const cats = new Map([["all", "All"], ["panel", "Draws a panel"], ["pr-notes", "Notes in pull requests"]]);
   all.forEach((p) => (p.categories || []).forEach((t) => { if (!cats.has(t)) cats.set(t, t); }));
   $("pl-more").onclick = () => { shown += PAGE; render(); };
+  const count = (k) => (k === "all" ? all.length
+   : all.filter((p) => (p.categories || []).includes(k) || (p.draws || []).includes(k)).length);
   $("pl-chips").replaceChildren(...[...cats].map(([k, label]) => {
    const b = el("button", "pl-chip", label);
+   b.append(el("span", "pl-chip-n", String(count(k))));
    b.type = "button";
    b.setAttribute("aria-pressed", String(k === cat));
    b.onclick = () => { cat = k; shown = PAGE; chips(); render(); };
    return b;
   }));
+  /* Every author in the catalogue, with how many each has. Rebuilt from the
+     data rather than written down, so a new listing needs no edit here. */
+  const sel = $("pl-by");
+  const keep = sel.value;
+  const tally = new Map();
+  all.forEach((p) => { const a = authorOf(p); tally.set(a, (tally.get(a) || 0) + 1); });
+  const opts = [el("option", null, "Every author")];
+  opts[0].value = "";
+  [...tally].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).forEach(([a, n]) => {
+   const o = el("option", null, "@" + a + "  ·  " + n);
+   o.value = a;
+   opts.push(o);
+  });
+  sel.replaceChildren(...opts);
+  sel.value = keep;
  };
  const load = () => {
   if (all) return;
   all = [];
   fetch("plugins.json", { cache: "no-cache" }).then((r) => r.json()).then((d) => {
    all = Array.isArray(d.plugins) ? d.plugins.filter((p) => p && typeof p.id === "string") : [];
+   loaded = true;
    chips(); render();
   }).catch(() => { $("pl-count").textContent = "The list could not be loaded."; });
  };
  $("pl-q").addEventListener("input", () => { shown = PAGE; render(); });
  $("pl-sort").addEventListener("change", render);
+ $("pl-by").addEventListener("change", () => { shown = PAGE; render(); });
  addEventListener("keydown", (e) => {
   if (e.key === "/" && document.body.dataset.route === "plugins" && document.activeElement !== $("pl-q")) { e.preventDefault(); $("pl-q").focus(); }
  });
- const check = () => { if (location.hash.replace(/^#\/?/, "").split("#")[0] === "plugins") load(); };
+ const check = () => {
+  const first = location.hash.replace(/^#\/?/, "").split("#")[0].split("/")[0];
+  if (first !== "plugins") return;
+  load();
+  // Already loaded: the hash changed between the list and one plugin.
+  if (all) render();
+ };
  addEventListener("hashchange", check);
  check();
+
+ /* The home's card says how many plugins are listed and names a few, from the
+    same file the catalogue is drawn from — so the day a second one lands the
+    home page is already telling the truth about it. One fetch, cached, and
+    the card reads fine if it never arrives. */
+ fetch("plugins.json", { cache: "no-cache" }).then((r) => r.json()).then((d) => {
+  const list = Array.isArray(d.plugins) ? d.plugins.filter((p) => p && typeof p.id === "string") : [];
+  if (!list.length) return;
+  const n = $("nx-n"), names = $("nx-list");
+  if (n) n.textContent = list.length === 1 ? "1 listed" : list.length + " listed";
+  if (names) names.replaceChildren(...list.slice(0, 4).map((p) => el("i", null, p.title || p.id)));
+ }).catch(() => { /* the card stands on its own words */ });
 })();
 
 /* Four pages out of one hash. `#/guide`, `#/faq` and `#/plugins` are pages; anything else,
@@ -1773,7 +3005,11 @@ new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){g.classList.add
  const pages = ["home", "guide", "faq", "plugins"];
  const go = () => {
   const h = location.hash.replace(/^#\/?/, "");
-  const r = pages.includes(h.split("#")[0]) ? h.split("#")[0] : "home";
+  /* `#/plugins/<id>` is one plugin's own page. The route is still "plugins";
+     what follows is handed to that page, which draws either the list or the
+     one it names. */
+  const first = h.split("#")[0].split("/")[0];
+  const r = pages.includes(first) ? first : "home";
   pages.forEach((k) => { document.getElementById(k).hidden = k !== r; });
   document.body.dataset.route = r;
   document.querySelectorAll(".hd-nav a[data-r]").forEach((a) =>

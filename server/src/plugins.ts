@@ -23,7 +23,7 @@ import { mintPluginToken, revokePluginToken } from "./auth.ts";
 import type { Scope } from "./devices.ts";
 import { cloneUrlError } from "./projectadd.ts";
 import {
-  type InstallSource, catalogueUrlError, contentHash, pluginGitUrlError, pluginRefError, walkPluginDir,
+  type InstallSource, contentHash, pluginGitUrlError, pluginRefError, walkPluginDir,
 } from "./plugin-sources.ts";
 import { fetchCatalogue } from "./plugin-catalogue.ts";
 import { blockedEntry, type BlockEntry } from "./plugin-blocklist.ts";
@@ -322,36 +322,34 @@ function offLimits(p: string): boolean {
 }
 
 /**
- * `catalogues` is the list of URLs he has added, same file as everything
- * else plugins.ts persists. This is deliberately the ONLY thing kept about
- * a catalogue: not its name, not its plugin list, not when it was last
- * fetched. Those live only in the document itself, fetched fresh on every
- * browse (see fetchCatalogue) — a stranger's list is not something to cache
- * trust in, and a stale copy read as current is the exact lie the "catalogue
- * unreachable" state exists to avoid telling.
+ * Nothing is kept about the market: not its name, not its plugin list, not
+ * when it was last fetched. That document lives on the site and is fetched
+ * fresh on every read (see fetchCatalogue) — a stale copy read as current is
+ * the exact lie the "did not answer" state exists to avoid telling. The list
+ * of URLs that used to be here went with the screen that added them: there
+ * is one market, and it is named in web/src/components/plugins/Market.tsx.
  *
  * No separate lockfile for installed plugins either: PluginRecord already
  * carries source, resolvedCommit and contentHash for every install, so
  * plugins.json already answers "what is installed, from where, at what
  * commit" — a second file would just be this one, copied.
  */
-interface Store { master: boolean; plugins: PluginRecord[]; catalogues: string[] }
-const DEFAULT_STORE: Store = { master: true, plugins: [], catalogues: [] };
+interface Store { master: boolean; plugins: PluginRecord[] }
+const DEFAULT_STORE: Store = { master: true, plugins: [] };
 
 function read(): Store {
   const p = pluginsPath();
-  if (offLimits(p) || !existsSync(p)) return { ...DEFAULT_STORE, plugins: [], catalogues: [] };
+  if (offLimits(p) || !existsSync(p)) return { ...DEFAULT_STORE, plugins: [] };
   try {
     const parsed = JSON.parse(readFileSync(p, "utf8")) as Partial<Store>;
     return {
       master: typeof parsed.master === "boolean" ? parsed.master : true,
       plugins: Array.isArray(parsed.plugins) ? parsed.plugins : [],
-      catalogues: Array.isArray(parsed.catalogues) ? parsed.catalogues.filter((c): c is string => typeof c === "string") : [],
     };
   } catch {
     // A corrupt file must not take the server down on boot — same rule
     // devices.ts follows. The cost is every plugin needs re-installing.
-    return { ...DEFAULT_STORE, plugins: [], catalogues: [] };
+    return { ...DEFAULT_STORE, plugins: [] };
   }
 }
 
@@ -848,35 +846,9 @@ export async function removePlugin(name: string): Promise<boolean> {
   return true;
 }
 
-/**
- * The catalogues he has added — a catalogue is somebody else's list, kept
- * the way he collects anything else: added by URL, browsable, removable.
- * Fetching one to browse it never adds it; adding is its own step.
- */
-export function listCatalogues(): string[] {
-  return read().catalogues;
-}
-
-export function addCatalogue(url: string): { ok: true } | { ok: false; error: string } {
-  const bad = catalogueUrlError(url);
-  if (bad) return { ok: false, error: bad };
-  const u = url.trim();
-  const store = read();
-  if (store.catalogues.includes(u)) return { ok: true };
-  write({ ...store, catalogues: [...store.catalogues, u] });
-  return { ok: true };
-}
-
-export function removeCatalogue(url: string): boolean {
-  const store = read();
-  if (!store.catalogues.includes(url)) return false;
-  write({ ...store, catalogues: store.catalogues.filter((c) => c !== url) });
-  return true;
-}
-
 /** Test seam: wipe the store, the on-disk folder, and any running process. */
 export async function __resetPlugins(): Promise<void> {
   for (const name of [...running.keys()]) await stopRunning(name);
-  write({ master: true, plugins: [], catalogues: [] });
+  write({ master: true, plugins: [] });
   try { rmSync(join(pluginsConfigDir(), "plugins"), { recursive: true, force: true }); } catch { /* nothing to clear */ }
 }

@@ -85,16 +85,17 @@ describe("a link to a pull request in another project", () => {
   });
 });
 
-describe("a catalogue with a thousand plugins in it", () => {
+describe("a market with a thousand plugins in it", () => {
   test("is searched and read a page at a time, rather than drawn all at once", async () => {
-    const pane = await Bun.file(new URL("../../web/src/components/PluginsPane.tsx", import.meta.url)).text();
-    const shelf = between(pane, "function CatalogueShelf(", "\n/** One catalogue");
-    expect(shelf, "a page, not the whole document").toContain("PAGE");
-    expect(shelf).toContain("slice(here * PAGE");
-    expect(shelf, "and a way to narrow it before paging through it").toContain("toLowerCase().includes(needle)");
-    // What the server kept back has to be said, or a catalogue past the cap
-    // quietly becomes a shorter catalogue.
-    expect(shelf).toContain("catalogue.total");
+    // The shelf moved out of PluginsPane into its own screen when the
+    // catalogues became one market; the rule it carried came with it.
+    const market = await Bun.file(new URL("../../web/src/components/plugins/Market.tsx", import.meta.url)).text();
+    expect(market, "a page, not the whole document").toContain("const PAGE = 24;");
+    expect(market).toContain("found.slice(here * PAGE");
+    expect(market, "and a way to narrow it before paging through it").toContain("toLowerCase().includes(needle)");
+    // What the server kept back has to be said, or a market past the cap
+    // quietly becomes a shorter market.
+    expect(market).toContain("catalogue.total");
   });
 });
 
@@ -114,5 +115,23 @@ describe("a plugin's own settings", () => {
     expect(pane).toContain("<PluginSettingsPane");
     // And the page goes when the plugin does, without waiting for a reopen.
     expect(pane).toContain("!plugins.some((p) => p.name === showing)) setShowing(null)");
+  });
+});
+
+describe("what switching a plugin on approves", () => {
+  test("is drawn by one component, in the card and in the dialog that asks", async () => {
+    /* It was a paragraph, a `runs:` line and a list of sentences, in one
+       weight and one colour, written out twice. Two copies of the consent
+       gate is two chances to describe the same plugin differently. */
+    const pane = await Bun.file(new URL("../../web/src/components/PluginsPane.tsx", import.meta.url)).text();
+    expect(pane, "the dialog carries the component, not a joined string").toContain("node: <PluginDeclaration plugin={plugin} />");
+    expect(pane).toContain("<PluginDeclaration plugin={plugin} />\n        </Fold>");
+    expect(pane, "and the sentences it replaced are gone").not.toContain("function drawsWhere");
+
+    const decl = await Bun.file(new URL("../../web/src/components/plugins/PluginDeclaration.tsx", import.meta.url)).text();
+    for (const head of ["What it sees", "What it runs", "Where it draws"]) expect(decl).toContain(head);
+    // The scope is the thing being agreed to, so it is coloured by how much
+    // it asks for rather than drawn the same for all three.
+    expect(decl).toContain("SCOPE_TINT");
   });
 });
