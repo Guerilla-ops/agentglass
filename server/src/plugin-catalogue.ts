@@ -37,7 +37,7 @@ export interface Catalogue {
   total: number;
 }
 
-const NAME_RE = /^[A-Za-z0-9._-]{1,60}$/;
+const CONTROL_CHARS = /[\x00-\x1f\x7f]/;
 const MAX_TEXT = 500;
 const MAX_PLUGINS = 500;
 const MAX_CATEGORIES = 20;
@@ -79,16 +79,25 @@ function validateCataloguePlugin(raw: unknown): CataloguePlugin | null {
 export function validateCatalogue(raw: unknown): Catalogue | string {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return "catalogue must be a JSON object";
   const c = raw as Record<string, unknown>;
-  // The same shape a plugin name is held to (plugins.ts `validPluginName`),
-  // repeated rather than imported because plugins.ts imports this file. A
-  // catalogue name never becomes a path, but "." and ".." are not names.
-  if (typeof c.name !== "string" || !NAME_RE.test(c.name) || c.name === "." || c.name === ".." || c.name.startsWith(".")) {
-    return "catalogue name must be 1-60 characters: letters, numbers, dots, dashes or underscores";
+  /*
+   * A catalogue's name is a heading, not an identifier.
+   *
+   * It was held to the shape a PLUGIN name is held to — letters, digits, dots,
+   * dashes — because that rule was sitting next door. A plugin's name becomes
+   * a folder on disk and has to be that narrow; a catalogue's name is drawn in
+   * a row and nothing else, and the first catalogue this project published was
+   * refused by its own app for being called "agentglass plugins".
+   *
+   * So: anything printable, trimmed, capped, and no control characters — which
+   * is what a heading can be without being able to lie about where it is.
+   */
+  if (typeof c.name !== "string" || !c.name.trim() || c.name.length > 60 || CONTROL_CHARS.test(c.name)) {
+    return "catalogue name must be 1-60 characters and hold no control characters";
   }
   if (typeof c.owner !== "string" || !c.owner.trim() || c.owner.length > 200) return "catalogue owner must be 1-200 characters";
   if (!Array.isArray(c.plugins)) return "catalogue plugins must be an array";
   const plugins = c.plugins.slice(0, MAX_PLUGINS).map(validateCataloguePlugin).filter((p): p is CataloguePlugin => p !== null);
-  return { name: c.name, owner: c.owner.trim().slice(0, 200), plugins, total: c.plugins.length };
+  return { name: c.name.trim(), owner: c.owner.trim().slice(0, 200), plugins, total: c.plugins.length };
 }
 
 const FETCH_TIMEOUT_MS = 15_000;

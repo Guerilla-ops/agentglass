@@ -49,6 +49,21 @@ describe("validateCatalogue", () => {
     expect(validateCatalogue([1, 2])).toContain("object");
   });
 
+  test("a name with a space in it is a name — this project's own catalogue has one", () => {
+    /* It was refused by the rule a PLUGIN name is held to, which exists
+       because a plugin's name becomes a folder. A catalogue's name is a
+       heading, and "agentglass plugins" was turned away by its own app. */
+    const c = validateCatalogue({ ...okCatalogue, name: "agentglass plugins" });
+    if (typeof c === "string") throw new Error(c);
+    expect(c.name).toBe("agentglass plugins");
+  });
+
+  test("a name that could hide what it is, or is not a name at all, is still refused", () => {
+    for (const name of ["", "   ", "x".repeat(61), "agentglass\u0000plugins", "two\nlines", 7]) {
+      expect(validateCatalogue({ ...okCatalogue, name })).toContain("name");
+    }
+  });
+
   test("a missing name is refused", () => {
     const { name: _drop, ...rest } = okCatalogue;
     expect(validateCatalogue(rest)).toContain("name");
