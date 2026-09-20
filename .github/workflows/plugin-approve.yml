@@ -35,6 +35,11 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+      # The fallback below comments on the issue when the pull request cannot
+      # be opened, and without this it failed too — "Resource not accessible
+      # by integration" — so a listing stopped at a branch nobody was told
+      # about, on a run that went red having done its work correctly.
+      issues: write
     steps:
       - name: Is the person who labelled it allowed to?
         env:
