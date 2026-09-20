@@ -2213,15 +2213,54 @@ export function tmuxSockets(known?: string[]): string[][] {
  * you are, and a picker listing four of those beside the one you work in is a
  * picker you have to read every time.
  */
-function attachedSessions(socket: string[]): Set<string> {
-  const out = tmux(socket, ["list-sessions", "-F", "#{session_name}\t#{session_attached}"]);
-  if (out === null) return new Set();
+/**
+ * Sessions somebody is looking at — through ANY session in their group.
+ *
+ * `session_attached` alone counts the clients whose session is this one by
+ * name, and the phone's never is: attaching groups a new `agx-phone-…` session
+ * onto the target, so the client sits on that name instead. For most rows the
+ * difference costs nothing, because the row was listed on its own merits
+ * anyway.
+ *
+ * It costs everything for the scratch. That one is listed BECAUSE somebody is
+ * attached (see the popup rule in the phone's tabs.ts), so the moment the desk
+ * dismisses the popup, `session_attached` drops to 0 while the phone is still
+ * reading it — the row leaves the strip, the phone's open tab stops matching
+ * anything, and TerminalView unmounts into "Nothing open". Measured on an
+ * isolated server: with the phone grouped on and the popup gone,
+ * `session_attached` was 0 and `session_group_attached` was 1.
+ *
+ * Losing the screen you are reading because somebody at the desk pressed
+ * Escape is the appear-and-disappear that the panes route's own note calls
+ * worse than either answer. The group is the honest unit: those sessions are
+ * one set of windows, and a client on any of them is a client on all of them.
+ */
+export const ATTACHED_FORMAT =
+  "#{session_name}\t#{session_attached}\t#{session_group_attached}";
+
+/**
+ * Which of those rows means "somebody is looking", split out from the call so
+ * it can be asserted against the five states this was measured in rather than
+ * against a running tmux.
+ *
+ * Both counts are strings from tmux. An ungrouped session answers the third
+ * field with the EMPTY string and a grouped one nobody is on answers `0`, and
+ * neither is a reason to skip the row — only a reason not to count it.
+ */
+export function attachedFrom(out: string): Set<string> {
   const live = new Set<string>();
   for (const line of out.split("\n")) {
-    const [name, count] = line.split("\t");
-    if (name && count && count !== "0") live.add(name);
+    const [name, count, group] = line.split("\t");
+    if (!name) continue;
+    const some = (n?: string) => !!n && n !== "0";
+    if (some(count) || some(group)) live.add(name);
   }
   return live;
+}
+
+function attachedSessions(socket: string[]): Set<string> {
+  const out = tmux(socket, ["list-sessions", "-F", ATTACHED_FORMAT]);
+  return out === null ? new Set() : attachedFrom(out);
 }
 
 function nestedSessions(socket: string[]): Set<string> {
