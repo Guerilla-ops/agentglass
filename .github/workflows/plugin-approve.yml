@@ -63,7 +63,7 @@ jobs:
             *) echo "::error::the label was removed again before this run reached it"; exit 1 ;;
           esac
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Read the submission, and check it again from scratch
         id: entry
