@@ -37,7 +37,7 @@ jobs:
       contents: read
     steps:
       - name: Check out this repository, without keeping its credentials
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -132,7 +132,7 @@ jobs:
           open("report/verdict", "w").write("READY" if (v.get("ok") and reachable) else "NOT-READY")
           PY
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: submission-report-${{ github.event.issue.number }}
           path: report/
@@ -145,7 +145,7 @@ jobs:
     permissions:
       issues: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: submission-report-${{ github.event.issue.number }}
           path: report
