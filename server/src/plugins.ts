@@ -48,6 +48,48 @@ export interface PluginManifest {
    *  inlined, so an SVG's scripts have nowhere to run. */
   icon?: string;
   color?: string;
+  /** The oldest agentglass this plugin works on, as `major.minor.patch`.
+   *  Checked at install rather than at enable: a plugin that needs a surface
+   *  this app does not draw should not be sitting in the list waiting to be
+   *  switched on. */
+  minApp?: string;
+}
+
+/**
+ * Is `have` at least `want`? Both `major.minor.patch`, missing parts are zero.
+ *
+ * Nothing more: a plugin says the oldest version it works on and the app says
+ * whether it is that old. Ranges, carets and pre-release ordering are a
+ * dependency solver's problem, and this is one number against another.
+ */
+/**
+ * This app's version, for a plugin that says which one it needs.
+ *
+ * `build-info.json` is what an installed app carries; a checkout has none, and
+ * package.json beside the source is the honest answer there. Overridable for
+ * the tests, which need to be older and newer than a manifest on purpose.
+ */
+export function appVersion(): string {
+  if (process.env.AGENTGLASS_VERSION) return process.env.AGENTGLASS_VERSION;
+  for (const p of [
+    join(dirname(process.execPath), "build-info.json"),
+    new URL("../../package.json", import.meta.url).pathname,
+  ]) {
+    try {
+      const v = JSON.parse(readFileSync(p, "utf8"))?.version;
+      if (typeof v === "string" && v) return v;
+    } catch { /* the next one, or the floor below */ }
+  }
+  return "0.0.0";
+}
+
+export function versionAtLeast(have: string, want: string): boolean {
+  const parts = (v: string) => v.trim().split(".").map((n) => Number.parseInt(n, 10) || 0);
+  const [h, w] = [parts(have), parts(want)];
+  for (let i = 0; i < 3; i++) {
+    if ((h[i] ?? 0) !== (w[i] ?? 0)) return (h[i] ?? 0) > (w[i] ?? 0);
+  }
+  return true;
 }
 
 /** One path segment, the same character set `projectadd.ts` holds a cloned
@@ -105,6 +147,9 @@ export function validateManifest(raw: unknown): PluginManifest | string {
   if (m.color !== undefined && (typeof m.color !== "string" || !/^#[0-9a-fA-F]{6}$/.test(m.color))) {
     return "color must be a hex colour like #7c5cf5";
   }
+  if (m.minApp !== undefined && (typeof m.minApp !== "string" || !/^\d{1,4}(\.\d{1,4}){0,2}$/.test(m.minApp))) {
+    return "minApp must be a version like 0.18.0";
+  }
   return {
     name: m.name,
     publisher: m.publisher.trim().slice(0, 200),
@@ -114,6 +159,7 @@ export function validateManifest(raw: unknown): PluginManifest | string {
     contributes: contributes.value,
     ...(typeof m.icon === "string" ? { icon: m.icon } : {}),
     ...(typeof m.color === "string" ? { color: m.color.toLowerCase() } : {}),
+    ...(typeof m.minApp === "string" ? { minApp: m.minApp } : {}),
   };
 }
 
@@ -545,6 +591,15 @@ async function finishInstall(
   try { raw = JSON.parse(readFileSync(manifestPath, "utf8")); } catch { return { ok: false, error: `${MANIFEST_NAME} is not valid JSON` }; }
   const manifest = validateManifest(raw);
   if (typeof manifest === "string") return { ok: false, error: manifest };
+  /*
+   * A plugin that needs a newer app is refused here rather than installed and
+   * left off. Half of what a plugin declares is where it draws, and a surface
+   * this app does not have is not a setting somebody can switch on — it is a
+   * panel that never appears, with nothing saying why.
+   */
+  if (manifest.minApp && !versionAtLeast(appVersion(), manifest.minApp)) {
+    return { ok: false, error: `${manifest.name} needs agentglass ${manifest.minApp} or newer, and this is ${appVersion()}` };
+  }
 
   const walked = walkPluginDir(staging);
   if (!walked.ok) return { ok: false, error: walked.error ?? "plugin folder rejected" };

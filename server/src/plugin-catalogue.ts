@@ -25,6 +25,10 @@ export interface CataloguePlugin {
   /** ISO date it was listed. The only ordering a catalogue can offer that
    *  its author cannot game by rewriting the file. */
   added?: string;
+  /** The oldest agentglass it works on, copied from its manifest so a card
+   *  can say "needs 0.18+" before anybody presses anything. The install
+   *  checks the manifest itself; this is only the warning. */
+  minApp?: string;
 }
 
 export interface Catalogue {
@@ -73,6 +77,7 @@ function validateCataloguePlugin(raw: unknown): CataloguePlugin | null {
     ...(short(p.publisher, 80) ? { publisher: short(p.publisher, 80) } : {}),
     ...(draws?.length ? { draws } : {}),
     ...(short(p.added, 40) ? { added: short(p.added, 40) } : {}),
+    ...(typeof p.minApp === "string" && /^\d{1,4}(\.\d{1,4}){0,2}$/.test(p.minApp) ? { minApp: p.minApp } : {}),
   };
 }
 

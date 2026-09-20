@@ -129,6 +129,7 @@ NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,60}$")
 CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 ICON_RE = re.compile(r"^[A-Za-z0-9._-][A-Za-z0-9._/-]{0,99}\.(svg|png|webp)$")
 COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+VERSION_RE = re.compile(r"^\d{1,4}(\.\d{1,4}){0,2}$")
 ID_RE = re.compile(r"^[a-z][a-z0-9-]{0,39}$")
 KEY_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]*$")
 PANEL_ICONS = ("puzzle", "review", "check", "chart", "list", "bell", "bug", "book", "bolt", "eye")
@@ -247,6 +248,9 @@ def check_manifest(m):
     color = m.get("color")
     if color is not None and (not isinstance(color, str) or not COLOR_RE.match(color)):
         return "color must be a hex colour like #7c5cf5"
+    min_app = m.get("minApp")
+    if min_app is not None and (not isinstance(min_app, str) or not VERSION_RE.match(min_app)):
+        return "minApp must be a version like 0.18.0"
     return None
 
 
@@ -276,7 +280,9 @@ def cmd_validate(args):
             warnings.append(f"no {expected} — a catalogue will ask for one")
     draws = sorted(k for k in (manifest.get("contributes") or {}))
     return emit({"ok": True, "name": manifest["name"], "publisher": manifest["publisher"],
-                 "scope": manifest["scope"], "draws": draws, "warnings": warnings})
+                 "scope": manifest["scope"], "draws": draws,
+                 **({"minApp": manifest["minApp"]} if manifest.get("minApp") else {}),
+                 "warnings": warnings})
 
 
 # -------------------------------------------------------------- the app's API

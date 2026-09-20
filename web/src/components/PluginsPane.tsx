@@ -8,9 +8,10 @@
 // not review, which is the whole reason this file exists.
 import { PluginMark } from "./plugins/PluginMark.tsx";
 import { emitControl } from "../lib/controlBus.ts";
+import { clearPluginInstall, pluginInstallRequest, subscribePluginInstall } from "../lib/installPlugin.ts";
 import { openSettings } from "../lib/openSettings.ts";
 import { useDialogs } from "./ConfirmDialog.tsx";
-import { useCallback, useEffect, useState, useMemo } from "react";
+import { useCallback, useEffect, useState, useMemo, useSyncExternalStore } from "react";
 import { Fold, SettingRow, Switch } from "./SettingRow.tsx";
 import { api } from "../lib/api.ts";
 import { fmtAgo } from "../lib/format.ts";
@@ -65,8 +66,14 @@ const CARD_STYLE: React.CSSProperties = {
  * URL — installPlugin on the server tells them apart by `isAbsolute`, so
  * this asks for one field rather than a toggle nobody needs to set.
  */
-function AddPluginCard({ onInstalled, open, setOpen }: { onInstalled: () => void; open: boolean; setOpen: (v: boolean) => void }) {
+function AddPluginCard({ onInstalled, open, setOpen, prefill }: {
+  onInstalled: () => void; open: boolean; setOpen: (v: boolean) => void;
+  /** Put there by a link from the catalogue's page — see lib/installPlugin.ts.
+   *  It fills the box and nothing else: the press is still the person's. */
+  prefill?: string;
+}) {
   const [source, setSource] = useState("");
+  useEffect(() => { if (prefill) setSource(prefill); }, [prefill]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -476,6 +483,16 @@ export function PluginsPane({ open }: { open: boolean }) {
      its name — and with a catalogue attached this list is not always short. */
   const [q, setQ] = useState("");
   const [installing, setInstalling] = useState(false);
+  /* "Install this plugin", from the web page. The box opens with the URL in
+     it and waits: a link may ask, the person answers. */
+  const askedFor = useSyncExternalStore(subscribePluginInstall, pluginInstallRequest, () => null);
+  const [prefill, setPrefill] = useState("");
+  useEffect(() => {
+    if (!askedFor) return;
+    setPrefill(askedFor.url);
+    setInstalling(true);
+    clearPluginInstall();
+  }, [askedFor]);
   const ql = q.trim().toLowerCase();
   const shown = ql
     ? plugins.filter((p) => `${p.name} ${p.publisher} ${p.description}`.toLowerCase().includes(ql))
@@ -540,7 +557,7 @@ export function PluginsPane({ open }: { open: boolean }) {
           open on a laptop. 360 is the floor a card of this density needs —
           below it the description wraps to five lines and the footer buttons
           stack, which is the letterbox again. */}
-      <AddPluginCard onInstalled={load} open={installing} setOpen={setInstalling} />
+      <AddPluginCard onInstalled={load} open={installing} setOpen={setInstalling} prefill={prefill} />
       {plugins.length === 0 ? (
         <div className="rounded-xl px-4 py-5 text-[12px] t-dim" style={{ border: "1px dashed var(--surface-line)" }}>
           Nothing installed yet. Install one from a folder or a git URL, or pick one from a catalogue below.

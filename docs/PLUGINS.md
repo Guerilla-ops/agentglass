@@ -64,6 +64,7 @@ never written to disk.
 | `contributes` | optional; where it draws. See [Drawing in the app](#drawing-in-the-app). |
 | `icon` | optional; a relative path inside the folder to an `.svg`, `.png` or `.webp`, at most 256 KB, served to the window with `nosniff` and a sandbox policy. Named and not shipped is the mistake `agentglass-plugin validate` warns about. |
 | `color` | optional `#rrggbb`; the tint of its mark and of the button it puts in a pull request. |
+| `minApp` | optional `major.minor.patch`; the oldest agentglass this works on. An older app refuses the install and says both versions, rather than installing something whose panel would never appear. |
 
 A manifest that fails any rule is refused with the sentence naming the rule;
 nothing is coerced into a wider shape than what was declared.
@@ -346,6 +347,28 @@ later — an icon named and not shipped, a missing README.
 It carries its own copy of those rules, because CI has no agentglass to ask.
 `server/test/plugin-cli-validate.test.ts` runs the app's validator and the
 CLI's over the same cases, so the two cannot drift apart quietly.
+
+## Installing from a web page
+
+A catalogue lives on a site and the app lives on a machine; the only thing a
+browser can hand across is a link. agentglass claims `agentglass://`, and the
+**Install** button on a card opens
+
+    agentglass://plugin/install?url=https://github.com/you/my-plugin
+
+which raises the window and puts that URL in the install box in Settings ▸
+Plugins. **It installs nothing.** The person presses Install, reads what the
+plugin declares and switches it on — the same gate a URL pasted by hand goes
+through. The link carries an `https` git URL and nothing else: a link that
+could name a local path would let a page point the install box at somebody's
+home directory.
+
+A browser cannot be asked whether an application is installed. It either hands
+the link over or does nothing, silently — so the button watches for the page
+losing focus and, when nothing takes it, says so and offers the URL to copy.
+The scheme is claimed only by a packaged install: from a checkout the
+executable is Electron itself, and registering that would point the scheme at
+whatever ran last.
 
 ## Being listed
 

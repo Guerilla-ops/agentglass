@@ -233,6 +233,67 @@ protocol.registerSchemesAsPrivileged([
   },
 ]);
 
+/**
+ * "Install this plugin", clicked on a web page.
+ *
+ * The catalogue lives on a site and the app lives here, and the only thing a
+ * browser can hand across that gap is a link. So the app owns
+ * `agentglass://plugin/install?url=…`: a click opens the window and puts the
+ * URL in the install box in Settings ▸ Plugins, WITH THE APPROVAL IT ALWAYS
+ * HAD. Nothing installs, nothing runs, and nothing is enabled — a link from a
+ * page nobody vetted may ask, and only the person answers.
+ *
+ * The same scheme already serves the renderer from `agentglass://app`, which
+ * is why the host is checked: `app` is this application's own origin and is
+ * never a deep link, whatever a page puts after it.
+ */
+const DEEP_LINK_MAX = 2048;
+
+/** @param {readonly string[]} argv @returns {string | null} */
+function deepLinkFrom(argv) {
+  for (const arg of argv || []) {
+    if (typeof arg !== "string" || !arg.startsWith(`${APP_SCHEME}://`) || arg.length > DEEP_LINK_MAX) continue;
+    if (arg.startsWith(`${APP_ORIGIN}/`) || arg === APP_ORIGIN) continue;
+    return arg;
+  }
+  return null;
+}
+
+/** What a deep link is allowed to ask for. One shape today, and the parsing
+ *  is here rather than in the window because a malformed link should die in
+ *  the process that can simply drop it. */
+/** @param {string} link @returns {{ kind: "plugin-install", url: string } | null} */
+function parseDeepLink(link) {
+  let u;
+  try { u = new URL(link); } catch { return null; }
+  if (u.protocol !== `${APP_SCHEME}:` || u.host !== "plugin" || u.pathname !== "/install") return null;
+  const url = (u.searchParams.get("url") || "").trim();
+  // Only a git URL over https, which is the one `installPlugin` would accept
+  // anyway: a link that could name a local path would let a page point the
+  // install box at somebody's home directory.
+  if (!/^https:\/\/[^\s"'<>]{4,512}$/.test(url)) return null;
+  return { kind: "plugin-install", url };
+}
+
+/** Held when a link starts the app cold: the window is not there to be told
+ *  yet, and the renderer asks for it once it has mounted. */
+/** @type {{ kind: "plugin-install", url: string } | null} */
+let pendingDeepLink = null;
+
+/** @param {string | null} link */
+function offerDeepLink(link) {
+  const parsed = link && parseDeepLink(link);
+  if (!parsed) return;
+  pendingDeepLink = parsed;
+  const w = mainWindow;
+  if (w && !w.isDestroyed()) {
+    if (w.isMinimized()) w.restore();
+    w.show();
+    w.focus();
+    try { w.webContents.send("ag:deep-link", parsed); } catch { /* window went away */ }
+  }
+}
+
 // Where the sidecar is asked to listen. Resolved at startup (see pickPort) --
 // the preferred port is only the first candidate, not a promise.
 const PREFERRED_PORT = Number(process.env.AGENTGLASS_PORT || 4000);
@@ -3686,11 +3747,22 @@ function createWindow() {
  * one look at the lock and exit in silence. `show` is what crosses workspaces;
  * `restore` alone leaves a minimised window minimised.
  */
-app.on("second-instance", () => {
+app.on("second-instance", (_event, argv) => {
+  // A link clicked in a browser arrives as the argv of a second launch, which
+  // this process then refuses — so the link has to be taken off it here or it
+  // dies with that process.
+  const link = deepLinkFrom(argv);
+  if (link) offerDeepLink(link);
   if (!mainWindow || mainWindow.isDestroyed()) return;
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show();
   mainWindow.focus();
+});
+
+// macOS hands it over as an event instead of an argument.
+app.on("open-url", (event, url) => {
+  event.preventDefault();
+  offerDeepLink(url);
 });
 
 /**
@@ -3797,6 +3869,29 @@ app.whenReady().then(async () => {
   // Removing the menu outright is the only thing that stops that; the handful
   // of accelerators it carried are rebound in keepUsefulShortcuts().
   Menu.setApplicationMenu(null);
+  /*
+   * Claim `agentglass://` with the desktop, so a link on a web page reaches
+   * this app rather than a browser's "no application can open this".
+   *
+   * Only for a packaged install: from a checkout the executable is Electron
+   * itself with this directory as an argument, and registering that would
+   * point the whole scheme at whatever ran last. A developer who wants it
+   * installs the app.
+   */
+  if (app.isPackaged) {
+    try { app.setAsDefaultProtocolClient(APP_SCHEME); } catch { /* a desktop that has no registry for this */ }
+  }
+  // A link that started the app cold: taken before any window exists and
+  // handed over when the renderer asks for it.
+  const coldLink = deepLinkFrom(process.argv.slice(1));
+  if (coldLink) pendingDeepLink = parseDeepLink(coldLink);
+  // The renderer asks once it has mounted, because a message sent to a window
+  // that is still loading is a message nobody hears.
+  ipcMain.handle("ag:takeDeepLink", () => {
+    const held = pendingDeepLink;
+    pendingDeepLink = null;
+    return held;
+  });
   serveApp();
   // Synchronous on purpose: the preload publishes `apiOrigin` as a plain value
   // because web/src/lib/api.ts reads it while its module body runs, before any

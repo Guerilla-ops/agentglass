@@ -117,6 +117,7 @@ jobs:
                   [c for c in [field("Category").lower()] if c and c != "_no response_"]
                   + [t.strip().lower() for t in field("Tags").split(",") if t.strip() and t.strip() != "_no response_"][:5])),
               "added": datetime.date.today().isoformat(),
+              **({"minApp": v["minApp"]} if v.get("minApp") else {}),
           }
           # `verified` is the catalogue's own word for "this project wrote it",
           # never something a submission can ask for.

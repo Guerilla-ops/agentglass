@@ -28,6 +28,11 @@ type DesktopBridge = {
   setRemote?: (on: boolean) => Promise<boolean>;
   revokeRemote?: () => Promise<boolean>;
   onServerChanged?: (fn: (p: { origin?: string | null; token?: string | null }) => void) => () => void;
+  /** A link somebody clicked on a web page: today only "install this plugin".
+   *  Absent on a shell built before the app claimed its own scheme, and in a
+   *  browser tab, where there is no scheme to claim. */
+  takeDeepLink?: () => Promise<DeepLink | null>;
+  onDeepLink?: (fn: (link: DeepLink) => void) => () => void;
   /** The window's own controls. Optional because an older shell still has a
    *  system title bar and does not need them — and because a renderer that
    *  assumed they were there would draw three dead buttons in a browser tab. */
@@ -689,6 +694,26 @@ export async function revokeRemoteAccess(): Promise<boolean | null> {
  * socket reconnect. No reload, so terminals, drafts and scroll positions
  * survive a setting change.
  */
+/** What a link may ask for. One shape, checked in the main process before it
+ *  ever reaches here — this is the window's copy of the answer, not a parser. */
+export type DeepLink = { kind: "plugin-install"; url: string };
+
+/**
+ * "Install this plugin", clicked on the catalogue's web page.
+ *
+ * Two ways in, because a link arrives at two different moments: one that
+ * started the app cold is waiting when the window mounts (`takeDeepLink`),
+ * and one clicked while it was already running arrives as an event. Neither
+ * installs anything — the window opens the install box with the URL in it and
+ * the person approves it exactly as they approve a URL they pasted.
+ */
+export function followDeepLinks(fn: (link: DeepLink) => void): () => void {
+  const b = bridge();
+  if (!b) return () => {};
+  void b.takeDeepLink?.().then((held) => { if (held) fn(held); }).catch(() => { /* older shell */ });
+  return b.onDeepLink?.(fn) ?? (() => {});
+}
+
 export function followServerChanges(): () => void {
   const b = bridge();
   if (!b?.onServerChanged) return () => {};

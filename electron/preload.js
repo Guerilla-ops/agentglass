@@ -76,6 +76,18 @@ contextBridge.exposeInMainWorld("agentglass", {
   // Fired when the sidecar has been restarted under the app: a new port, a new
   // token, or both. Carries them rather than asking the page to reload.
   /** @param {(p: { origin?: string | null; token?: string | null }) => void} fn */
+  /** "Install this plugin", from a link on a web page. The main process has
+   *  already checked the shape; the window puts it in the install box and the
+   *  person approves it the way they approve any other install. */
+  takeDeepLink: () => ipcRenderer.invoke("ag:takeDeepLink"),
+  /** @param {(link: { kind: string, url: string }) => void} fn */
+  onDeepLink: (fn) => {
+    /** @type {IpcListener} */
+    const h = (_e, payload) => fn(payload);
+    ipcRenderer.on("ag:deep-link", h);
+    return () => ipcRenderer.removeListener("ag:deep-link", h);
+  },
+  /** @param {(p: { origin?: string | null, token?: string | null }) => void} fn */
   onServerChanged: (fn) => {
     /** @type {IpcListener} */
     const h = (_e, payload) => { try { fn(payload); } catch { /* renderer's problem */ } };
