@@ -66,6 +66,7 @@ type Card = PrSummary & { filed: Filed };
 export function TriageBoard({
   mine, review, total, hasTaskProvider, pinned,
   onOpen, onTogglePin, onShowTable, onAct, busy, acting, loading, settling, pinnedList, root, repoKey,
+  onlyUnread, onOnlyUnread,
 }: {
   /** The `mine` scope, as the panel already has it. */
   mine: PrSummary[];
@@ -137,6 +138,17 @@ export function TriageBoard({
    * belong to this project, so nothing is drawn. See prSeenKey.
    */
   repoKey?: string;
+  /**
+   * The filter bar's own switch, not a second one kept here.
+   *
+   * Measured: the bar's "N unread" chip toggled a state in the panel that this
+   * board never read, so pressing it changed nothing on screen here — two
+   * chips, both saying "N unread", answering to two different switches. There
+   * is one `unreadOnly` now, owned by the panel; this component only reads it
+   * and asks to flip it.
+   */
+  onlyUnread: boolean;
+  onOnlyUnread: (v: boolean) => void;
 }) {
   /* Answers arriving one at a time, each one a re-render of the board and
      nothing else — the cards do not move, a chip appears on one of them. */
@@ -243,8 +255,8 @@ export function TriageBoard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cards, repoKey, seenTick]);
   const unreadCount = useMemo(() => cards.filter((p) => unread.get(p.number)).length, [cards, unread]);
-  /* Lit rather than filtered, like the find box beside it — see `matches`. */
-  const [onlyUnread, setOnlyUnread] = useState(false);
+  /* Lit rather than filtered, like the find box beside it — see `matches`.
+     `onlyUnread` itself is a prop now, not state — see the note on it above. */
   /*
    * ONE LANE LIT, from the counts row.
    *
@@ -584,7 +596,7 @@ export function TriageBoard({
               * stuck in a state with nothing on screen to leave it.
               */}
             {(unreadCount > 0 || onlyUnread) && (
-              <button onClick={() => setOnlyUnread((v) => !v)}
+              <button onClick={() => onOnlyUnread(!onlyUnread)}
                 aria-pressed={onlyUnread}
                 title={onlyUnread
                   ? "Show every card again"

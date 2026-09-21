@@ -66,8 +66,8 @@ import { keepLoadedChecks } from "../lib/prMerge.ts";
 import { askingBehind, behindAnswer, forgetBehind, forgetOneBehind, onBehind, refreshBehind } from "../lib/prBehindStore.ts";
 import { forgetRollups } from "../lib/prRollupStore.ts";
 import {
-  anchorId, bootstrapSince, clearSeen, foldedIdx, newKeys, newSince, onSeenChange, readSeen, reviewSpeaks,
-  threadLastAt, threadMovedOn, writeSeen, type NewAtom,
+  anchorId, bootstrapSince, clearSeen, foldedIdx, markAllSeen, newKeys, newSince, onSeenChange, readSeen,
+  reviewSpeaks, threadLastAt, threadMovedOn, writeSeen, type NewAtom,
 } from "../lib/prNew.ts";
 import { unreadOf, type Unread } from "../lib/prUnread.ts";
 import { quoteReply } from "../lib/prQuote.ts";
@@ -4341,7 +4341,20 @@ export function PrView({ active, onOpenChatWith, onReviewInTerminal, jumpTo }: {
               pending={query.trim() !== serverQuery.trim()}
               searching={listState.loading}
               shown={visiblePrs.length}
-              unread={{ count: unreadPrs.length, on: unreadOnly, onToggle: () => setUnreadOnly((v) => !v) }}
+              unread={{
+                count: unreadPrs.length,
+                on: unreadOnly,
+                onToggle: () => setUnreadOnly((v) => !v),
+                /* Same population the chip counts — `unreadPrs`, not a second
+                   pass over `basePrs` that could drift from it. Mark first,
+                   then drop the filter: pressing this while it is narrowed to
+                   "unread" would otherwise leave the table showing zero rows
+                   with nothing on screen to say why. */
+                onMarkAllRead: () => {
+                  markAllSeen(unreadPrs.map((p) => p.number), repo?.key, Date.now());
+                  setUnreadOnly(false);
+                },
+              }}
         /* How much of the scope the filter actually saw. A count that says "12"
            over a scope of ninety-three, having read twenty-five of them, is a
            number nobody can act on. */
@@ -4362,6 +4375,12 @@ export function PrView({ active, onOpenChatWith, onReviewInTerminal, jumpTo }: {
                  switches back to the table it belongs to. */
               <TriageBoard
                 mine={boardMineShown} review={boardReviewShown}
+                /* The filter bar's own chip and switch — see the comment on
+                   `unreadOnly` above. The board used to keep a second, unwired
+                   copy of this switch and render a second chip for it, so
+                   pressing the bar's chip changed a state the board never
+                   read. One switch now; the board just reads and writes it. */
+                onlyUnread={unreadOnly} onOnlyUnread={setUnreadOnly}
                 /*
                  * Every open pull request, not the count for whichever filter
                  * happened to be selected — `listState.total` is the current

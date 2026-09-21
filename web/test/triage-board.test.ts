@@ -72,6 +72,7 @@ const render = (props: Partial<Props> = {}): string =>
     mine: [], review: [], total: 0, hasTaskProvider: false,
     pinned: () => false, onOpen: () => {}, onTogglePin: () => {},
     onShowTable: () => {}, onAct: () => {},
+    onlyUnread: false, onOnlyUnread: () => {},
     ...props,
   }));
 
