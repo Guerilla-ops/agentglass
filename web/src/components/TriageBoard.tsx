@@ -1455,7 +1455,7 @@ function CardView({ p, hasTaskProvider, pinned, cursor, onOpen, onPin, onAct, bu
             wedged against a branch name that is already truncated. */}
         <span className="ml-auto flex items-center gap-1.5 shrink-0">
           {behind ? (
-          <span className="shrink-0 tabular-nums px-1 rounded"
+          <span className="shrink-0 inline-flex items-center gap-0.5 tabular-nums px-1 rounded"
             title={`${behind} commit${behind === 1 ? "" : "s"} on ${p.baseRefName} that this branch does not have — its checks ran against an older base`}
             style={{ color: "var(--warning)", background: "color-mix(in srgb, var(--warning) 14%, transparent)" }}>
             <RefreshIcon size={ICON.xs} />{behind}
