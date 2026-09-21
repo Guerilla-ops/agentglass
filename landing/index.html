@@ -74,7 +74,12 @@ svg.ci{width:16px;height:16px;display:block;flex:none}
  * `body.scene` is added by the script, so a page with no scripting keeps the
  * plain stacked hero it always had.
  */
-body.scene .one-holder{position:relative}
+/* clip: the hero window is drawn up to 1.5 times its size and meant to run
+   past the edges. On a desktop the viewport cuts it; on a tablet, or a phone
+   held sideways, it widened the layout instead (815px at 768) and the whole
+   page drew zoomed out. clip, not hidden, so the sticky hero inside still
+   sticks. */
+body.scene .one-holder{position:relative;overflow-x:clip}
 /* Start below the band the lockup lives in, rather than centring in it: with
    `justify-content:center` a hero taller than the viewport — which is what
    zooming to 140% makes it — overflows UPWARD as well as down, and the window
@@ -82,8 +87,29 @@ body.scene .one-holder{position:relative}
 body.scene .one{position:sticky;top:0;z-index:1;justify-content:flex-start}
 body.scene .one-track{height:195vh;pointer-events:none}
 body.scene .field{will-change:transform;transform-origin:50% 0}
-body.scene .cta{opacity:0;transition:opacity .45s}
-body.scene .oneline.on+.cta.here{opacity:1}
+@media(max-width:759px){body.scene .one{padding-left:10px;padding-right:10px}}
+/* The buttons come last, in the same picture as the sentence, once it has
+   finished lighting up — and not before. Parked a screen further down
+   instead, they arrived after a band of nothing, floating on their own
+   between the sentence and the next section. `translate`, not `transform`:
+   the transform is the scene's, and it pushes them down with the window. */
+/* :not(.here) rather than a plain .cta: `.oneline.on+.cta` (further down,
+   for the page without the scene) outranks `body.scene .cta`, and once the
+   sentence had been marked on, the buttons stayed visible at the top of the
+   page with the sentence gone. */
+body.scene .cta{transition:opacity .5s,translate .7s cubic-bezier(.16,1,.3,1)}
+body.scene .cta:not(.here){opacity:0;translate:0 16px;pointer-events:none}
+/* And shown by .here alone. The base .cta is hidden until the sentence is
+   marked `on`, which is a clock from page load: scrolled faster than the
+   clock, the buttons stayed invisible in their own gap for seconds. */
+body.scene .cta.here{opacity:1}
+/* A phone parks them just under the edge instead (see park()): there the
+   sentence fills the picture and there is no room under it. Nothing to fade
+   in: they are simply there when the next screen arrives. */
+@media(max-width:759px){body.scene .cta:not(.here){opacity:1;translate:none;pointer-events:auto}}
+/* Room under the buttons before the first section: without it the eyebrow
+   of "The hold" sat 20px under them and read as their caption. */
+body.scene .one{padding-bottom:clamp(64px,12vh,140px)}
 .kick{text-align:center;font:12px var(--mono);letter-spacing:.22em;text-transform:uppercase;
  color:var(--dim2);opacity:0;transition:opacity .9s}
 .go .kick{opacity:1}
@@ -92,7 +118,7 @@ body.scene .oneline.on+.cta.here{opacity:1}
 .chip{position:absolute;left:50%;top:50%;z-index:3;display:flex;align-items:center;gap:9px;
  font:12px var(--mono);color:var(--dim);border:1px solid var(--line);border-radius:9px;
  padding:8px 13px 8px 11px;white-space:nowrap;background:rgba(12,10,22,.88);
- transform:translate(calc(-50% + var(--cx) * var(--spread,1)),calc(-50% + var(--cy) * var(--spread,1)));opacity:0;
+ transform:translate(calc(-50% + var(--cx) * var(--sx,var(--spread,1))),calc(-50% + var(--cy) * var(--sy,var(--spread,1))));opacity:0;
  transition:opacity .75s cubic-bezier(.16,1,.3,1)}
 .chip svg{color:var(--dim2)}
 .go .chip{opacity:1}
@@ -274,15 +300,111 @@ body.scene .oneline.on+.cta.here{opacity:1}
 .oneline b i:not(.lit){color:var(--vio);-webkit-text-fill-color:currentColor}
 .oneline b i.lit{-webkit-text-fill-color:transparent;text-shadow:0 0 42px rgba(167,139,250,.5)}
 @keyframes sheen{from{background-position:0% 50%}to{background-position:260% 50%}}
+/* Scrubbed rather than stepped. Each word carries its own progress in --w,
+   written from the scroll position, and every word overlaps the next by most
+   of its span — so the sentence develops under the thumb, several words in
+   focus-pull at once, and stops exactly where the scroll stops. Stepped, a
+   word was either out or in, and a 650ms transition then played on its own
+   schedule, whatever the scroll was doing. The blur is on six words, only
+   while the hero is pinned. The gradient words stay gradient throughout:
+   flipping them from flat violet to the gradient at the half was a visible
+   jump once the fade in between was continuous. */
+.oneline.scrub i{transition:none;opacity:calc(.07 + .93*var(--w,0));
+ filter:blur(calc((1 - var(--w,0))*10px));
+ transform:translateY(calc((1 - var(--w,0))*.42em)) scale(calc(.9 + .1*var(--w,0)))}
+/* The gradient moves from the phrase onto each word. Clipped to the text of
+   <b>, it could not reach into a word that has a filter or a transform —
+   those paint on their own layer — so every word still in motion drew as
+   nothing but its own glow: a violet smear where the second line should be. */
+.oneline.scrub b{background:none}
+.oneline.scrub b i{background:linear-gradient(104deg,#c4b5fd 4%,#f5f3ff 26%,#a78bfa 48%,#67e8f9 66%,#c4b5fd 92%);
+ background-size:260% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
+ /* The gradient is painted inside the word's own box, and at a line-height
+    under 1 that box ends above the descenders: the tail of the g was cut
+    off flat. The padding extends the box to hold them and the negative
+    margin gives the room back, so the lines sit where they did. */
+ padding-bottom:.2em;margin-bottom:-.2em}
+.oneline.scrub.shine b{animation:none}
+.oneline.scrub.shine b i{animation:sheen 11s linear infinite}
+.oneline.scrub b i.lit{transition:text-shadow .6s}
+/* On a phone the sentence is the whole of the second half of the scene —
+   the buttons wait for the next screen (see park()) — so it is set as a
+   poster rather than a caption: three lines at an eighth of the width. */
+@media(max-width:759px){
+ .oneline{font-size:clamp(34px,12.6vw,64px);line-height:.98;letter-spacing:-.048em;margin-top:44px}
+ .oneline b{display:block;margin-top:.06em}
+}
 .cta{display:flex;gap:12px;justify-content:center;margin-top:24px;flex-wrap:wrap;opacity:0;
  transition:opacity .9s .18s}
 .oneline.on+.cta{opacity:1}
-.b1{background:var(--vio2);color:#fff;padding:13px 25px;border-radius:10px;font-weight:650;font-size:15px;
- display:flex;gap:13px;align-items:center;transition:transform .2s cubic-bezier(.16,1,.3,1)}
-.b1:hover{transform:translateY(-2px)}
-.b1 span{font:12px var(--mono);opacity:.7;border-left:1px solid rgba(255,255,255,.3);padding-left:13px}
-.b2{border:1px solid var(--line2);padding:13px 23px;border-radius:10px;font-size:15px;color:var(--dim)}
-.b2:hover{color:var(--txt);border-color:var(--vio)}
+/*
+ * The download is a command waiting for Enter.
+ *
+ * The page opens on a lockup that is itself a prompt ("> agent glass ▮"),
+ * so the one thing it asks you to do is written as the next line of that
+ * prompt: typed out a character at a time as you scroll to it, the same
+ * way the sentence above it lights up, and "run" when you click — three
+ * lines of output, then the files. The command is the costume, not an
+ * instruction: `agentglass install` is not a real command, and the
+ * aria-label says what the link actually does.
+ */
+.cta{flex-direction:column;align-items:center;gap:0}
+/* Spacing by margin, not gap: the output block is collapsed until you click,
+   and a flex gap on either side of a zero-height row is 24px of nothing
+   taken out of the window's size on a short screen. */
+.cta.ran .ctarun{margin-top:10px}
+.ctad{margin-top:12px}
+/* The border fills left to right as the command types (--t is how much of
+   it is on screen), so the box itself says how far along it is; once the
+   whole command is there it lights, and the Enter key appears at its end —
+   the one thing left to do. */
+.ctap{--t:0;font:16px var(--mono);border:1px solid transparent;border-radius:12px;padding:15px 16px 15px 20px;
+ background:linear-gradient(#0a0814,#0a0814) padding-box,
+  linear-gradient(90deg,var(--vio) 0,#67e8f9 calc(var(--t)*100%),var(--line2) calc(var(--t)*100%)) border-box;
+ display:inline-flex;gap:10px;align-items:center;color:var(--txt);min-width:min(340px,100%);
+ transition:box-shadow .5s,translate .2s cubic-bezier(.16,1,.3,1)}
+.ctap.ready{box-shadow:0 0 0 5px rgba(167,139,250,.07),0 18px 50px -16px rgba(124,92,245,.7)}
+.ctap:hover,.ctap:focus-visible{outline:none;translate:0 -2px;
+ box-shadow:0 0 0 5px rgba(167,139,250,.12),0 22px 60px -16px rgba(124,92,245,.85)}
+.ctap .enter{margin-left:auto;padding-left:14px;font:11px var(--mono);color:var(--dim);border:1px solid var(--line2);border-bottom-width:2px;
+ border-radius:5px;padding:2px 7px;opacity:0;translate:-6px 0;transition:opacity .4s,translate .4s,color .2s,border-color .2s}
+.ctap.ready .enter{opacity:1;translate:none}
+.ctap:hover .enter{color:var(--txt);border-color:var(--vio)}
+.ctap:active .enter{border-bottom-width:1px;translate:0 1px}
+.ctap:hover .caret{background:var(--vio)}
+.ctap .cmd{white-space:nowrap}
+/* Narrow phones. At 320 the command broke after "agentglass" and the Enter
+   key wrapped under itself; the comment below ran to two lines with "live
+   demo" alone on the second. Smaller type, the key without its word, and
+   the comment without "in your browser" — all three then fit one line
+   each down to 320. */
+@media(max-width:420px){
+ .ctap{font-size:14px;gap:8px;padding:13px 12px 13px 15px}
+ .ctad{font-size:12px}
+ .ctad .lg{display:none}
+}
+@media(max-width:370px){.ctap .enter span{display:none}}
+.ctap .p{color:var(--vio)}
+.ctap b{color:var(--run);font-weight:400}
+.ctap .cmd i{font-style:normal}
+.ctap .cmd i.off{display:none}
+.ctap .caret{width:9px;height:18px;background:var(--run);animation:blink 1.15s steps(1) infinite}
+.ctarun{display:grid;grid-template-rows:0fr;transition:grid-template-rows .35s ease}
+.ctarun>div{overflow:hidden;font:12.5px var(--mono);color:var(--dim);text-align:left;min-width:min(290px,100%)}
+.ctarun>div>div{opacity:0;transform:translateY(3px);transition:opacity .3s,transform .3s}
+.ctarun .ok{color:var(--run)}
+.cta.ran .ctarun{grid-template-rows:1fr}
+.cta.ran .ctarun>div>div{opacity:1;transform:none}
+.cta.ran .ctarun>div>div:nth-child(2){transition-delay:.4s}
+.cta.ran .ctarun>div>div:nth-child(3){transition-delay:.8s}
+/* The second way in is a shell comment under the command: the line a
+   README puts above the one you might not want to run yet. */
+.ctad{font:13px var(--mono);color:var(--dim2);transition:color .2s}
+.ctad .h{color:var(--dim2)}
+.ctad u{color:var(--vio);text-decoration:none;background:linear-gradient(currentColor,currentColor) 0 100%/0 1px no-repeat;
+ transition:background-size .35s cubic-bezier(.16,1,.3,1)}
+.ctad:hover{color:var(--dim)}
+.ctad:hover u{background-size:100% 1px}
 
 .gatewrap{min-height:74vh;display:grid;place-items:center;padding:56px 30px}
 .gate{width:min(560px,100%);border:1px solid rgba(244,114,182,.38);border-radius:14px;
@@ -578,13 +700,26 @@ html.byhand .one{min-height:100vh;padding-top:330px}
 
   .one{padding-top:200px}}
 }
+/* The lockup is drawn 1.8 times its header size in the hero and the scale is
+   fixed in the keyframes above, so on a narrow phone the only thing left to
+   give is the size it is scaled FROM. At 14px it measured 354px wide plus the
+   ring's 43px overhang on the left: at 390 the ring was cut by the screen
+   edge, at 360 the caret touched the other one. 28.4em is that whole width,
+   hero scale included, so this keeps 20px of margin each side down to 320. */
+@media(max-width:480px){.hd-lock .lk,.hd-lock .mk{font-size:clamp(10px,calc((100vw - 40px)/28.4),14px)}}
 
 /* ═══ The middle of the page ═════════════════════════════════════
    This used to be one card alone inside a 74vh box and nothing else until
    the downloads: the page showed the product and then went quiet. Three
    sections with the same structure — eyebrow, headline, one sentence and one
    thing to look at — so the rhythm does not change from one to the next. */
-.sec{padding-block:104px;padding-inline:28px;scroll-margin-top:calc(84px + var(--safe))}
+/* overflow-x:clip, not hidden. Each section carries a background orb up to
+   780px wide at left:58%, and `overflow-x:hidden` on <html> does not stop a
+   phone from widening its layout viewport to fit it: measured at 390px wide,
+   the home page laid out at 916 and every phone drew it zoomed out. `clip`
+   cuts the orb at the section's edge without making the section a scroll
+   container, so the sticky hero inside it keeps working. */
+.sec{padding-block:104px;padding-inline:28px;scroll-margin-top:calc(84px + var(--safe));overflow-x:clip}
 .sec .w{max-width:1000px;padding:0}
 .sec .eb{font:11px var(--mono);letter-spacing:.2em;text-transform:uppercase;
  color:var(--vio);opacity:.75;margin-bottom:14px}
@@ -613,8 +748,43 @@ body.scene .sec.zig .eb,body.scene .sec.zig h2,body.scene .sec.zig .sub{margin-l
  text-align:right}
 body.scene .sec.zig .eb{max-width:min(66ch,52%)}
 body.scene .sec.zig .sub,body.scene .sec.zig h2{max-width:min(66ch,52%)}
-@media(max-width:980px){body.scene .sec.zig .eb,body.scene .sec.zig h2,body.scene .sec.zig .sub{margin-left:0}
- body.scene .sec.zig .sub,body.scene .sec.zig h2{max-width:66ch}}
+/* One column still zig-zags. Flush left and right-aligned in turn at full
+   width, a right-ragged heading on a phone read as a layout that had not
+   loaded; what makes the alternation read as meant is that the copy is
+   narrower than the column and pushed to its side, and that the eyebrow
+   carries a rule running in from that side — the edge the block belongs to
+   is drawn, not implied. The mock under it stays full width: it is the
+   thing to look at and it needs every pixel. */
+@media(max-width:980px){
+ body.scene .sec h2{max-width:86%}
+ body.scene .sec.zig h2{max-width:86%;margin-left:auto;margin-right:0}
+ /* The eyebrow is one line or it is not an eyebrow: "Download · the latest
+    release · MIT" broke before its last word at 86%. Full width, a tighter
+    track, and no wrapping from 360 up, where it measures to fit. */
+ body.scene .sec .eb{max-width:none;letter-spacing:.14em}
+ body.scene .sec.zig .eb{text-align:right}
+ /* The paragraph does not take part. Held to 86% it left a ragged strip of
+    nothing down one side of eight lines, and right-aligned it was eight
+    lines with no edge to start reading from. It runs the full column,
+    flush left, under whichever side the heading took. */
+ body.scene .sec .sub,body.scene .sec.zig .sub{max-width:none;margin-left:0;text-align:left;
+  /* Not balance: balanced, every line was cut to the length of the
+     shortest and the paragraph stopped well short of the column again. */
+  text-wrap:wrap}
+ /* Under a heading on the right, a paragraph starting on the left read as a
+    second block that had lost its alignment. The two sections that zig are
+    the short ones — three lines and two — which is short enough to read
+    from the right. */
+ body.scene .sec.zig .sub{text-align:right}
+ /* Inline, not flex: an eyebrow can be several spans ("Download · the
+    latest release · MIT"), and as flex items they became columns. */
+ body.scene .sec .eb::before,body.scene .sec.zig .eb::after{content:"";display:inline-block;
+  width:28px;height:1px;vertical-align:middle;margin:0 12px 2px 0;
+  background:linear-gradient(90deg,transparent,var(--vio))}
+ body.scene .sec.zig .eb::before{content:none}
+ @media(min-width:360px){body.scene .sec .eb{white-space:nowrap}}
+ body.scene .sec.zig .eb::after{margin:0 0 2px 12px;background:linear-gradient(270deg,transparent,var(--vio))}
+}
 /* A promoted layer while it is moving and a plain one afterwards: a big mock
    card fading and rising is cheap on the GPU and expensive on the main thread,
    and leaving `will-change` on forever is how a page ends up with thirty
@@ -666,6 +836,10 @@ body.scene .sec>.w{position:relative;z-index:1}
 .facts>div{background:var(--void);padding:15px 16px}
 .facts b{display:block;font:600 13.5px/1.35 inherit;color:var(--txt);margin-bottom:6px}
 .facts span{font:11px var(--mono);color:var(--dim2);line-height:1.6}
+/* Stacked one per row on a phone, each fact is read on its own rather than
+   scanned across three, and 11px in the dimmest grey was the smallest body
+   text on the page. */
+@media(max-width:760px){.facts span{font-size:12.5px;color:var(--dim)}}
 
 .para{border:1px solid var(--line);border-radius:12px;overflow:hidden;
  background:rgba(167,139,250,.025)}
@@ -904,7 +1078,9 @@ body.scene .sec>.w{position:relative;z-index:1}
    not here, and the gap is tightened instead. */
 @media(max-width:880px){.fonos{grid-template-columns:250px;gap:34px;margin-top:36px}}
 @media(max-width:760px){
- .sec{padding-block:76px}
+ /* 76 top and bottom stacked into 152px of nothing between one section's
+    last card and the next eyebrow — most of a phone screen of empty. */
+ .sec{padding-block:56px}
 }
 /* The hold section was 74vh and left the card floating alone in the middle. */
 .gatewrap{min-height:0;display:block;padding:0}
@@ -980,6 +1156,9 @@ body.scene .sec>.w{position:relative;z-index:1}
 .verify code{display:block;font:11px var(--mono);color:var(--dim);background:rgba(0,0,0,.45);
  border:1px solid var(--line);border-radius:7px;padding:9px 11px;margin-bottom:7px;
  overflow-x:auto;white-space:nowrap}
+/* On a phone the long command ran off the card behind a scrollbar nobody
+   sees; wrapped, the whole thing is readable and still copies as one line. */
+@media(max-width:760px){.verify code{white-space:normal;overflow-wrap:anywhere}}
 .verify p{font:11.5px var(--mono);color:var(--dim2);line-height:1.6;margin-top:4px}
 .verify a{color:var(--vio)}
 /* The three other pages, as cards with something in them rather than three
@@ -1066,6 +1245,30 @@ body:not([data-route="home"]) .page{padding-top:calc(118px + var(--safe))}
 /* Short blocks get `balance` rather than `pretty`: three lines and a widow
    ("it waits." alone under two full lines) is the shape `balance` exists for. */
 .lead,.sub,.pl-lead,.oneline,.fcap span,.nxc>span:not(.nxh){text-wrap:balance}
+/*
+ * Prose fills its column.
+ *
+ * `balance` above was right about widows and wrong about the box: it evens
+ * lines out by making every one of them as short as the shortest, so a
+ * paragraph in a card or a column stopped at 60-75% of the width and left a
+ * ragged band of nothing down its right side — measured on the phone, on
+ * every card on the home page and every answer on the questions page.
+ * Plain greedy wrapping runs every line to the edge of the column, and the
+ * script at the end of the page keeps a lone word off the last line, which
+ * is the one thing `balance` was here for. Not `pretty` either: to lengthen
+ * the last line it shortens the ones before it, and on a phone that put
+ * "also" alone at the start of a line the one above had room for. Headings and centred captions keep
+ * `balance`: they are two or three lines and are meant to be a shape, not a
+ * column.
+ *
+ * Tried and reverted: `text-align:justify` with `hyphens:auto`. The browser
+ * this app ships did not hyphenate, and at a phone's forty characters a line
+ * justified text opened into rivers — "agentglass   and   every   agent" —
+ * which is worse than the ragged edge it was there to remove.
+ */
+.sec .sub,.page p,.page .lead,.pl-lead,.pl-hint,.pl-desc-full,.pl-note,.steps span,.steps p,
+.an p,.qa p,.pl-step p,.pl-two p,.nxc>span:not(.nxh):not(.nxl),.verify p,.facts span{
+ text-wrap:wrap}
 /* An inline chip never breaks in the middle, and never leaves its punctuation
    on the next line either: the mark after it travels with it. */
 .page p code,.page li code{font:12.5px var(--mono);color:var(--vio);
@@ -1115,6 +1318,11 @@ body:not([data-route="home"]) .page{padding-top:calc(118px + var(--safe))}
 .qa .an p+p{margin-top:10px}
 .qa .an code{font:12.5px var(--mono);color:var(--vio);
  background:rgba(167,139,250,.09);border-radius:4px;padding:1px 5px}
+/* A command that is the whole paragraph is a block, not a chip. As a chip it
+   inherits "never break inside a chip" and the path ran out of the card on a
+   phone, cut at /Applications/agent. As a block it wraps where it has to,
+   inside its own box, and still copies as one line. */
+.qa .an p>code:only-child{display:block;white-space:pre-wrap;overflow-wrap:anywhere;padding:8px 11px;border-radius:7px}
 /* The footer, on all three pages.
 
    It used to hang off .w, the page's own wrapper, and at 430px it came out 246
@@ -1181,7 +1389,13 @@ body:not([data-route="home"]) .page{padding-top:calc(118px + var(--safe))}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}
  .chip{display:none}.win,.oneline,.cta,.gate{opacity:1;transform:none}.rk{opacity:1;transform:none}
  .oneline i{opacity:1;transform:none}}
-@media(max-width:860px){.chip{display:none}.wbody{grid-template-columns:42px 1fr}
+/* Between 760 and 860 there is no room around the window for the ring and
+   the rail just lights up. Under 760 the chips come back, drawn over the
+   window itself, and fly in with the scroll — see the phone branch of the
+   swarm. */
+@media(max-width:860px) and (min-width:760px){.chip{display:none}}
+@media(max-width:759px){.chip{font-size:11px;padding:6px 10px 6px 8px;gap:7px}}
+@media(max-width:860px){.wbody{grid-template-columns:42px 1fr}
  .r{grid-template-columns:1fr auto;gap:5px 18px}.r .f{grid-column:1/-1}
  /* the title bar IS the header: at 390px only the mark and one way out fit,
     and four links broke "Get it →" across three lines. */
@@ -1363,8 +1577,10 @@ body:not([data-route="home"]) .page{padding-top:calc(118px + var(--safe))}
    and "Plugins" on the next reads as two places. */
 .nb{white-space:nowrap;font-weight:600;color:var(--txt)}
 /* Two columns of prose rather than one 62ch ribbon down a 1000px page. */
-.pl-two{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:10px 34px}
-.pl-two p{max-width:58ch}
+/* min(), because a 320px track inside a column narrower than 320px does not
+   shrink: on a 320px phone it pushed the page to 342 and zoomed it out. */
+.pl-two{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(320px,100%),1fr));gap:10px 34px}
+.pl-two p{max-width:none}
 /*
  * Four cards of very different lengths, packed rather than laid on a grid.
  *
@@ -1429,8 +1645,12 @@ body:not([data-route="home"]) .page{padding-top:calc(118px + var(--safe))}
   </div>
  </div>
  <div class="oneline">One window. <b>Nothing to jump to.</b></div>
- <div class="cta"><a class="b1" href="#get">Download <span data-agx="version">the latest release</span></a>
-  <a class="b2" href="https://sirallap.github.io/agentglass/demo/">Live demo</a></div>
+ <div class="cta">
+  <a class="ctap" href="#get" aria-label="Download agentglass"><span class="p" aria-hidden="true">$</span><span class="cmd" aria-hidden="true"><b>agentglass</b> install</span><span class="caret" aria-hidden="true"></span><kbd class="enter" aria-hidden="true">&crarr;<span> enter</span></kbd></a>
+  <div class="ctarun" aria-live="polite"><div><div>&darr; agentglass <span data-agx="version">the latest release</span> &middot; <span class="ctaos">six builds</span></div>
+   <div>&check; sha256 &middot; attested build &middot; MIT</div>
+   <div class="ok">&check; ready &mdash; the files are just below</div></div></div>
+  <a class="ctad" href="https://sirallap.github.io/agentglass/demo/"><span class="h" aria-hidden="true">#</span> or try it<span class="lg"> in your browser</span> first &mdash; <u>live demo</u> &nearr;</a></div>
 </section>
 
 <section class="sec" id="hold"><div class="w">
@@ -2049,6 +2269,13 @@ const spread=(k)=>{
  /* Never wider than the ring was drawn, only narrower when there is no room:
     the ring itself is the shape somebody recognises. */
  document.documentElement.style.setProperty('--spread',String(Math.max(0.36,Math.min(1,room))));
+ /* A phone has no room AROUND the window, so the ring goes over it: narrow
+    enough that the widest chip stays on the screen, tall enough to use the
+    window's whole height. The window's body is still empty at that point,
+    so nothing is covered that has arrived yet. */
+ const st=document.documentElement.style;
+ if(innerWidth<760){ st.setProperty('--sx',String(Math.max(0.2,(innerWidth/2-66)/430))); st.setProperty('--sy','0.82'); }
+ else { st.removeProperty('--sx'); st.removeProperty('--sy'); }
 };
 spread();
 addEventListener('resize',spread);
@@ -2062,7 +2289,6 @@ if(calm){document.body.classList.add('go');rks.forEach(r=>r.classList.add('shown
  document.querySelector('.oneline').classList.add('on');document.querySelector('.gate').classList.add('in');
 }else{
  setTimeout(()=>document.body.classList.add('go'),140);
- ['lantern','dash'].forEach((k,i)=>setTimeout(()=>byKey(k).classList.add('shown'),900+i*170));
  const win=document.querySelector('.win');
  const FLIGHT=820;
  /* FLIP: measure where the icon is and where ITS slot is, and fly from one
@@ -2132,6 +2358,66 @@ if(calm){document.body.classList.add('go');rks.forEach(r=>r.classList.add('shown
   * It is a queue, not a swarm, and the flights are aimed at a rail that has
   * moved by the time they arrive.
   */
+ /*
+  * On a phone, the swarm is the scroll.
+  *
+  * Played on its own, it was over before anybody saw it: a thumb flick
+  * moves a phone's page a screen at a time, and the swarm launched as the
+  * window came into view and landed while the page was still moving. So on
+  * a phone the scroll drives it, inside the pinned hero, over its first
+  * 0.42 of a screen — which is exactly where the page is not moving.
+  *
+  * This is the thing that was rejected on the desktop, and the reason it
+  * does not apply here is the same measurement the other way round: there,
+  * scrubbed, it was a queue; here every chip spans 0.22 of the run and they
+  * start 0.026 apart, so six to eight are in the air at once. It still
+  * never runs backwards: progress only goes up, and a chip that has landed
+  * stays landed.
+  */
+ let startTour=()=>{};
+ if(innerWidth<760){
+  const field=document.querySelector('.field');
+  const START=0.02, STEP=0.026, SPAN=0.22;
+  const order=chips.map((c,i)=>i).sort(()=>Math.random()-0.5);
+  const slot=new Map(order.map((idx,n)=>[chips[idx],n]));
+  const landed=new Set();
+  let most=0, q=false;
+  const ease=t=>t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;
+  const frame=()=>{q=false;
+   const p=Math.min(1,Math.max(0,scrollY/innerHeight));
+   if(p<=most&&most>0) return;
+   most=Math.max(most,p);
+   if(most>START){ ['lantern','dash'].forEach(k=>byKey(k).classList.add('shown')); }
+   const r=field.getBoundingClientRect(), k=r.width/(field.offsetWidth||1);
+   const cx=r.left+r.width/2, cy=r.top+k*field.offsetHeight/2;
+   const sx=parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sx'))||0.3;
+   const sy=parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sy'))||0.8;
+   chips.forEach(c=>{
+    if(landed.has(c)) return;
+    const t=Math.min(1,Math.max(0,(most-START-slot.get(c)*STEP)/SPAN));
+    if(t<=0) return;
+    c.classList.add('shed');
+    c.style.transition='padding .17s,opacity .2s';
+    const rail=byKey(c.dataset.k), b=rail.getBoundingClientRect();
+    const x0=parseFloat(c.style.getPropertyValue('--cx'))*sx, y0=parseFloat(c.style.getPropertyValue('--cy'))*sy;
+    const x1=(b.left+b.width/2-cx)/k, y1=(b.top+b.height/2-cy)/k;
+    const dx=x1-x0, dy=y1-y0, len=Math.hypot(dx,dy)||1;
+    const side=(c.dataset.k.charCodeAt(0)%3===0?-1:1)*(dx<0?1:-1);
+    const bow=Math.min(len*.32,90)*side*(0.55+((c.dataset.k.length*37)%60)/100);
+    const qx=x0+dx/2+(-dy/len)*bow, qy=y0+dy/2+(dx/len)*bow;
+    const e=ease(t), u=1-e;
+    const x=u*u*x0+2*u*e*qx+e*e*x1, y=u*u*y0+2*u*e*qy+e*e*y1;
+    c.style.transform=`translate(calc(-50% + ${x.toFixed(1)}px),calc(-50% + ${y.toFixed(1)}px)) scale(${(1-0.25*e).toFixed(3)})`;
+    if(t>=1){
+     landed.add(c); c.style.opacity='0';
+     rail.classList.add('shown','hit');
+     setTimeout(()=>rail.classList.remove('hit'),620);
+    }
+   });
+   if(landed.size===chips.length){ byKey('files').classList.add('shown'); setTimeout(startTour,420); }
+  };
+  addEventListener('scroll',()=>{if(!q){q=true;requestAnimationFrame(frame);}},{passive:true});
+ }
  const GAP=128;
  let launched=false;
  const seen=()=>{ const r=win.getBoundingClientRect();
@@ -2142,6 +2428,13 @@ if(calm){document.body.classList.add('go');rks.forEach(r=>r.classList.add('shown
   /* Shuffled: written in order they go down one side and up the other, which
      reads as a rota. Eight arriving from everywhere at once is the point. */
   const order=chips.map((c,i)=>i).sort(()=>Math.random()-0.5);
+  /* The two rail entries no chip flies into, and the last one, arrive with
+     the swarm rather than on a clock. On a timer from page load they were
+     lit before anything had landed — two icons alone in an empty rail, and on
+     a phone, where the swarm waits for the window to be in view, for as long
+     as the reader took to scroll. */
+  ['lantern','dash'].forEach((k,i)=>setTimeout(()=>byKey(k).classList.add('shown'),i*170));
+  setTimeout(()=>byKey('files').classList.add('shown'),chips.length*GAP+170+FLIGHT+200);
   order.forEach((idx,n)=>setTimeout(()=>{
    const c=chips[idx];
    c.classList.add('shed');
@@ -2149,17 +2442,26 @@ if(calm){document.body.classList.add('go');rks.forEach(r=>r.classList.add('shown
   },n*GAP));
  };
  const ready=()=>{ if(!launched&&scrollY>40&&seen()>0.62) launch(); };
- addEventListener('scroll',ready,{passive:true});
- /* Someone who never scrolls still gets it, after a breath. */
- setTimeout(()=>{ if(seen()>0.62) launch(); },4200);
- setTimeout(launch,9000);
+ if(innerWidth>=760){
+  addEventListener('scroll',ready,{passive:true});
+  /* Someone who never scrolls still gets it, after a breath. */
+  setTimeout(()=>{ if(seen()>0.62) launch(); },4200);
+  setTimeout(launch,9000);
+ }
  const done=1000+chips.length*GAP+170+FLIGHT;
- setTimeout(()=>byKey('files').classList.add('shown'),done+600);
  setTimeout(()=>document.querySelector('.oneline').classList.add('on'),done+900);
- const order=['lantern','dash','diff','git','pr','issues','terminal','chat','docker','browser','files'];
- let n=0,auto=true;
- setTimeout(()=>{show(order[0]);
-  setInterval(()=>{if(auto){n=(n+1)%order.length;show(order[n]);}},2000);},done+700);
+ /* The tour follows the rail from the top, the order somebody reads it in.
+    It used to open on Lantern, eighth from the top, so the first view shown
+    had nothing to do with where the eye was. */
+ const order=rks.map(r=>r.dataset.k);
+ let n=0,auto=true,touring=false;
+ /* Started by whichever comes first: the clock on a desktop, where the
+    swarm plays on its own; the last landing on a phone, where the scroll
+    plays it. On a clock, a phone that scrolled faster than the clock left
+    a full rail over an empty window. */
+ startTour=()=>{ if(touring) return; touring=true; show(order[0]);
+  setInterval(()=>{if(auto){n=(n+1)%order.length;show(order[n]);}},2000); };
+ if(innerWidth>=760) setTimeout(startTour,done+700);
  rks.forEach(r=>r.onclick=()=>{auto=false;show(r.dataset.k);
   n=Math.max(0,order.indexOf(r.dataset.k));setTimeout(()=>auto=true,9000);});
 }
@@ -2196,6 +2498,7 @@ if(calm){document.body.classList.add('go');rks.forEach(r=>r.classList.add('shown
  new IntersectionObserver((es)=>es.forEach((e)=>line.classList.toggle('shine',e.isIntersecting)),
   {threshold:0}).observe(line);
  if(calm||!one||!field||!cta){words.forEach(w=>w.classList.add('lit'));if(cta)cta.classList.add('here');return;}
+ line.classList.add('scrub');
 
  /* The track is what the pinned hero scrolls against. It is added here, not
     in the markup, so the page without scripting is the page it always was. */
@@ -2234,6 +2537,29 @@ if(calm){document.body.classList.add('go');rks.forEach(r=>r.classList.add('shown
   * window has shrunk and the push is zero. Nothing can end up underneath it.
   */
  let baseH=0, gaugedAt=0;
+ /* How far the scene plays, and how long the hero stays pinned for it.
+    The two used to be the same 195vh, with the buttons in by 0.8 of it: the
+    last fifth was a pinned screen that scrolled and did nothing. On a phone
+    it was worse, because the window only goes from 1.04 to 0.95 — most of
+    the first half was dead too. So a phone plays it in one screen, and the
+    pin lets go at 0.85 on a desktop, just after the buttons land.
+    Written in pixels from innerHeight rather than as vh in the stylesheet:
+    on a phone 100vh is the height WITHOUT the address bar, and the pin and
+    the progress drifted apart by its height. */
+ const RUN=()=>innerHeight*(innerWidth<760?1.0:1.5);
+ /* Where in the run each thing happens. A desktop used to spend half of 1.95
+    screens shrinking the window before the sentence even started: almost a
+    screen of scrolling with nothing new on it. It shrinks in the first 0.35
+    of 1.5 now, and the sentence starts before it has finished. A phone keeps
+    its own, because there the first 0.42 belongs to the chips. */
+ const T=innerWidth<760?{shrink:.5,line:.40,q:.46}:{shrink:.35,line:.26,q:.30};
+ /* A phone holds the finished frame a little longer — about a third of a
+    screen after the last word lands — because there the window, the rail
+    the chips flew into and the sentence all fit in one picture, and that
+    picture is what the scene was building to. */
+ const pin=()=>{ track.style.height=Math.round(RUN()*(innerWidth<760?1.15:0.85))+'px'; };
+ addEventListener('resize',pin);
+ pin();
  const gauge=()=>{
   const had=field.style.transform;
   field.style.transform='none';
@@ -2247,9 +2573,61 @@ if(calm){document.body.classList.add('go');rks.forEach(r=>r.classList.add('shown
   PAD=parseFloat(getComputedStyle(one).paddingTop)||88;
   one.style.paddingTop=hadP;
   gaugedAt=innerWidth;
+  /* The size the window settles at, on a desktop: as big as the screen
+     allows with the sentence still under it, measured rather than fixed.
+     A fixed 0.95 of an 800px window was a third of a wide screen, the
+     sentence a long way under it and a band of nothing below that. */
+  if(innerWidth>=760){
+   const room=(parseFloat(one.style.paddingTop)||PAD)-88;
+   const top=field.offsetTop-room;
+   /* Measured, not added up: from the window's top edge to the bottom of
+      the buttons, at the window's own size. Summing the heights and margins
+      missed about 70px somewhere and the buttons landed on the bottom edge.
+      The sentence and the buttons ride on the window's scale, so at scale k
+      that distance grows by (k-1) of the window's height. */
+   const D=cta.offsetTop+cta.offsetHeight-field.offsetTop;
+   const kH=1+(innerHeight-64-top-D)/(baseH||1), kW=(innerWidth-64)/(field.offsetWidth||1);
+   /* The floor is for a short laptop screen: at 0.8 on 1024x700 the buttons
+      were under the bottom edge. */
+   KEND=Math.min(1.5,Math.max(0.55,Math.min(kH,kW)));
+   /* When the width is what limits the window — a tablet held upright — the
+      window and the sentence settled at the top of a tall screen with a
+      third of it empty underneath. What is left over is split above and
+      below instead, so the picture the scene ends on is centred. */
+   const slack=innerHeight-64-(top+D+(KEND-1)*baseH);
+   PADEND=88+Math.max(0,Math.round(slack/2));
+  }
+  park();
  };
- const bigness=()=>innerWidth<760?1.04:Math.min(1.5,Math.max(1.12,(innerWidth-24)/980));
- const SMALL=0.95;
+ /* On a phone the pinned screen is the window and the sentence, and nothing
+    else: the buttons are parked just under the bottom edge and arrive with
+    the next screen, once the pin lets go. Squeezed in under the sentence,
+    "Download" was on screen before the sentence had finished lighting up —
+    asking for the install before the page had said what it was. Measured at
+    the end state (88px of top room, where the padding settles, and the
+    window at the size it settles at) so the buttons stay out of frame for
+    the whole scene. A desktop has room for them under the sentence and
+    brings them in there, after it (see the .cta rules). */
+ function park(){
+  cta.style.marginTop='';
+  if(innerWidth>=760) return;
+  const settled=cta.offsetTop-((parseFloat(one.style.paddingTop)||PAD)-PADEND)+Math.max(0,KEND-1)*baseH;
+  cta.style.marginTop=Math.max(0,Math.round(innerHeight+48-settled))+'px';
+ }
+ addEventListener('resize',park);
+ /* The 1.12 floor is the desktop's "bigger than the page" and only a floor
+    while it still fits: between 760 and 920 it drew the window wider than
+    the screen (815px at 768), cut on both sides. offsetWidth ignores the
+    transform, so this is the window's own width, not the scaled one. */
+ const bigness=()=>{
+  const fit=(innerWidth-24)/(field.offsetWidth||innerWidth);
+  return innerWidth<760?1:Math.min(1.5,Math.max(Math.min(1.12,fit),(innerWidth-24)/980));
+ };
+ /* A phone does not shrink the window at all: 1.04 to 0.95 was a change
+    nobody could see, and it cost 5% of a width that is already the scarce
+    thing. The window stays at full width, 10px from each edge. */
+ const SMALL=innerWidth<760?1:0.95;
+ let KEND=SMALL, PADEND=88;
  let PAD=parseFloat(getComputedStyle(one).paddingTop)||88;
  let queued=false;
  /* Nothing is written unless it changed. The hero is pinned for a screen and
@@ -2258,14 +2636,14 @@ if(calm){document.body.classList.add('go');rks.forEach(r=>r.classList.add('shown
     that went over 30ms while scrolling the sections below it. */
  let was=-1, wasPad=-1, wasTf='';
  const paint=()=>{queued=false;
-  const run=innerHeight*1.95;
+  const run=RUN();
   const p=Math.min(1,Math.max(0,scrollY/run));
   if(p===was) return;
   was=p;
   /* First half: the window shrinks to its place. Second half: the sentence
      arrives a word at a time, and the buttons last. */
-  const big=bigness();
-  const k=p<0.5?big+(SMALL-big)*(p/0.5):SMALL;
+  const big=innerWidth<760?1:Math.max(bigness(),KEND+0.12);
+  const k=p<T.shrink?big+(KEND-big)*(p/T.shrink):KEND;
   /* The lift is only for the shrunk state; while it is oversized any
      downward nudge is the sliver that lands on the buttons. */
   const tf='scale('+k.toFixed(3)+') translateY('+Math.round(k>1?0:(k-1)*26)+'px)';
@@ -2273,7 +2651,10 @@ if(calm){document.body.classList.add('go');rks.forEach(r=>r.classList.add('shown
   /* Whatever the window overflows downward, the sentence and the buttons move
      down by exactly that much. */
   spread(k);
-  const push='translateY('+Math.round(Math.max(0,k-1)*baseH)+'px)';
+  /* Up as well as down: when the window settles smaller than its own size
+     the sentence follows it up, or the gap it leaves opens between them —
+     and the size it settles at is worked out assuming it does. */
+  const push='translateY('+Math.round((k-1)*baseH)+'px)';
   line.style.transform=push; cta.style.transform=push;
   /* The kicker is the first line anybody reads, so it does not go anywhere.
      The window grows downward from its own top edge (transform-origin) rather
@@ -2282,13 +2663,21 @@ if(calm){document.body.classList.add('go');rks.forEach(r=>r.classList.add('shown
      times the size of the header mark. Once the header has formed that band
      is a hole, and a pinned hero cannot scroll past its own hole — so it
      closes as the window shrinks. */
-  const pad=Math.round(PAD+(88-PAD)*Math.min(1,p/0.5));
+  const pad=Math.round(PAD+(PADEND-PAD)*Math.min(1,p/T.shrink));
   if(pad!==wasPad){ wasPad=pad; one.style.paddingTop=pad+'px'; }
-  line.style.opacity=String(Math.min(1,Math.max(0,(p-0.40)/0.07)));
-  const q=Math.min(1,Math.max(0,(p-0.46)/0.34));
+  line.style.opacity=String(Math.min(1,Math.max(0,(p-T.line)/0.07)));
+  const q=Math.min(1,Math.max(0,(p-T.q)/0.34));
   const lit=Math.round(q*words.length);
-  words.forEach((w,i)=>w.classList.toggle('lit',i<lit));
-  cta.classList.toggle('here',q>0.9);
+  /* Each word takes SPAN slots of the run, so the next one starts before
+     this one has landed. */
+  const SPAN=1.8, reach=q*(words.length+SPAN-1);
+  words.forEach((w,i)=>{
+   const f=Math.min(1,Math.max(0,(reach-i)/SPAN)).toFixed(3);
+   if(w._w!==f){ w._w=f; w.style.setProperty('--w',f); }
+   w.classList.toggle('lit',i<lit);
+  });
+  /* A beat after the last word, so the sentence is read on its own first. */
+  cta.classList.toggle('here',innerWidth<760||p>T.q+0.40);
  };
  addEventListener('scroll',()=>{if(!queued){queued=true;requestAnimationFrame(paint);}},{passive:true});
  addEventListener('resize',()=>{ if(innerWidth!==gaugedAt) gauge(); paint(); });
@@ -2466,7 +2855,9 @@ if(!calm) requestAnimationFrame(()=>{
    if(d>innerHeight+g.h/2+200) continue;
    const off=(g.mid-mid)/innerHeight;
    a.orb.style.transform='translate3d(0,'+Math.round(off*-140)+'px,0)';
-   if(a.art) a.art.style.transform='translate3d(0,'+Math.round(off*-26)+'px,0)';
+   /* 26px of drift against a 36px gap put the phone mock against the last
+      line of the paragraph above it on a phone. */
+   if(a.art) a.art.style.transform='translate3d(0,'+Math.round(off*(innerWidth<760?-8:-26))+'px,0)';
   }
   dots.classList.toggle('on',!home.hidden&&scrollY>innerHeight*1.6);
   links.forEach((l,i)=>l.classList.toggle('here',i===near));
@@ -3023,4 +3414,90 @@ new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){g.classList.add
  go();
 })();
 
+
+/*
+ * The prompt types itself as you scroll to it and runs when you click.
+ *
+ * Typed by position, not by a clock, like everything else in the hero: on
+ * a desktop it runs over the stretch of the pinned scene right after the
+ * sentence has lit up; on a phone, where the buttons arrive with the next
+ * screen, over the first third of a screen that they are on it. It only
+ * ever types forward — a command that deletes itself when you scroll back
+ * reads as a glitch.
+ */
+(()=>{
+ const cta=document.querySelector('.cta'), btn=cta&&cta.querySelector('.ctap');
+ if(!btn) return;
+ const cmd=btn.querySelector('.cmd');
+ const chars=[];
+ const split=(node)=>{for(const n of [...node.childNodes]){
+  if(n.nodeType===3){const f=document.createDocumentFragment();
+   for(const ch of n.textContent){const i=document.createElement('i');i.textContent=ch;f.append(i);chars.push(i);}
+   n.replaceWith(f);} else split(n);}};
+ split(cmd);
+ const ua=navigator.userAgent, os=/Android/.test(ua)?'android':/Mac/.test(ua)?'macOS':/Win/.test(ua)?'windows':/Linux/.test(ua)?'linux':'';
+ if(os) cta.querySelector('.ctaos').textContent=os;
+ const calm=matchMedia('(prefers-reduced-motion: reduce)').matches;
+ let shown=calm?chars.length:0;
+ const draw=()=>{ chars.forEach((c,i)=>c.classList.toggle('off',i>=shown));
+  btn.style.setProperty('--t',(shown/chars.length).toFixed(3));
+  btn.classList.toggle('ready',shown>=chars.length); };
+ const tick=()=>{
+  let t;
+  if(innerWidth<760){ const r=btn.getBoundingClientRect(); t=(innerHeight-r.top)/(innerHeight*0.33); }
+  else { const run=innerHeight*1.5; t=(scrollY/run-0.70)/0.10; }
+  const want=Math.round(Math.min(1,Math.max(0,t))*chars.length);
+  if(want>shown){ shown=want; draw(); }
+ };
+ draw(); tick();
+ let q=false;
+ addEventListener('scroll',()=>{if(!q){q=true;requestAnimationFrame(()=>{q=false;tick();});}},{passive:true});
+ /* Clicking runs it: the rest of the command, if you were quicker than the
+    scroll, then three lines of output, then the files. */
+ btn.addEventListener('click',(e)=>{
+  if(calm) return;
+  e.preventDefault();
+  if(cta.classList.contains('ran')) { location.hash='#get'; return; }
+  shown=chars.length; draw();
+  cta.classList.add('ran');
+  setTimeout(()=>{ const g=document.getElementById('get'); if(g) g.scrollIntoView({behavior:'smooth'}); },1500);
+ });
+})();
+
+/*
+ * No paragraph ends on one word.
+ *
+ * `text-wrap:pretty` is supposed to see to that and, in the Chrome this
+ * app's own browser is built on, measured, it does not: a dozen paragraphs
+ * across the five pages ended on a line holding one word, some at a tenth
+ * of the column. The last two words are joined with a no-break space
+ * instead, which cannot fail. Run again on every route change, because the
+ * plugin pages are drawn by script after the page loads.
+ */
+(()=>{
+ const PROSE='.sec .sub,.page p,.page .lead,.pl-lead,.pl-hint,.pl-desc-full,.pl-note,.steps span,.steps p,'
+  +'.an p,.qa p,.pl-step p,.pl-two p,.nxc>span:not(.nxh):not(.nxl),.verify p,.facts span,.fcap span';
+ const glue=()=>{
+  for(const el of document.querySelectorAll(PROSE)){
+   if(el.dataset.glued) continue;
+   const w=document.createTreeWalker(el,NodeFilter.SHOW_TEXT), nodes=[];
+   while(w.nextNode()) nodes.push(w.currentNode);
+   /* The last space in the paragraph, wherever it is: the last word is often
+      an element of its own — a link, a code span — and the space that has
+      to stop breaking is then the one in the text node before it. */
+   let tail=true;
+   for(let n=nodes.length-1;n>=0;n--){
+    const t=nodes[n].textContent;
+    if(tail&&!t.trim()) continue;
+    const i=(tail?t.trimEnd():t).lastIndexOf(' ');
+    tail=false;
+    if(i>=0){ nodes[n].textContent=t.slice(0,i)+'\u00a0'+t.slice(i+1); break; }
+   }
+   el.dataset.glued='1';
+  }
+ };
+ glue();
+ addEventListener('hashchange',()=>{ setTimeout(glue,0); setTimeout(glue,600); });
+ setTimeout(glue,1500);
+})();
 </script></html>

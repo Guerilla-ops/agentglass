@@ -66,6 +66,7 @@ type Card = PrSummary & { filed: Filed };
 export function TriageBoard({
   mine, review, total, hasTaskProvider, pinned,
   onOpen, onTogglePin, onShowTable, onAct, busy, acting, loading, settling, pinnedList, root, repoKey,
+  onlyUnread, onOnlyUnread,
 }: {
   /** The `mine` scope, as the panel already has it. */
   mine: PrSummary[];
@@ -137,6 +138,17 @@ export function TriageBoard({
    * belong to this project, so nothing is drawn. See prSeenKey.
    */
   repoKey?: string;
+  /**
+   * The filter bar's own switch, not a second one kept here.
+   *
+   * Measured: the bar's "N unread" chip toggled a state in the panel that this
+   * board never read, so pressing it changed nothing on screen here — two
+   * chips, both saying "N unread", answering to two different switches. There
+   * is one `unreadOnly` now, owned by the panel; this component only reads it
+   * and asks to flip it.
+   */
+  onlyUnread: boolean;
+  onOnlyUnread: (v: boolean) => void;
 }) {
   /* Answers arriving one at a time, each one a re-render of the board and
      nothing else — the cards do not move, a chip appears on one of them. */
@@ -243,8 +255,8 @@ export function TriageBoard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cards, repoKey, seenTick]);
   const unreadCount = useMemo(() => cards.filter((p) => unread.get(p.number)).length, [cards, unread]);
-  /* Lit rather than filtered, like the find box beside it — see `matches`. */
-  const [onlyUnread, setOnlyUnread] = useState(false);
+  /* Lit rather than filtered, like the find box beside it — see `matches`.
+     `onlyUnread` itself is a prop now, not state — see the note on it above. */
   /*
    * ONE LANE LIT, from the counts row.
    *
@@ -584,7 +596,7 @@ export function TriageBoard({
               * stuck in a state with nothing on screen to leave it.
               */}
             {(unreadCount > 0 || onlyUnread) && (
-              <button onClick={() => setOnlyUnread((v) => !v)}
+              <button onClick={() => onOnlyUnread(!onlyUnread)}
                 aria-pressed={onlyUnread}
                 title={onlyUnread
                   ? "Show every card again"
@@ -1057,11 +1069,25 @@ function cardVerdict(p: PrSummary): {
     /* STALE FIRST: an approval with commits on top of it is the dangerous
        state — the row says green and the reviewer approved something else. */
     if (v.stale) {
+      /*
+       * ASKED AGAIN, ON TOP OF STALE.
+       *
+       * A stale approval still says a reviewer decided; it just no longer
+       * covers what is here now. When the author has already re-requested
+       * that reviewer's look, the card read as if there were something for
+       * the author to do about it, while the roster beside it already showed
+       * the same reviewer with the re-request icon. `askedAgain` is the same
+       * field the changes-requested branch below reads — see `humanVerdict`
+       * in prs.ts, which computes it once from `pending` for either kind.
+       */
+      const line = v.askedAgain && v.mine ? "You were asked to look again"
+        : v.mine ? "You approved, but it has moved since"
+          : (names ? `Approved by ${names}, but it has moved since` : "Approved, but it has moved since") + (v.askedAgain ? " — asked to look again" : "");
       return {
         tint: "var(--warning)", glyph: <RefreshIcon size={ICON.xs} />, url: v.url,
-        line: v.mine ? "You approved, but it has moved since" : names ? `Approved by ${names}, but it has moved since` : "Approved, but it has moved since",
-        aria: names ? `Approved by ${names}, but commits have landed since that review`
-          : "Approved, but commits have landed since that review",
+        line,
+        aria: (names ? `Approved by ${names}, but commits have landed since that review`
+          : "Approved, but commits have landed since that review") + (v.askedAgain ? ", and asked to look again since" : ""),
       };
     }
     return {
@@ -1429,7 +1455,7 @@ function CardView({ p, hasTaskProvider, pinned, cursor, onOpen, onPin, onAct, bu
             wedged against a branch name that is already truncated. */}
         <span className="ml-auto flex items-center gap-1.5 shrink-0">
           {behind ? (
-          <span className="shrink-0 tabular-nums px-1 rounded"
+          <span className="shrink-0 inline-flex items-center gap-0.5 tabular-nums px-1 rounded"
             title={`${behind} commit${behind === 1 ? "" : "s"} on ${p.baseRefName} that this branch does not have — its checks ran against an older base`}
             style={{ color: "var(--warning)", background: "color-mix(in srgb, var(--warning) 14%, transparent)" }}>
             <RefreshIcon size={ICON.xs} />{behind}

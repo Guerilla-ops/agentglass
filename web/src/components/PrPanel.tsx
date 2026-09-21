@@ -66,8 +66,8 @@ import { keepLoadedChecks } from "../lib/prMerge.ts";
 import { askingBehind, behindAnswer, forgetBehind, forgetOneBehind, onBehind, refreshBehind } from "../lib/prBehindStore.ts";
 import { forgetRollups } from "../lib/prRollupStore.ts";
 import {
-  anchorId, bootstrapSince, clearSeen, foldedIdx, newKeys, newSince, onSeenChange, readSeen, reviewSpeaks,
-  threadLastAt, threadMovedOn, writeSeen, type NewAtom,
+  anchorId, bootstrapSince, clearSeen, foldedIdx, markAllSeen, newKeys, newSince, onSeenChange, readSeen,
+  reviewSpeaks, threadLastAt, threadMovedOn, writeSeen, type NewAtom,
 } from "../lib/prNew.ts";
 import { unreadOf, type Unread } from "../lib/prUnread.ts";
 import { quoteReply } from "../lib/prQuote.ts";
@@ -78,7 +78,7 @@ import { UnreadBadge } from "./UnreadBadge.tsx";
 import { excerpt, findInDiffs, groupByFile, type Match } from "../lib/diffFind.ts";
 import { PrFilterBar } from "./PrFilterBar.tsx";
 import { FilterBuilder } from "./tasks/FilterBuilder.tsx";
-import { EMPTY as EMPTY_RULES, applyWith, type FilterSet } from "./tasks/filters.ts";
+import { EMPTY as EMPTY_RULES, applyWith, readFilterSet, type FilterSet } from "./tasks/filters.ts";
 import { Avatar } from "./Avatar.tsx";
 import { StatusPill } from "./StatusPill.tsx";
 import { PeekFile, type Peek } from "./PeekFile.tsx";
@@ -196,6 +196,12 @@ const REVIEW_KEY = "agentglass.pr.review";
  *  in the merge button's own state before, so it went back to squash every time
  *  the Overview tab was unmounted — which the Files tab does. */
 const METHOD_KEY = "agentglass.pr.method";
+/** The builder's rules, per repository — a filter names one tracker's
+ *  statuses and people, so one repository's rows are not the next one's
+ *  answer. Unpersisted, the builder forgot everything it was told on every
+ *  restart: the row you built to watch one squad's cards was gone the next
+ *  time the app opened, and had to be built again from nothing. */
+const FILTERS_KEY = "agentglass.pr.filters";
 
 /** A review written but not yet submitted. */
 export interface ReviewDraft {
@@ -401,10 +407,20 @@ function p2Verdict(hv: PrSummary["humanReview"], rows: ReviewerRow[]): {
 
   if (v.kind === "approved") {
     if (v.stale) {
+      /*
+       * ASKED AGAIN, ON TOP OF STALE — the same `askedAgain` the
+       * changes-requested branch below already reads. The approval genuinely
+       * does not cover the code any more, but once the author has
+       * re-requested that reviewer's look, "it does not cover what is here
+       * now" reads as a move still left for the author, when the ball has
+       * already gone back to the reviewer.
+       */
       return { tint: "var(--warning)", glyph: <RefreshIcon size={ICON.xs} />, url: v.url,
         head: v.mine ? "You approved, but it has moved since" : "Approved, but it has moved since",
         who: v.mine ? undefined : who,
-        note: "Commits landed after that review — it does not cover what is here now." };
+        note: v.askedAgain
+          ? (v.mine ? "You were asked to look again — it is with you now." : `You asked ${who} to look again — it is with them now.`)
+          : "Commits landed after that review — it does not cover what is here now." };
     }
     return { tint: "var(--success)", glyph: <DoneIcon size={ICON.xs} />, url: v.url,
       head: v.mine ? "You approved" : "Approved", who: v.mine ? undefined : who,
@@ -2896,7 +2912,27 @@ export function PrView({ active, onOpenChatWith, onReviewInTerminal, jumpTo }: {
    * too. The tabs along the top still open the way they always did — see
    * `queryToRules`, which fills the builder from one instead of clearing it.
    */
-  const [rules, setRules] = useState<FilterSet>(EMPTY_RULES);
+  /* Persisted per repository, the same way `methods` is: a map loaded once
+     from storage, keyed by `repo.key`, and reconciled through `readFilterSet`
+     so a value another build wrote in a shape this one does not recognise is
+     dropped rather than carried in or thrown over. */
+  const [filterMap, setFilterMap] = useState<Record<string, unknown>>(() => loadMap<unknown>(FILTERS_KEY));
+  const [rules, setRulesRaw] = useState<FilterSet>(() => (repo ? readFilterSet(filterMap[repo.key]) : EMPTY_RULES));
+  // The repository switched under the builder: load its own rules rather than
+  // keep showing the ones built for the last one.
+  useEffect(() => {
+    setRulesRaw(repo ? readFilterSet(filterMap[repo.key]) : EMPTY_RULES);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [repo?.key]);
+  const setRules = (next: FilterSet) => {
+    setRulesRaw(next);
+    if (!repo) return;
+    setFilterMap((cur) => {
+      const nextMap = { ...cur, [repo.key]: next };
+      saveMap(FILTERS_KEY, nextMap);
+      return nextMap;
+    });
+  };
   const basePrs = useMemo(
     () => applyWith(applyFilters(pool, filters), rules, readPrField),
     [pool, filters, rules],
@@ -4341,7 +4377,20 @@ export function PrView({ active, onOpenChatWith, onReviewInTerminal, jumpTo }: {
               pending={query.trim() !== serverQuery.trim()}
               searching={listState.loading}
               shown={visiblePrs.length}
-              unread={{ count: unreadPrs.length, on: unreadOnly, onToggle: () => setUnreadOnly((v) => !v) }}
+              unread={{
+                count: unreadPrs.length,
+                on: unreadOnly,
+                onToggle: () => setUnreadOnly((v) => !v),
+                /* Same population the chip counts — `unreadPrs`, not a second
+                   pass over `basePrs` that could drift from it. Mark first,
+                   then drop the filter: pressing this while it is narrowed to
+                   "unread" would otherwise leave the table showing zero rows
+                   with nothing on screen to say why. */
+                onMarkAllRead: () => {
+                  markAllSeen(unreadPrs.map((p) => p.number), repo?.key, Date.now());
+                  setUnreadOnly(false);
+                },
+              }}
         /* How much of the scope the filter actually saw. A count that says "12"
            over a scope of ninety-three, having read twenty-five of them, is a
            number nobody can act on. */
@@ -4362,6 +4411,12 @@ export function PrView({ active, onOpenChatWith, onReviewInTerminal, jumpTo }: {
                  switches back to the table it belongs to. */
               <TriageBoard
                 mine={boardMineShown} review={boardReviewShown}
+                /* The filter bar's own chip and switch — see the comment on
+                   `unreadOnly` above. The board used to keep a second, unwired
+                   copy of this switch and render a second chip for it, so
+                   pressing the bar's chip changed a state the board never
+                   read. One switch now; the board just reads and writes it. */
+                onlyUnread={unreadOnly} onOnlyUnread={setUnreadOnly}
                 /*
                  * Every open pull request, not the count for whichever filter
                  * happened to be selected — `listState.total` is the current

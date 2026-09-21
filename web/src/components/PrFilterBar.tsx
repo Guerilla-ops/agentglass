@@ -45,7 +45,7 @@ export function PrFilterBar({
    * with them because that is where somebody looks for it, and its tooltip says out
    * loud that it counts only the rows this table has loaded.
    */
-  unread?: { count: number; on: boolean; onToggle: () => void };
+  unread?: { count: number; on: boolean; onToggle: () => void; onMarkAllRead: () => void };
 }) {
   const emit = (next: FilterState) => onQuery(serializeQuery(next));
 
@@ -144,6 +144,19 @@ export function PrFilterBar({
               <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
             </svg>
             {unread.count} unread
+          </button>
+        )}
+        {/* Beside the chip it clears, not inside it: pressing this is a
+            different act from pressing the chip (one filters, one writes),
+            and a single control that did both would need a second click to
+            find out which. Only offered while there is something to mark —
+            once the count reaches zero the button would have nothing to do. */}
+        {!!unread?.count && (
+          <button onClick={unread.onMarkAllRead}
+            title={`Mark all ${unread.count} as read`}
+            className="agx-btn text-[10px] px-2 py-1 rounded"
+            style={{ color: "var(--text3)", border }}>
+            Mark all read
           </button>
         )}
         {/* No row of pills: the builder is the filter, and it says everything

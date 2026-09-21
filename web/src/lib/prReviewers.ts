@@ -164,7 +164,13 @@ export function reviewVerdict(rows: readonly ReviewerRow[]): ReviewVerdict {
       askedAgain: people.some((r) => r.state === "changes" && r.again) };
   }
   const approved = of("approved");
-  if (approved.length) return { kind: "approved", who: approved };
+  if (approved.length) {
+    /* Re-requested after approving is the same GitHub ↻ the `changes` branch
+       above already reads — an approval can be asked again exactly as a
+       change request can, and until now only one of the two carried it. */
+    return { kind: "approved", who: approved,
+      askedAgain: people.some((r) => r.state === "approved" && r.again) };
+  }
   const commented = of("commented");
   if (commented.length) return { kind: "commented", who: commented };
   const awaiting = of("awaiting");
@@ -182,7 +188,7 @@ export function verdictLine(v: ReviewVerdict): string {
   const list = Array.isArray(v?.who) ? v.who : [];
   const who = list.slice(0, 2).join(" and ") + (list.length > 2 ? ` +${list.length - 2}` : "");
   switch (v.kind) {
-    case "approved": return `Approved by ${who}`;
+    case "approved": return v.askedAgain ? `Approved by ${who} — asked to look again` : `Approved by ${who}`;
     case "changes": return v.askedAgain ? `Changes requested by ${who} — asked to look again` : `Changes requested by ${who}`;
     case "commented": return `${who} commented without a verdict`;
     case "awaiting": return `Waiting on ${who}`;
