@@ -169,3 +169,37 @@ export function apply(tasks: ProviderTask[], f: FilterSet): ProviderTask[] {
 /** How many rules are actually doing something — for the count on the button.
  *  A half-written row is not a filter and must not be counted as one. */
 export const liveCount = (f: FilterSet): number => f.rules.filter(isLive).length;
+
+const VALID_OPS = new Set<Op>(["is", "not", "set", "unset"]);
+
+/**
+ * A `FilterSet` read back from storage, which makes no promise about its
+ * shape: the schema can move between versions, and a browser's storage can
+ * hold whatever an old build or a stray write once put there. Checked once
+ * here rather than by every caller, and pure so the check is testable without
+ * a renderer.
+ *
+ * The two failures are handled differently on purpose. A join that is not
+ * "and"/"or", or a `rules` that is not an array, means the whole value is not
+ * this shape at all — there is nothing to salvage, so it is the empty set. A
+ * single malformed rule inside an otherwise good list is narrower: it is
+ * dropped and its neighbours kept, so one row left over from an old version
+ * does not cost the rest of a filter somebody built.
+ */
+export function readFilterSet(raw: unknown): FilterSet {
+  if (!raw || typeof raw !== "object") return EMPTY;
+  const obj = raw as Record<string, unknown>;
+  if (obj.join !== "and" && obj.join !== "or") return EMPTY;
+  if (!Array.isArray(obj.rules)) return EMPTY;
+
+  const rules: Rule[] = [];
+  for (const r of obj.rules) {
+    if (!r || typeof r !== "object") continue;
+    const x = r as Record<string, unknown>;
+    if (typeof x.id !== "string" || typeof x.field !== "string") continue;
+    if (typeof x.op !== "string" || !VALID_OPS.has(x.op as Op)) continue;
+    if (!Array.isArray(x.values) || !x.values.every((v) => typeof v === "string")) continue;
+    rules.push({ id: x.id, field: x.field, op: x.op as Op, values: x.values as string[] });
+  }
+  return { join: obj.join, rules };
+}

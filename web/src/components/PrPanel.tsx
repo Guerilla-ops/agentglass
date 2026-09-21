@@ -78,7 +78,7 @@ import { UnreadBadge } from "./UnreadBadge.tsx";
 import { excerpt, findInDiffs, groupByFile, type Match } from "../lib/diffFind.ts";
 import { PrFilterBar } from "./PrFilterBar.tsx";
 import { FilterBuilder } from "./tasks/FilterBuilder.tsx";
-import { EMPTY as EMPTY_RULES, applyWith, type FilterSet } from "./tasks/filters.ts";
+import { EMPTY as EMPTY_RULES, applyWith, readFilterSet, type FilterSet } from "./tasks/filters.ts";
 import { Avatar } from "./Avatar.tsx";
 import { StatusPill } from "./StatusPill.tsx";
 import { PeekFile, type Peek } from "./PeekFile.tsx";
@@ -196,6 +196,12 @@ const REVIEW_KEY = "agentglass.pr.review";
  *  in the merge button's own state before, so it went back to squash every time
  *  the Overview tab was unmounted — which the Files tab does. */
 const METHOD_KEY = "agentglass.pr.method";
+/** The builder's rules, per repository — a filter names one tracker's
+ *  statuses and people, so one repository's rows are not the next one's
+ *  answer. Unpersisted, the builder forgot everything it was told on every
+ *  restart: the row you built to watch one squad's cards was gone the next
+ *  time the app opened, and had to be built again from nothing. */
+const FILTERS_KEY = "agentglass.pr.filters";
 
 /** A review written but not yet submitted. */
 export interface ReviewDraft {
@@ -2906,7 +2912,27 @@ export function PrView({ active, onOpenChatWith, onReviewInTerminal, jumpTo }: {
    * too. The tabs along the top still open the way they always did — see
    * `queryToRules`, which fills the builder from one instead of clearing it.
    */
-  const [rules, setRules] = useState<FilterSet>(EMPTY_RULES);
+  /* Persisted per repository, the same way `methods` is: a map loaded once
+     from storage, keyed by `repo.key`, and reconciled through `readFilterSet`
+     so a value another build wrote in a shape this one does not recognise is
+     dropped rather than carried in or thrown over. */
+  const [filterMap, setFilterMap] = useState<Record<string, unknown>>(() => loadMap<unknown>(FILTERS_KEY));
+  const [rules, setRulesRaw] = useState<FilterSet>(() => (repo ? readFilterSet(filterMap[repo.key]) : EMPTY_RULES));
+  // The repository switched under the builder: load its own rules rather than
+  // keep showing the ones built for the last one.
+  useEffect(() => {
+    setRulesRaw(repo ? readFilterSet(filterMap[repo.key]) : EMPTY_RULES);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [repo?.key]);
+  const setRules = (next: FilterSet) => {
+    setRulesRaw(next);
+    if (!repo) return;
+    setFilterMap((cur) => {
+      const nextMap = { ...cur, [repo.key]: next };
+      saveMap(FILTERS_KEY, nextMap);
+      return nextMap;
+    });
+  };
   const basePrs = useMemo(
     () => applyWith(applyFilters(pool, filters), rules, readPrField),
     [pool, filters, rules],
