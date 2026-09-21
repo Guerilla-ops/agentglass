@@ -154,6 +154,23 @@ export function clearSeen(key: string): Record<string, number> {
   return all;
 }
 
+/**
+ * "Mark all read": advance every one of these pull requests to `at` in one
+ * pass, the way pressing the chip's own button does it.
+ *
+ * The loop, not a new rule — each key still goes through `writeSeen`, so a
+ * pull request this browser had already read past `at` keeps its own later
+ * mark rather than being dragged backwards, and calling this twice with the
+ * same `at` is a no-op the second time for exactly that reason. `numbers` is
+ * meant to be whatever the unread chip counted; this does not decide who is
+ * unread, only writes the mark for whoever is handed in.
+ */
+export function markAllSeen(numbers: number[], repo: string | undefined, at: number): Record<string, number> {
+  let all = readSeen();
+  for (const n of numbers) all = writeSeen(prSeenKey(repo, n), at);
+  return all;
+}
+
 /** Epoch milliseconds, or 0 for anything unparseable — an unreadable date must
  *  not read as "just now" and put a NEW badge on a two-year-old comment. */
 export function at(iso: string | undefined | null): number {

@@ -22,7 +22,7 @@ const cell = new Map<string, string>();
 
 const {
   at, threadLastAt, threadFirstAt, threadMovedOn, newSince, newKeys, foldedIdx, bootstrapSince, clearSeen,
-  readSeen, writeSeen, prSeenKey, SEEN_KEY, SEEN_MAX, anchorId,
+  markAllSeen, readSeen, writeSeen, prSeenKey, SEEN_KEY, SEEN_MAX, anchorId,
 } = await import("../src/lib/prNew.ts");
 
 const T = (iso: string) => Date.parse(iso);
@@ -258,6 +258,35 @@ describe("the mark of having looked", () => {
     expect(Object.keys(all).length).toBe(SEEN_MAX);
     expect(all["r#1"]).toBeUndefined();
     expect(all[`r#${SEEN_MAX + 10}`]).toBe(SEEN_MAX + 10);
+  });
+});
+
+describe("marking every unread pull request read in one press", () => {
+  beforeEach(() => localStorage.removeItem(SEEN_KEY));
+
+  it("marks exactly the numbers handed to it, and nothing else", () => {
+    // A mark that predates the button press, on a pull request the button was
+    // never told about — this must survive untouched, the same way a repaint
+    // of one lane must not touch the others.
+    writeSeen(prSeenKey("acme/orbit", 999), 500);
+    markAllSeen([201, 202], "acme/orbit", 5000);
+    const all = readSeen();
+    expect(all[prSeenKey("acme/orbit", 201)]).toBe(5000);
+    expect(all[prSeenKey("acme/orbit", 202)]).toBe(5000);
+    expect(all[prSeenKey("acme/orbit", 999)]).toBe(500);
+  });
+
+  it("a second call at the same moment is a no-op", () => {
+    markAllSeen([201, 202], "acme/orbit", 5000);
+    const before = readSeen();
+    const after = markAllSeen([201, 202], "acme/orbit", 5000);
+    expect(after).toEqual(before);
+  });
+
+  it("touches nothing when the list is empty", () => {
+    writeSeen(prSeenKey("acme/orbit", 999), 500);
+    markAllSeen([], "acme/orbit", 5000);
+    expect(readSeen()).toEqual({ [prSeenKey("acme/orbit", 999)]: 500 });
   });
 });
 
