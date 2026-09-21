@@ -156,6 +156,31 @@ describe("what travels with the verdict", () => {
       { author: "maintainer", pending: ["bjorn"] });
     expect(v?.askedAgain).toBe(false);
   });
+
+  /*
+   * THE STALE-APPROVAL PATH READS THE SAME `pending` LIST.
+   *
+   * `askedAgain` is computed once, inside the same helper both an approval
+   * and a changes-requested verdict go through — it does not need a second
+   * definition. A stale approval that has been re-requested still says
+   * `stale: true` (the approval genuinely does not cover the code any more)
+   * but now also carries `askedAgain: true`, so a reader can tell the ball
+   * moved back to the reviewer rather than sitting with the author.
+   */
+  test("a stale approval, re-requested, is askedAgain the same way changes-requested is", () => {
+    const v = humanVerdict([r("okoro", "APPROVED", "2026-09-01T09:00:00Z")],
+      { author: "maintainer", headAt: "2026-09-02T10:00:00Z", pending: ["okoro"] });
+    expect(v?.kind).toBe("approved");
+    expect(v?.stale).toBe(true);
+    expect(v?.askedAgain).toBe(true);
+  });
+
+  test("a stale approval with nobody re-requested is not askedAgain", () => {
+    const v = humanVerdict([r("okoro", "APPROVED", "2026-09-01T09:00:00Z")],
+      { author: "maintainer", headAt: "2026-09-02T10:00:00Z" });
+    expect(v?.stale).toBe(true);
+    expect(v?.askedAgain).toBe(false);
+  });
 });
 
 describe("open line threads, from the same node as the verdict", () => {

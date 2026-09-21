@@ -172,6 +172,20 @@ describe("the verdict, as a sentence", () => {
     expect(R.verdictLine(v)).toBe("Changes requested by okoro");
   });
 
+  test("an approval, re-requested, is askedAgain exactly as changes-requested is", () => {
+    // `again` on the row is the same ↻ regardless of what the verdict itself
+    // was; only the `changes` branch used to read it.
+    const v = R.reviewVerdict([{ login: "okoro", state: "approved", again: true, at: "2026-09-02T10:00:00Z" }]);
+    expect(v.askedAgain).toBe(true);
+    expect(R.verdictLine(v)).toBe("Approved by okoro — asked to look again");
+  });
+
+  test("an approval is not askedAgain when nobody re-requested it", () => {
+    const v = R.reviewVerdict([row("okoro", "approved")]);
+    expect(v.askedAgain).toBeFalsy();
+    expect(R.verdictLine(v)).toBe("Approved by okoro");
+  });
+
   test("a bot's approval is not an approval", () => {
     /* The house rule, enforced here rather than trusted: an auto-review is a
        gate BEFORE the human one. Counting it would report a pull request as
@@ -260,5 +274,17 @@ describe("the Overview and the board agree", () => {
       expect(fn, `${kind} has no band`).toContain(`v.kind === "${kind}"`);
     }
     expect(fn, "and the fourth is the fallthrough").toContain("Reviewed, no verdict");
+  });
+
+  test("a stale approval's note says whose move it is once asked again", () => {
+    /*
+     * The band used to say "Commits landed after that review — it does not
+     * cover what is here now." even after the author had already
+     * re-requested that reviewer's look — reading as a move still left for
+     * the author when the ball had already gone back to the reviewer.
+     */
+    const fn = panel.slice(panel.indexOf("function p2Verdict("), panel.indexOf("function ReviewChip("));
+    expect(fn).toContain("it is with them now");
+    expect(fn).toContain("it is with you now");
   });
 });

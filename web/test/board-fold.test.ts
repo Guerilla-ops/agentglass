@@ -342,6 +342,32 @@ describe("the verdict a card leads with", () => {
     expect(html).toContain("You were asked to look again");
   });
 
+  /*
+   * A STALE APPROVAL, RE-REQUESTED, IS NOT THE AUTHOR'S MOVE EITHER.
+   *
+   * The stale-approval card kept saying "it has moved since" as if the
+   * author still had something to do, even once they had already
+   * re-requested that reviewer's look — while the roster beside it already
+   * showed the same reviewer with the re-request icon. Same `askedAgain`
+   * field the changes-requested case above reads, from the same `pending`.
+   */
+  test("a stale approval that was asked again says so, on top of having moved", () => {
+    const html = drawnIn({ humanReview: V("approved", { stale: true, askedAgain: true }) });
+    expect(html).toContain("it has moved since");
+    expect(html).toContain("asked to look again");
+  });
+
+  test("a stale approval without a re-request keeps today's wording exactly", () => {
+    const html = drawnIn({ humanReview: V("approved", { stale: true }) });
+    expect(html).toContain("it has moved since");
+    expect(html).not.toContain("asked to look again");
+  });
+
+  test("and in the second person when the stale approval's re-request is yours to answer", () => {
+    const html = drawnIn({ humanReview: V("approved", { stale: true, mine: true, askedAgain: true }) });
+    expect(html).toContain("You were asked to look again");
+  });
+
   test("a draft says nobody has been asked", () => {
     // It was a label lost among the others; a draft is waiting on no one.
     expect(drawnIn({ isDraft: true })).toContain("nobody has been asked");

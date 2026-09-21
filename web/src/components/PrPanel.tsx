@@ -401,10 +401,20 @@ function p2Verdict(hv: PrSummary["humanReview"], rows: ReviewerRow[]): {
 
   if (v.kind === "approved") {
     if (v.stale) {
+      /*
+       * ASKED AGAIN, ON TOP OF STALE — the same `askedAgain` the
+       * changes-requested branch below already reads. The approval genuinely
+       * does not cover the code any more, but once the author has
+       * re-requested that reviewer's look, "it does not cover what is here
+       * now" reads as a move still left for the author, when the ball has
+       * already gone back to the reviewer.
+       */
       return { tint: "var(--warning)", glyph: <RefreshIcon size={ICON.xs} />, url: v.url,
         head: v.mine ? "You approved, but it has moved since" : "Approved, but it has moved since",
         who: v.mine ? undefined : who,
-        note: "Commits landed after that review — it does not cover what is here now." };
+        note: v.askedAgain
+          ? (v.mine ? "You were asked to look again — it is with you now." : `You asked ${who} to look again — it is with them now.`)
+          : "Commits landed after that review — it does not cover what is here now." };
     }
     return { tint: "var(--success)", glyph: <DoneIcon size={ICON.xs} />, url: v.url,
       head: v.mine ? "You approved" : "Approved", who: v.mine ? undefined : who,

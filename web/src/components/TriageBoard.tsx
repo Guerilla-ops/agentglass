@@ -1069,11 +1069,25 @@ function cardVerdict(p: PrSummary): {
     /* STALE FIRST: an approval with commits on top of it is the dangerous
        state — the row says green and the reviewer approved something else. */
     if (v.stale) {
+      /*
+       * ASKED AGAIN, ON TOP OF STALE.
+       *
+       * A stale approval still says a reviewer decided; it just no longer
+       * covers what is here now. When the author has already re-requested
+       * that reviewer's look, the card read as if there were something for
+       * the author to do about it, while the roster beside it already showed
+       * the same reviewer with the re-request icon. `askedAgain` is the same
+       * field the changes-requested branch below reads — see `humanVerdict`
+       * in prs.ts, which computes it once from `pending` for either kind.
+       */
+      const line = v.askedAgain && v.mine ? "You were asked to look again"
+        : v.mine ? "You approved, but it has moved since"
+          : (names ? `Approved by ${names}, but it has moved since` : "Approved, but it has moved since") + (v.askedAgain ? " — asked to look again" : "");
       return {
         tint: "var(--warning)", glyph: <RefreshIcon size={ICON.xs} />, url: v.url,
-        line: v.mine ? "You approved, but it has moved since" : names ? `Approved by ${names}, but it has moved since` : "Approved, but it has moved since",
-        aria: names ? `Approved by ${names}, but commits have landed since that review`
-          : "Approved, but commits have landed since that review",
+        line,
+        aria: (names ? `Approved by ${names}, but commits have landed since that review`
+          : "Approved, but commits have landed since that review") + (v.askedAgain ? ", and asked to look again since" : ""),
       };
     }
     return {
