@@ -698,3 +698,26 @@ export function FilterChips<V extends string>({ options, value, onChange, label 
     </ScrollView>
   );
 }
+
+/**
+ * A repository's label, in the colour the repository gave it — as a dot and a
+ * tint behind the name, with the name in the text colour.
+ *
+ * GitHub stores these as six hex digits and no `#`, and some are chosen
+ * against a white page: a label written in its own pale yellow was unreadable
+ * on the dark ground. The colour still says which label it is; the word is
+ * legible whatever the repository picked.
+ */
+export function LabelChip({ name, color }: { name: string; color?: string }): ReactNode {
+  const clean = (color || "").replace(/^#/, "");
+  const hex = /^[0-9a-fA-F]{6}$/.test(clean) ? `#${clean}` : null;
+  return (
+    <View style={{
+      flexDirection: "row", alignItems: "center", gap: 6, height: 24, paddingHorizontal: 8, borderRadius: 6,
+      backgroundColor: hex ? tint(hex, 0.18) : C.bg3,
+    }}>
+      {hex ? <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: hex }} /> : null}
+      <Text numberOfLines={1} style={{ color: C.text, fontSize: T.small, fontWeight: "500" }}>{name}</Text>
+    </View>
+  );
+}

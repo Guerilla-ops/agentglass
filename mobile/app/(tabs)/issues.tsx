@@ -24,12 +24,12 @@ import type { GitRepoRef, IssueRow, IssuesReport } from "../../../shared/types.t
 import { ask } from "../../src/lib/api.ts";
 import { useAgentglass } from "../../src/state/host-context.tsx";
 import { usePaletteTick } from "../../src/state/use-palette.ts";
-import { Card, Chip, FilterChips, GroupTitle, Note, Segmented, groupEdge } from "../../src/ui.tsx";
+import { Card, Chip, FilterChips, GroupTitle, LabelChip, Note, Segmented, groupEdge } from "../../src/ui.tsx";
 import { mainCheckouts } from "../../src/model/prRows.ts";
 import { flatten, type RepoGroup } from "../../src/model/prLook.ts";
 import { IssuesIcon } from "../../src/nav/icons.tsx";
 import { since } from "../../src/lib/dates.ts";
-import { C, SPACE, T, tint } from "../../src/theme.ts";
+import { C, SPACE, T } from "../../src/theme.ts";
 
 type Filter = "mine" | "open" | "all";
 
@@ -43,30 +43,6 @@ const FILTERS: { id: Filter; label: string }[] = [
 
 const REPO_CAP = 8;
 const ALL = "*";
-
-/** A label's colour, with a floor.
- *
- *  GitHub stores these as six hex digits and no `#`, and some of them are
- *  chosen against a white page. So the colour is a dot and a tint behind the
- *  name, and the name itself is in the text colour — legible whatever the
- *  repository picked. */
-function labelHex(hex: string): string | null {
-  const clean = (hex || "").replace(/^#/, "");
-  return /^[0-9a-fA-F]{6}$/.test(clean) ? `#${clean}` : null;
-}
-
-function Label({ name, color }: { name: string; color: string }): React.ReactNode {
-  const hex = labelHex(color);
-  return (
-    <View style={{
-      flexDirection: "row", alignItems: "center", gap: 6, height: 24, paddingHorizontal: 8, borderRadius: 6,
-      backgroundColor: hex ? tint(hex, 0.18) : C.bg3,
-    }}>
-      {hex ? <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: hex }} /> : null}
-      <Text numberOfLines={1} style={{ color: C.text, fontSize: T.small, fontWeight: "500" }}>{name}</Text>
-    </View>
-  );
-}
 
 function Row({ issue, now, me, onOpen }: {
   issue: IssueRow;
@@ -91,7 +67,7 @@ function Row({ issue, now, me, onOpen }: {
               {issue.title}
             </Text>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-              {issue.labels.slice(0, 3).map((l) => <Label key={l.name} name={l.name} color={l.color} />)}
+              {issue.labels.slice(0, 3).map((l) => <LabelChip key={l.name} name={l.name} color={l.color} />)}
               {issue.assignees.length === 0
                 ? <Chip label="Unassigned" />
                 : <Chip label={mine ? "You" : issue.assignees.join(", ")} tone={mine ? "accent" : "neutral"} />}
