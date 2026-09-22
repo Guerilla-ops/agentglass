@@ -56,10 +56,10 @@ import { requestHandoff } from "../../src/terminal/handoff.ts";
 import { mainCheckouts } from "../../src/model/prRows.ts";
 import { cardSkills, namedForIt, skillCommand, skillModes, windowName } from "../../../shared/cardSkills.ts";
 import { dueIn, since } from "../../src/lib/dates.ts";
-import { Btn, Card, Label, Note, Sheet, SheetRow, TAP, Toggle } from "../../src/ui.tsx";
-import { ChevronIcon } from "../../src/nav/icons.tsx";
+import { Btn, Card, Chip, Group, GroupTitle, Label, LabelChip, Note, Row, Sheet, SheetRow, Switch, TAP } from "../../src/ui.tsx";
+import { ChevronIcon, PrsIcon } from "../../src/nav/icons.tsx";
 import { Glyph } from "../../src/nav/glyphs.tsx";
-import { C, MONO, RADIUS, SPACE, T } from "../../src/theme.ts";
+import { C, MONO, RADIUS, SPACE, T, tint } from "../../src/theme.ts";
 
 /**
  * Where this card lives. Every route this screen reads is `/clickup/…`, so
@@ -149,6 +149,7 @@ export default function CardScreen(): React.ReactNode {
   const [picked, setPicked] = useState<{ skill: SkillInfo; mode?: string } | null>(null);
   const [find, setFind] = useState("");
   const [say, setSay] = useState("");
+  const [commenting, setCommenting] = useState(false);
 
   /*
    * `/clickup/task` answers with a whole TaskDetail and this screen used to
@@ -456,26 +457,98 @@ export default function CardScreen(): React.ReactNode {
 
         {card ? (
           <>
-            <View style={{ gap: SPACE.sm }}>
-              <Text style={{ color: C.text, fontSize: T.head, fontWeight: "700", lineHeight: 26 }}>
+            <View style={{ gap: 10, paddingHorizontal: SPACE.xs }}>
+              <Text style={{ color: C.text, fontSize: T.head, fontWeight: "600", lineHeight: 26 }}>
                 {card.title}
               </Text>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: SPACE.sm, flexWrap: "wrap" }}>
-                <View style={{
-                  paddingHorizontal: SPACE.sm, paddingVertical: 2, borderRadius: RADIUS.sm,
-                  borderWidth: 1, borderColor: statusInk(card.statusColor),
-                }}>
-                  <Text style={{ color: statusInk(card.statusColor), fontSize: T.eyebrow }}>
-                    {card.status}
-                  </Text>
-                </View>
-                {card.list ? <Text style={{ color: C.text3, fontSize: T.eyebrow }}>{card.list}</Text> : null}
-                {card.sprint ? <Text style={{ color: C.text3, fontSize: T.eyebrow }}>· {card.sprint}</Text> : null}
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                <LabelChip name={card.status} color={card.statusColor} />
                 {when ? (
-                  <Text style={{ color: when.late ? C.error : C.text3, fontSize: T.eyebrow }}>{when.text}</Text>
+                  <Chip
+                    label={when.late && when.text !== "today" ? when.text : `Due ${when.text}`}
+                    tone={when.late ? "bad" : "warn"}
+                    icon={<Glyph name="clock" color={when.late ? C.error : C.warning} size={14} />}
+                  />
                 ) : null}
+                {card.priority ? <Chip label={card.priority[0]!.toUpperCase() + card.priority.slice(1)} /> : null}
+                {card.tags.map((t) => <Chip key={t} label={t} />)}
               </View>
+              {card.list || card.sprint ? (
+                <Text style={{ color: C.text3, fontSize: T.small }}>
+                  {[card.list, card.sprint].filter(Boolean).join(" · ")}
+                </Text>
+              ) : null}
             </View>
+
+            {/*
+              Where it goes next, straight under what it is. A card is moved far
+              more often than it is read to the end, and the statuses were below
+              the description and a comment box, a scroll away from the status
+              they change.
+            */}
+            {mayWrite && moves.length ? (
+              <>
+                <GroupTitle text="Move to" />
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }} contentContainerStyle={{ gap: SPACE.sm }}>
+                  {moves.map((m) => {
+                    const ink = statusInk(m.color);
+                    return (
+                      <Pressable
+                        key={m.status}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Move to ${m.status}`}
+                        disabled={!!busy}
+                        onPress={() => { void move(m.status); }}
+                        hitSlop={{ top: 4, bottom: 4 }}
+                        style={({ pressed }) => ({
+                          flexDirection: "row", alignItems: "center", gap: 6, height: 40, paddingHorizontal: 14,
+                          borderRadius: 20, borderWidth: 1, borderColor: tint(ink, 0.5),
+                          opacity: busy && busy !== m.status ? 0.4 : 1,
+                          transform: [{ scale: pressed ? 0.97 : 1 }],
+                        })}
+                      >
+                        {busy === m.status
+                          ? <ActivityIndicator color={ink} size="small" />
+                          : <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: ink }} />}
+                        <Text style={{ color: C.text, fontSize: 13, fontWeight: "500" }}>{m.status}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
+              </>
+            ) : null}
+
+            {/*
+              Taking it, as a switch: on is yours. It was a box beside a
+              sentence whose wording changed with the state.
+
+              `mine` is the server's answer, not a search of `assignees` for a
+              name the phone would have to know. Its own comment says why:
+              "resolved server-side against the connected account, because the
+              client has no business knowing your user id".
+            */}
+            {mayWrite ? (
+              <View style={{ paddingTop: SPACE.md }}>
+                <Group>
+                  <Row
+                    title="Assigned to you"
+                    sub={(() => {
+                      const others = card.assignees.length - (card.mine ? 1 : 0);
+                      if (card.mine) return others > 0 ? `Also on it: ${others} more` : "Nobody else is on it";
+                      return card.assignees.length ? `On it: ${card.assignees.join(", ")}` : "Nobody is on it";
+                    })()}
+                    checked={card.mine === true}
+                    trail={<Switch on={card.mine === true} disabled={busy !== null} />}
+                    disabled={busy !== null}
+                    onPress={() => { void claim(card.mine !== true); }}
+                  />
+                </Group>
+              </View>
+            ) : card.assignees.length ? (
+              <Text style={{ color: C.text3, fontSize: T.small, paddingHorizontal: SPACE.xs }}>
+                On it: {card.assignees.join(", ")}
+              </Text>
+            ) : null}
 
             {said ? (
               <Note tone={said.ok ? "quiet" : "bad"}>{said.text}</Note>
@@ -509,92 +582,8 @@ export default function CardScreen(): React.ReactNode {
               </Card>
             ) : null}
 
-            <Card style={{ gap: SPACE.sm }}>
-              <Label text="On the card" />
-              {card.assignees.length ? (
-                <Note>{card.assignees.join(", ")}</Note>
-              ) : (
-                <Note>Nobody is assigned.</Note>
-              )}
-              {card.priority ? <Note>Priority: {card.priority}</Note> : null}
-              {card.tags.length ? <Note>{card.tags.join(" · ")}</Note> : null}
-              {card.comments !== undefined && card.comments > 0 ? (
-                <Note>{card.comments} {card.comments === 1 ? "comment" : "comments"} on the board.</Note>
-              ) : null}
-            </Card>
-
-            {/*
-              Taking it, and saying something.
-
-              Only with `full`, not drawn otherwise — the rule repos.tsx set
-              and the one every write in this app follows. Both of these are
-              writes to somebody else's workspace.
-
-              `mine` is the server's answer, not a search of `assignees` for a
-              name the phone would have to know. Its own comment says why:
-              "resolved server-side against the connected account, because the
-              client has no business knowing your user id".
-            */}
-            {mayWrite ? (
-              <Card style={{ gap: SPACE.sm }}>
-                <Toggle
-                  on={card.mine === true}
-                  label={card.mine ? "It is yours" : "Take it"}
-                  sub={
-                    card.mine
-                      ? "Turning this off takes you off the card."
-                      : "Puts you on the card, alongside anybody already there."
-                  }
-                  disabled={busy !== null}
-                  onPress={() => { void claim(card.mine !== true); }}
-                />
-                <TextInput
-                  value={say}
-                  onChangeText={setSay}
-                  placeholder="A note on the card…"
-                  placeholderTextColor={C.text4}
-                  multiline
-                  style={{
-                    minHeight: 72, borderWidth: 1, borderColor: C.border,
-                    borderRadius: RADIUS.sm, backgroundColor: C.bg,
-                    color: C.text, padding: SPACE.sm, fontSize: T.body,
-                  }}
-                />
-                <Btn
-                  label="Post it"
-                  busy={busy === "comment"}
-                  disabled={!say.trim() || busy !== null}
-                  onPress={() => { void comment(); }}
-                />
-              </Card>
-            ) : null}
-
-            {mayWrite && moves.length ? (
-              <View style={{ gap: SPACE.sm }}>
-                <Label text="Move to" />
-                <View style={{ flexDirection: "row", gap: SPACE.sm, flexWrap: "wrap" }}>
-                  {moves.map((s) => {
-                    const ink = statusInk(s.color);
-                    return (
-                      <Pressable
-                        key={s.status}
-                        accessibilityRole="button"
-                        disabled={!!busy}
-                        onPress={() => { void move(s.status); }}
-                        style={({ pressed }) => ({
-                          minHeight: TAP, justifyContent: "center", paddingHorizontal: SPACE.md,
-                          borderRadius: RADIUS.md, borderWidth: 1, borderColor: ink,
-                          opacity: busy && busy !== s.status ? 0.4 : pressed ? 0.6 : 1,
-                        })}
-                      >
-                        <Text style={{ color: ink, fontSize: T.small, fontWeight: "600" }}>
-                          {busy === s.status ? "…" : s.status}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              </View>
+            {card.comments !== undefined && card.comments > 0 && !detail?.comments.length ? (
+              <Note>{card.comments} {card.comments === 1 ? "comment" : "comments"} on the board.</Note>
             ) : null}
 
             {!mayWrite ? (
@@ -671,36 +660,30 @@ export default function CardScreen(): React.ReactNode {
                 the rest. A reader deciding whether the work is done should know
                 which they are looking at. */}
             {prs?.length ? (
-              <View style={{ gap: SPACE.sm }}>
-                <Label text={`Pull requests · ${prs.length}`} />
-                <Card style={{ gap: SPACE.xs }}>
+              <View>
+                <GroupTitle text={`Pull requests · ${prs.length}`} />
+                <Group inset={50}>
                   {prs.map((pr) => (
-                    <Pressable
+                    <Row
                       key={pr.number}
-                      accessibilityRole="button"
+                      title={`#${pr.number} ${pr.title || pr.url}`}
+                      sub={`${pr.draft ? "Draft" : pr.state[0] + pr.state.slice(1).toLowerCase()}${pr.stated ? "" : " · found by search"}`}
+                      lead={<PrsIcon color={prInk(pr)} size={20} />}
+                      chevron
                       // In the app when the computer has a checkout of it — see
                       // model/prRef.ts — and the browser only when it has not.
                       onPress={() => { if (host) void openLinkedPr(host, router, pr.url); }}
-                      style={{ flexDirection: "row", alignItems: "center", gap: SPACE.sm, minHeight: TAP }}
-                    >
-                      <Text style={{ color: prInk(pr), fontSize: T.eyebrow, fontFamily: MONO, width: 52 }}>
-                        #{pr.number}
-                      </Text>
-                      <Text numberOfLines={1} style={{ color: C.text2, fontSize: T.small, flex: 1 }}>
-                        {pr.title || pr.url}
-                      </Text>
-                      <Text style={{ color: prInk(pr), fontSize: T.eyebrow }}>
-                        {pr.draft ? "draft" : pr.state.toLowerCase()}
-                      </Text>
-                    </Pressable>
+                    />
                   ))}
-                  {prs.some((pr) => !pr.stated) ? (
+                </Group>
+                {prs.some((pr) => !pr.stated) ? (
+                  <View style={{ paddingHorizontal: SPACE.xs, paddingTop: SPACE.xs }}>
                     <Note>
                       Found by searching GitHub for this card&apos;s id, so one of these may belong to
                       something else that mentions it.
                     </Note>
-                  ) : null}
-                </Card>
+                  </View>
+                ) : null}
               </View>
             ) : null}
 
@@ -763,13 +746,47 @@ export default function CardScreen(): React.ReactNode {
           paddingHorizontal: SPACE.lg, paddingTop: SPACE.md, paddingBottom: SPACE.lg,
           borderTopWidth: 1, borderTopColor: C.border, backgroundColor: C.bg2,
         }}>
-          <Btn
-            label="Start with Claude"
-            tone="primary"
-            onPress={() => { setFind(""); setPicking(true); }}
-          />
+          <View style={{ flexDirection: "row", gap: SPACE.sm }}>
+            <Btn label="Comment" style={{ flex: 1 }} onPress={() => setCommenting(true)} />
+            <Btn
+              label="Start with Claude"
+              tone="primary"
+              style={{ flex: 1.6 }}
+              onPress={() => { setFind(""); setPicking(true); }}
+            />
+          </View>
         </View>
       ) : null}
+
+      {/* Saying something, in a sheet from the bar. It was a box open in the
+          middle of the page between the facts and the statuses, where the
+          keyboard pushed everything that mattered off the screen. Read-only
+          history stays on the page ("Said on the board"); answering a
+          specific comment is a thread, which ClickUp models and this does not. */}
+      <Sheet open={commenting} onClose={() => setCommenting(false)} title="Comment on the card">
+        <View style={{ gap: SPACE.md, paddingBottom: SPACE.md }}>
+          <TextInput
+            value={say}
+            onChangeText={setSay}
+            placeholder="A note on the card…"
+            placeholderTextColor={C.text3}
+            multiline
+            autoFocus
+            style={{
+              minHeight: 96, borderWidth: 1, borderColor: C.border2,
+              borderRadius: RADIUS.md, backgroundColor: C.bg,
+              color: C.text, padding: SPACE.md, fontSize: T.body, textAlignVertical: "top",
+            }}
+          />
+          <Btn
+            label="Post it"
+            tone="primary"
+            busy={busy === "comment"}
+            disabled={!say.trim() || busy !== null}
+            onPress={() => { void comment().then(() => setCommenting(false)); }}
+          />
+        </View>
+      </Sheet>
 
       {/* WHAT, before WHERE. The order is the point: the checkout is a detail of
           running it and the instruction is the decision. */}
