@@ -78,7 +78,7 @@ const ROUTES: { path: string; name: string; expect: RegExp; pane?: boolean }[] =
   /* Four things it may honestly say, and the third is the one this machine
      shows: no tracker is connected here, so there is no board rather than an
      empty one. The distinction is the point of the state existing. */
-  { path: "/tasks", name: "Cards", expect: /hiding done|Nothing here|No board here|Cannot read the board/i },
+  { path: "/tasks", name: "Cards", expect: /hiding done|Nothing here|No board here|No tracker here|Cannot read the board/i },
   // Both details walked with ids that exist nowhere, for the same reason as
   // the pull request's: what is asserted is that the screen mounts and says it
   // could not read it, rather than rendering a blank.
@@ -134,7 +134,22 @@ async function pair(): Promise<{ origin: string; token: string; scope: string; d
 
   // `read`, deliberately. A QA run walks every screen and must not be able to
   // stage, commit, push or answer a gate on somebody's real machine.
-  const accepted = await (await desk("/pair/accept", { ticket: ticket.id, scope: SCOPE })).json() as unknown;
+  //
+  // With the desk's Origin, which accepting now requires: it is the human half
+  // of pairing and a bare machine token is not proof of one (see
+  // `mayReleaseAHold` in server/src/index.ts). Without it the accept was
+  // refused, collect answered "claimed", and the sweep died before its first
+  // screen. The server's own pair-routes test sends the same header.
+  const acceptRes = await fetch(SERVER + "/pair/accept", {
+    method: "POST",
+    headers: {
+      ...(machine ? { authorization: `Bearer ${machine}` } : {}),
+      "content-type": "application/json",
+      origin: "agentglass://app",
+    },
+    body: JSON.stringify({ ticket: ticket.id, scope: SCOPE }),
+  });
+  const accepted = await acceptRes.json() as unknown;
 
   const got = await (await fetch(
     `${SERVER}/pair/collect?ticket=${encodeURIComponent(ticket.id)}&secret=${encodeURIComponent(claim.secret)}`,
