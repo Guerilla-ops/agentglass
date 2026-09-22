@@ -16,6 +16,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import * as SplashScreen from "expo-splash-screen";
 import { HostProvider, useAgentglass } from "../src/state/host-context.tsx";
 import { usePaletteTick } from "../src/state/use-palette.ts";
+import { UsageProvider } from "../src/state/use-usage.ts";
 import { C, currentLook } from "../src/theme.ts";
 
 void SplashScreen.preventAutoHideAsync();
@@ -87,7 +88,9 @@ export default function RootLayout(): React.ReactNode {
   return (
     <SafeAreaProvider>
       <HostProvider>
-        <Gate />
+        <UsageProvider>
+          <Gate />
+        </UsageProvider>
       </HostProvider>
     </SafeAreaProvider>
   );

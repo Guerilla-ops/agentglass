@@ -135,3 +135,10 @@ export function planState(
   if (rows) return rows.length ? "rows" : "empty";
   return loaded ? "unreachable" : "loading";
 }
+
+/** The window's name as a person says it: "5h" is the five-hour window. */
+export function windowName(label: string): string {
+  if (/^5h$/i.test(label)) return "5-hour";
+  if (/^weekly$/i.test(label)) return "Weekly";
+  return label;
+}

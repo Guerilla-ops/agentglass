@@ -10,19 +10,20 @@
  * held Now, Source control and Settings are gone.
  *
  * ── the header ───────────────────────────────────────────────────────────
- * One control on the right of every destination: the gear. Settings used to
- * sit behind a `···` sheet with two other screens, which was three taps to a
- * switch and a menu whose name said nothing about what was in it. Everything
- * that belongs to one screen stays on that screen, the way the terminal keeps
- * its own menu.
+ * Two things on the right of every destination: the usage chip, and the gear.
+ * Settings used to sit behind a `···` sheet with two other screens, which was
+ * three taps to a switch and a menu whose name said nothing about what was in
+ * it. Everything that belongs to one screen stays on that screen, the way the
+ * terminal keeps its own menu.
  */
-import { Pressable } from "react-native";
+import { Pressable, View } from "react-native";
 import { Tabs, useRouter } from "expo-router";
 import { TabBar } from "../../src/nav/TabBar.tsx";
 import { BackIcon, SettingsIcon } from "../../src/nav/icons.tsx";
 import { usePaletteTick } from "../../src/state/use-palette.ts";
 import { C, SPACE, T } from "../../src/theme.ts";
 import { TAP } from "../../src/ui.tsx";
+import { UsageChip } from "../../src/usage/Usage.tsx";
 
 /** A header button, at the tap target the rest of the app holds itself to. */
 function HeaderButton({ label, onPress, side, children }: {
@@ -54,10 +55,16 @@ export default function TabsLayout(): React.ReactNode {
   usePaletteTick(); // a scene repaints only if it asks — see use-palette.ts
   const router = useRouter();
 
-  const gear = (
-    <HeaderButton label="Settings" side="right" onPress={() => router.push("/settings")}>
-      <SettingsIcon color={C.text2} size={22} />
-    </HeaderButton>
+  /* What is left of the plan, then the gear. The chip is on every
+     destination because the question it answers is asked right before starting
+     something long, from wherever that is — see src/usage/Usage.tsx. */
+  const trailing = (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: SPACE.xs }}>
+      <UsageChip />
+      <HeaderButton label="Settings" side="right" onPress={() => router.push("/settings")}>
+        <SettingsIcon color={C.text2} size={22} />
+      </HeaderButton>
+    </View>
   );
 
   /** The way out of a screen the bar does not return you to. `back` pops to
@@ -68,7 +75,7 @@ export default function TabsLayout(): React.ReactNode {
     </HeaderButton>
   );
 
-  const destination = { headerRight: () => gear, headerTitleAlign: "left" as const };
+  const destination = { headerRight: () => trailing, headerTitleAlign: "left" as const };
 
   return (
     <Tabs
