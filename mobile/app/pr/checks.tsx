@@ -30,11 +30,14 @@ import { ActivityIndicator, Pressable, ScrollView, Text, View } from "react-nati
 import { Stack, useLocalSearchParams } from "expo-router";
 import type { PrCheckJob } from "../../../shared/types.ts";
 import { ask } from "../../src/lib/api.ts";
-import { byUrgency, standingOf, tailOf } from "../../src/model/checkJobs.ts";
+import { byUrgency, looksFailed, ranFor, standingOf, tailOf } from "../../src/model/checkJobs.ts";
 import { useAgentglass } from "../../src/state/host-context.tsx";
 import { usePaletteTick } from "../../src/state/use-palette.ts";
-import { Btn, Card, Label, Note, TAP } from "../../src/ui.tsx";
-import { C, MONO, RADIUS, SPACE, T } from "../../src/theme.ts";
+import * as Clipboard from "expo-clipboard";
+import * as Haptics from "expo-haptics";
+import { Btn, Card, Chip, Group, GroupTitle, Label, Note, Row, TAP } from "../../src/ui.tsx";
+import { Glyph } from "../../src/nav/glyphs.tsx";
+import { C, MONO, RADIUS, SPACE, T, tint } from "../../src/theme.ts";
 
 /** How many lines of the tail to open on.
  *
@@ -42,10 +45,12 @@ import { C, MONO, RADIUS, SPACE, T } from "../../src/theme.ts";
  *  and the command that produced it without being a scroll of its own. */
 const TAIL = 120;
 
-/** The ink for a standing. The words and the ordering are in
+/** The ink and mark for a standing. The words and the ordering are in
  *  src/model/checkJobs.ts, where they are tested; what stays here is the
- *  colour, which is the one part a test could not check anyway. */
-const INK = { failed: C.error, running: C.warning, fine: C.success } as const;
+ *  drawing, which is the one part a test could not check anyway. Functions,
+ *  so they are read from the live palette at render time. */
+const INK = { failed: () => C.error, running: () => C.warning, fine: () => C.success } as const;
+const MARK = { failed: "x_circle", running: "run_circle", fine: "ok_circle" } as const;
 
 export default function ChecksScreen(): React.ReactNode {
   usePaletteTick(); // a scene repaints only if it asks — see use-palette.ts
@@ -97,13 +102,75 @@ export default function ChecksScreen(): React.ReactNode {
 
   const tail = useMemo(() => tailOf(log?.text ?? "", TAIL), [log]);
   const shown = whole ? (log?.text ?? "").replace(/\s+$/, "").split("\n") : tail.lines;
+  const now = Date.now();
+  const [allFine, setAllFine] = useState(false);
+  const bands = useMemo(() => ({
+    failed: ordered.filter((j) => standingOf(j).standing === "failed"),
+    running: ordered.filter((j) => standingOf(j).standing === "running"),
+    fine: ordered.filter((j) => standingOf(j).standing === "fine"),
+  }), [ordered]);
+
+  const copyLog = useCallback((): void => {
+    if (!log) return;
+    void Clipboard.setStringAsync(shown.join("\n"));
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  }, [log, shown]);
+
+  const jobRow = (job: PrCheckJob): React.ReactNode => {
+    const { standing } = standingOf(job);
+    return (
+      <Row
+        key={job.id}
+        title={job.name}
+        sub={ranFor(job, now)}
+        lead={<Glyph name={MARK[standing]} color={INK[standing]()} size={22} weight={1.9} />}
+        chevron
+        onPress={() => { void read(job); }}
+      />
+    );
+  };
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
-      <Stack.Screen options={{ title: open ? open.name : `Checks · #${number}` }} />
+      <Stack.Screen
+        options={{
+          title: open ? open.name : `Checks · #${number}`,
+          headerRight: open && log ? () => (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Copy the log"
+              onPress={copyLog}
+              style={({ pressed }) => ({
+                width: TAP, height: TAP, borderRadius: TAP / 2, alignItems: "center", justifyContent: "center",
+                backgroundColor: pressed ? C.bg3 : "transparent",
+              })}
+            >
+              <Glyph name="copy" color={C.text2} size={20} />
+            </Pressable>
+          ) : undefined,
+        }}
+      />
 
       {open ? (
         <>
+          {shown.length ? (
+            /* How much of the log is on screen, said at the top where the
+               scroll starts, with the rest one tap away. */
+            <View style={{
+              flexDirection: "row", alignItems: "center", minHeight: 48, paddingLeft: 20, paddingRight: SPACE.sm,
+              borderBottomWidth: 1, borderBottomColor: C.border,
+            }}>
+              <Text style={{ color: C.text3, fontSize: 13, flex: 1 }}>
+                {whole || tail.total <= TAIL ? `${shown.length} lines` : `Last ${TAIL} of ${tail.total} lines`}
+                {open ? ` · ${ranFor(open, now)}` : ""}
+              </Text>
+              {!whole && tail.total > TAIL ? (
+                <Pressable onPress={() => setWhole(true)} style={{ minHeight: TAP, justifyContent: "center", paddingHorizontal: SPACE.sm }}>
+                  <Text style={{ color: C.primary, fontSize: T.body, fontWeight: "600" }}>Show all</Text>
+                </Pressable>
+              ) : null}
+            </View>
+          ) : null}
           <ScrollView contentContainerStyle={{ padding: SPACE.lg, gap: SPACE.md }}>
             {logErr ? <Card><Label text="Cannot read it" /><Note tone="bad">{logErr}</Note></Card> : null}
             {!log && !logErr ? (
@@ -114,43 +181,41 @@ export default function ChecksScreen(): React.ReactNode {
 
             {shown.length ? (
               <>
-                {!whole && tail.total > TAIL ? (
-                  <Pressable
-                    onPress={() => setWhole(true)}
-                    style={{ minHeight: TAP, justifyContent: "center" }}
-                  >
-                    <Text style={{ color: C.primary, fontSize: T.small, fontWeight: "600" }}>
-                      Show all {tail.total} lines — the last {TAIL} are below
-                    </Text>
-                  </Pressable>
-                ) : null}
                 {log?.truncated ? (
                   <Note>GitHub cut this log short; what is here is what it returned.</Note>
                 ) : null}
                 {/* Its own horizontal scroller. A log line is as long as it is
                     and wrapping a stack trace at 393 points makes it unreadable
                     in a different way — so the page never scrolls sideways and
-                    this box does. */}
-                <ScrollView horizontal contentContainerStyle={{ padding: SPACE.md }} style={{
-                  backgroundColor: C.bg2, borderRadius: RADIUS.md,
+                    this box does. The lines a failure is written on are tinted,
+                    so the eye lands on them first (see looksFailed). */}
+                <ScrollView horizontal contentContainerStyle={{ paddingVertical: SPACE.md }} style={{
+                  backgroundColor: C.bg2, borderRadius: RADIUS.lg,
                   borderWidth: 1, borderColor: C.border,
                 }}>
-                  <Text selectable style={{ color: C.text2, fontSize: 10.5, fontFamily: MONO, lineHeight: 16 }}>
-                    {shown.join("\n")}
+                  <Text selectable style={{ fontSize: 11.5, fontFamily: MONO, lineHeight: 20 }}>
+                    {shown.map((line, i) => (
+                      <Text
+                        key={i}
+                        style={looksFailed(line)
+                          ? { color: C.error, backgroundColor: tint(C.error, 0.14) }
+                          : { color: C.text2 }}
+                      >{`  ${line}  `}{i < shown.length - 1 ? "\n" : ""}</Text>
+                    ))}
                   </Text>
                 </ScrollView>
               </>
             ) : null}
           </ScrollView>
           <View style={{
-            paddingHorizontal: SPACE.lg, paddingTop: SPACE.sm, paddingBottom: SPACE.lg,
+            paddingHorizontal: SPACE.lg, paddingTop: SPACE.md, paddingBottom: SPACE.lg,
             borderTopWidth: 1, borderTopColor: C.border, backgroundColor: C.bg2,
           }}>
-            <Btn label="Every job" onPress={() => { setOpen(null); setLog(null); setLogErr(null); }} />
+            <Btn label="All checks" onPress={() => { setOpen(null); setLog(null); setLogErr(null); }} />
           </View>
         </>
       ) : (
-        <ScrollView contentContainerStyle={{ padding: SPACE.lg, gap: SPACE.md }}>
+        <ScrollView contentContainerStyle={{ padding: SPACE.lg, paddingTop: SPACE.sm, gap: SPACE.xs, paddingBottom: SPACE.xl }}>
           {error ? <Card><Label text="Cannot read them" /><Note tone="bad">{error}</Note></Card> : null}
           {jobs === null && !error ? (
             <View style={{ padding: SPACE.xl }}><ActivityIndicator color={C.text3} /></View>
@@ -165,32 +230,47 @@ export default function ChecksScreen(): React.ReactNode {
           ) : null}
 
           {ordered.length ? (
-            <Card style={{ gap: SPACE.xs, padding: SPACE.md }}>
-              {ordered.map((job) => {
-                const { standing, word } = standingOf(job);
-                return (
-                  <Pressable
-                    key={job.id}
-                    accessibilityRole="button"
-                    onPress={() => { void read(job); }}
-                    style={({ pressed }) => ({
-                      flexDirection: "row", alignItems: "center", gap: SPACE.sm,
-                      minHeight: TAP, opacity: pressed ? 0.6 : 1,
-                    })}
-                  >
-                    <View style={{
-                      width: 8, height: 8, borderRadius: 4,
-                      backgroundColor: standing === "running" ? "transparent" : INK[standing],
-                      borderWidth: standing === "running" ? 1 : 0, borderColor: C.text4,
-                    }} />
-                    <Text numberOfLines={1} style={{ color: C.text2, fontSize: T.small, flex: 1 }}>
-                      {job.name}
-                    </Text>
-                    <Text style={{ color: INK[standing], fontSize: T.eyebrow }}>{word}</Text>
-                  </Pressable>
-                );
-              })}
-            </Card>
+            <View style={{ flexDirection: "row", gap: SPACE.sm, flexWrap: "wrap", paddingHorizontal: SPACE.xs, paddingBottom: SPACE.xs }}>
+              {bands.failed.length ? <Chip label={`${bands.failed.length} failed`} tone="bad" /> : null}
+              {bands.running.length ? <Chip label={`${bands.running.length} running`} tone="warn" /> : null}
+              {bands.fine.length ? <Chip label={`${bands.fine.length} passed`} tone="good" /> : null}
+            </View>
+          ) : null}
+
+          {bands.failed.length ? (
+            <>
+              <GroupTitle text="Failed" />
+              <Group inset={52}>{bands.failed.map(jobRow)}</Group>
+            </>
+          ) : null}
+          {bands.running.length ? (
+            <>
+              <GroupTitle text="Running" />
+              <Group inset={52}>{bands.running.map(jobRow)}</Group>
+            </>
+          ) : null}
+          {bands.fine.length ? (
+            <>
+              <GroupTitle text="Passed" />
+              {/* Folded: somebody on this screen came for the red one, and forty
+                  green rows between them and it are forty rows of nothing. */}
+              <Group inset={52}>
+                {allFine || bands.fine.length <= 3 ? bands.fine.map(jobRow) : (
+                  <Row
+                    title={`${bands.fine.length} checks passed`}
+                    sub={`${bands.fine.slice(0, 3).map((j) => j.name).join(", ")}${bands.fine.length > 3 ? ` and ${bands.fine.length - 3} more` : ""}`}
+                    lead={<Glyph name="ok_circle" color={C.success} size={22} weight={1.9} />}
+                    chevron
+                    onPress={() => setAllFine(true)}
+                  />
+                )}
+              </Group>
+            </>
+          ) : null}
+          {ordered.length ? (
+            <View style={{ paddingHorizontal: SPACE.xs, paddingTop: SPACE.md }}>
+              <Note>Logs are shown for GitHub Actions jobs. Checks from other services open on GitHub.</Note>
+            </View>
           ) : null}
         </ScrollView>
       )}
