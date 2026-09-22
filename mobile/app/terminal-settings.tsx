@@ -28,7 +28,7 @@
  * switch.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { Alert, Pressable, ScrollView, Text, View } from "react-native";
 import { Stack } from "expo-router";
 import { usePaletteTick } from "../src/state/use-palette.ts";
 import { ACCESSORY_KEYS } from "../src/terminal/keys.ts";
@@ -37,7 +37,8 @@ import {
   MAX_CUSTOM, add, bytesFor, mintId, problemWith, remove,
 } from "../src/terminal/customKeys.ts";
 import { customKeys, keyLayout, onTermPrefs, setCustomKeys, setKeyLayout } from "../src/terminal/termPrefs.ts";
-import { Btn, Field, Note, Section, TAP, Toggle, groupEdge } from "../src/ui.tsx";
+import { Btn, Field, Group, GroupTitle, Note, Row, Sheet, Switch, TAP } from "../src/ui.tsx";
+import { Glyph } from "../src/nav/glyphs.tsx";
 import { C, MONO, RADIUS, SPACE, T } from "../src/theme.ts";
 
 export default function TerminalSettingsScreen(): React.ReactNode {
@@ -73,204 +74,177 @@ export default function TerminalSettingsScreen(): React.ReactNode {
   ], [mine]);
   const list = rows(layout, catalogue);
   const shownCount = list.filter((r) => r.shown).length;
+  const onBar = list.filter((r) => r.shown);
+  const offBar = list.filter((r) => !r.shown);
+  const [adding, setAdding] = useState(false);
+
+  const keyRow = (row: (typeof list)[number], i: number): React.ReactNode => (
+    <View key={row.key.id} style={{ flexDirection: "row", alignItems: "center", gap: SPACE.md, minHeight: 56, paddingLeft: SPACE.lg, paddingRight: SPACE.sm }}>
+      <Keycap label={row.key.label} off={!row.shown} />
+      <Text numberOfLines={1} style={{ color: row.shown ? C.text : C.text3, fontSize: 14.5, flex: 1 }}>{row.key.spoken}</Text>
+      {/* Only for what is on the bar: reordering something hidden moves it
+          within a list nobody can see. */}
+      {row.shown ? (
+        <>
+          <Arrow label={`Move ${row.key.spoken} earlier`} glyph="up" disabled={i === 0}
+            onPress={() => change(move(layout, catalogue, row.key.id, -1))} />
+          <Arrow label={`Move ${row.key.spoken} later`} glyph="down" disabled={i === shownCount - 1}
+            onPress={() => change(move(layout, catalogue, row.key.id, 1))} />
+        </>
+      ) : null}
+      <Pressable
+        onPress={() => change(toggle(layout, catalogue, row.key.id))}
+        // Not drawn as a dead switch: the last key on the bar is the one thing
+        // here that cannot be turned off, and it is dimmed rather than silent.
+        disabled={row.shown && !canHide(layout, catalogue, row.key.id)}
+        accessibilityRole="switch"
+        accessibilityState={{ checked: row.shown }}
+        accessibilityLabel={`${row.key.spoken} on the bar`}
+        style={{ height: TAP, justifyContent: "center", paddingHorizontal: SPACE.xs }}
+      >
+        <Switch on={row.shown} disabled={row.shown && !canHide(layout, catalogue, row.key.id)} />
+      </Pressable>
+    </View>
+  );
 
   return (
-    <ScrollView contentContainerStyle={{ padding: SPACE.lg, gap: SPACE.lg, paddingBottom: SPACE.xl }}>
-      <Stack.Screen options={{ title: "Key bar" }} />
-
-      <Section
-        label="The key bar"
-        note={
-          `${shownCount} of ${catalogue.length} keys are on the bar. About seven reach the fold `
-          + "on a 360dp phone; the rest are a drag away, so what is worth putting first is whatever "
-          + "you reach for without looking."
-        }
-        style={{ padding: 0, gap: 0 }}
-      >
-        {list.map((row, i) => {
-          const off = !row.shown;
-          const first = i === 0;
-          const last = i === list.length - 1;
-          return (
-            <View
-              key={row.key.id}
-              style={[
-                groupEdge(first, last),
-                {
-                  flexDirection: "row", alignItems: "center", gap: SPACE.sm,
-                  paddingHorizontal: SPACE.md, minHeight: TAP,
-                  // The group's own border is drawn by the Section's card, so
-                  // these only need the hairline between them.
-                  borderLeftWidth: 0, borderRightWidth: 0,
-                  borderTopWidth: 0,
-                  borderBottomWidth: last ? 0 : 1,
-                  borderRadius: 0,
-                  backgroundColor: "transparent",
-                },
-              ]}
+    <ScrollView contentContainerStyle={{ padding: SPACE.lg, paddingTop: SPACE.xs, gap: SPACE.xs, paddingBottom: SPACE.xl }}>
+      <Stack.Screen
+        options={{
+          title: "Key bar",
+          headerRight: () => (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => Alert.alert(
+                "Reset the key bar?",
+                // Said out loud because it is the one thing on this screen that
+                // cannot be undone by pressing it again.
+                "Every key goes back on the bar, in the order this app ships with. The order and everything you hid are forgotten.",
+                [{ text: "Keep it", style: "cancel" }, { text: "Reset", style: "destructive", onPress: () => change(reset()) }],
+              )}
+              style={({ pressed }) => ({ minHeight: TAP, justifyContent: "center", paddingHorizontal: SPACE.md, opacity: pressed ? 0.7 : 1 })}
             >
-              {/* The key as it appears on the bar, so the row is recognised by
-                  the thing it controls rather than by a name for it. */}
-              <View style={{
-                minWidth: 46, height: 30, alignItems: "center", justifyContent: "center",
-                borderRadius: RADIUS.sm, backgroundColor: off ? "transparent" : C.bg3,
-                borderWidth: 1, borderColor: off ? C.border : C.border2,
-                paddingHorizontal: SPACE.sm,
-              }}>
-                <Text style={{
-                  color: off ? C.text4 : C.text2, fontSize: T.small, fontFamily: MONO,
-                }}>{row.key.label}</Text>
+              <Text style={{ color: C.primary, fontSize: T.body, fontWeight: "600" }}>Reset</Text>
+            </Pressable>
+          ),
+        }}
+      />
+
+      {/* The bar as it will be drawn, so a change is seen as the thing it
+          changes. About seven reach the fold on a 360dp phone; the rest are a
+          drag away, so what is worth putting first is whatever you reach for
+          without looking. */}
+      <Text style={{ color: C.text3, fontSize: T.small, paddingHorizontal: SPACE.xs, paddingTop: SPACE.xs }}>
+        As it appears above the keyboard
+      </Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }} contentContainerStyle={{
+        gap: 6, padding: 10, borderRadius: RADIUS.lg, backgroundColor: C.bg2, borderWidth: 1, borderColor: C.border,
+      }}>
+        {onBar.map((row) => <Keycap key={row.key.id} label={row.key.label} />)}
+      </ScrollView>
+
+      <GroupTitle text={`On the bar · ${shownCount}`} />
+      <Group>{onBar.map((row, i) => keyRow(row, i))}</Group>
+
+      {offBar.length ? (
+        <>
+          <GroupTitle text={`Off the bar · ${offBar.length}`} />
+          <Group>{offBar.map((row, i) => keyRow(row, shownCount + i))}</Group>
+        </>
+      ) : null}
+
+      {/*
+        A key that sends whatever you give it. Most of what is worth a button on
+        a phone is not a control code — it is `git status`, `/clear`, or the one
+        long command this project needs. Sending a Return after it is the
+        difference between writing the command and running it.
+      */}
+      <GroupTitle text="Your own keys" />
+      {mine.length ? (
+        <Group>
+          {mine.map((k) => (
+            <View key={k.id} style={{ flexDirection: "row", alignItems: "center", gap: SPACE.md, minHeight: 56, paddingLeft: SPACE.lg, paddingRight: SPACE.xs }}>
+              <Keycap label={k.label} />
+              <View style={{ flex: 1, minWidth: 0, gap: 1 }}>
+                <Text numberOfLines={1} style={{ color: C.text, fontSize: 14, fontWeight: "500", fontFamily: MONO }}>{k.text}</Text>
+                <Text style={{ color: C.text3, fontSize: T.small }}>{k.enter ? "Runs it" : "Types it, you press Return"}</Text>
               </View>
-
-              <Text
-                numberOfLines={1}
-                style={{ color: off ? C.text4 : C.text, fontSize: T.small, flex: 1 }}
-              >{row.key.spoken}</Text>
-
-              {/* Only for what is on the bar: reordering something hidden moves
-                  it within a list nobody can see. */}
-              {row.shown ? (
-                <>
-                  <Arrow
-                    label="Move earlier"
-                    glyph="↑"
-                    disabled={i === 0}
-                    onPress={() => change(move(layout, catalogue, row.key.id, -1))}
-                  />
-                  <Arrow
-                    label="Move later"
-                    glyph="↓"
-                    disabled={i === shownCount - 1}
-                    onPress={() => change(move(layout, catalogue, row.key.id, 1))}
-                  />
-                </>
-              ) : null}
-
               <Pressable
-                onPress={() => change(toggle(layout, catalogue, row.key.id))}
-                // Not drawn as a dead switch: the last key on the bar is the
-                // one thing here that cannot be turned off, and a control that
-                // refuses silently teaches nothing.
-                disabled={row.shown && !canHide(layout, catalogue, row.key.id)}
-                accessibilityRole="switch"
-                accessibilityState={{ checked: row.shown }}
-                accessibilityLabel={`${row.key.spoken} on the bar`}
+                onPress={() => { const next = remove(mine, k.id); setCustomKeys(next); setMine(next); }}
+                accessibilityRole="button"
+                accessibilityLabel={`Delete the ${k.label} key`}
                 style={({ pressed }) => ({
-                  width: 40, height: TAP, alignItems: "center", justifyContent: "center",
-                  opacity: pressed ? 0.6 : 1,
+                  width: TAP, height: TAP, borderRadius: TAP / 2, alignItems: "center", justifyContent: "center",
+                  backgroundColor: pressed ? C.bg3 : "transparent",
                 })}
               >
-                <View style={{
-                  width: 20, height: 20, borderRadius: 5,
-                  alignItems: "center", justifyContent: "center",
-                  borderWidth: 1, borderColor: row.shown ? C.primary : C.border2,
-                  backgroundColor: row.shown ? C.primary : "transparent",
-                }} />
+                <Glyph name="trash" color={C.text3} size={20} />
               </Pressable>
             </View>
-          );
-        })}
-      </Section>
-
-      <Section
-        label="Your own keys"
-        note={
-          "A key that sends whatever you give it. Most of what is worth a button on a phone is not "
-          + "a control code — it is `git status`, `/clear`, or the one long command this project "
-          + "needs. Sending a Return after it is the difference between writing the command and "
-          + "running it."
-        }
-      >
-        {mine.length === 0 ? <Note>None yet.</Note> : null}
-        {mine.map((k) => (
-          <View
-            key={k.id}
-            style={{ flexDirection: "row", alignItems: "center", gap: SPACE.md, minHeight: TAP }}
-          >
-            <View style={{
-              minWidth: 46, height: 30, alignItems: "center", justifyContent: "center",
-              borderRadius: RADIUS.sm, backgroundColor: C.bg3,
-              borderWidth: 1, borderColor: C.border2, paddingHorizontal: SPACE.sm,
-            }}>
-              <Text style={{ color: C.text2, fontSize: T.small, fontFamily: MONO }}>{k.label}</Text>
-            </View>
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <Text numberOfLines={1} style={{ color: C.text2, fontSize: T.small, fontFamily: MONO }}>
-                {k.text}
-              </Text>
-              <Text style={{ color: C.text3, fontSize: T.eyebrow }}>
-                {k.enter ? "and runs it" : "puts it on the line"}
-              </Text>
-            </View>
-            <Pressable
-              onPress={() => { const next = remove(mine, k.id); setCustomKeys(next); setMine(next); }}
-              accessibilityRole="button"
-              accessibilityLabel={`Delete the ${k.label} key`}
-              style={({ pressed }) => ({
-                width: 40, height: TAP, alignItems: "center", justifyContent: "center",
-                opacity: pressed ? 0.6 : 1,
-              })}
-            >
-              <Text style={{ color: C.error, fontSize: T.body }}>×</Text>
-            </Pressable>
-          </View>
-        ))}
-
+          ))}
+        </Group>
+      ) : (
+        <View style={{ paddingHorizontal: SPACE.xs }}>
+          <Note>A key that sends whatever you give it: `git status`, `/clear`, the one long command this project needs.</Note>
+        </View>
+      )}
+      <View style={{ paddingTop: SPACE.md }}>
         {mine.length < MAX_CUSTOM ? (
-          <View style={{ gap: SPACE.sm, paddingTop: SPACE.sm }}>
-            <View style={{ flexDirection: "row", gap: SPACE.sm }}>
-              <Field
-                value={label}
-                onChangeText={setLabel}
-                placeholder="Key"
-                kind="code"
-                style={{ width: 92 }}
-              />
-              <Field
-                value={text}
-                onChangeText={setText}
-                placeholder="What it sends"
-                kind="code"
-                style={{ flex: 1 }}
-              />
-            </View>
-            <Toggle
-              on={enter}
-              label={enter ? "And press Return" : "Leave it on the line"}
-              onPress={() => setEnter((v) => !v)}
-            />
-            {problem ? <Note tone="bad">{problem}</Note> : null}
-            <Btn
-              label="Add it"
-              disabled={!label.trim() || !text}
-              onPress={() => {
-                const made = { id: mintId(Date.now(), Math.random()), label, text, enter };
-                const why = problemWith(made);
-                if (why) { setProblem(why); return; }
-                const next = add(mine, made);
-                setCustomKeys(next);
-                setMine(next);
-                setLabel(""); setText(""); setEnter(false); setProblem(null);
-              }}
-            />
-          </View>
+          <Btn label="Add a key" onPress={() => { setProblem(null); setAdding(true); }} />
         ) : (
           <Note>{MAX_CUSTOM} is the most. Past a dozen, scrolling the bar is the problem again.</Note>
         )}
-      </Section>
+      </View>
 
-      <Section
-        label="Start again"
-        note="Every key back on the bar, in the order this app ships with."
-      >
-        <Btn label="Reset the key bar" onPress={() => change(reset())} />
-        <Note>
-          {/* Said out loud because it is the one thing on this screen that
-              cannot be undone by pressing it again. */}
-          This forgets the order and everything you have hidden.
-        </Note>
-      </Section>
+      <Sheet open={adding} onClose={() => setAdding(false)} title="New key">
+        <View style={{ gap: SPACE.md, paddingBottom: SPACE.md }}>
+          <View style={{ flexDirection: "row", gap: SPACE.sm }}>
+            <Field value={label} onChangeText={setLabel} placeholder="Key" label="Label" kind="code" style={{ width: 92 }} />
+            <View style={{ flex: 1 }}>
+              <Field value={text} onChangeText={setText} placeholder="What it sends" label="Sends" kind="code" />
+            </View>
+          </View>
+          <Group>
+            <Row
+              title="Press Return after it"
+              sub={enter ? "Runs it" : "Leaves it on the line for you to finish"}
+              checked={enter}
+              trail={<Switch on={enter} />}
+              onPress={() => setEnter((v) => !v)}
+            />
+          </Group>
+          {problem ? <Note tone="bad">{problem}</Note> : null}
+          <Btn
+            label="Add key"
+            tone="primary"
+            disabled={!label.trim() || !text}
+            onPress={() => {
+              const made = { id: mintId(Date.now(), Math.random()), label, text, enter };
+              const why = problemWith(made);
+              if (why) { setProblem(why); return; }
+              const next = add(mine, made);
+              setCustomKeys(next);
+              setMine(next);
+              setLabel(""); setText(""); setEnter(false); setProblem(null);
+              setAdding(false);
+            }}
+          />
+        </View>
+      </Sheet>
     </ScrollView>
+  );
+}
+
+/** A key as the bar draws it, so each row is recognised by the thing it
+ *  controls rather than by a name for it. */
+function Keycap({ label, off }: { label: string; off?: boolean }): React.ReactNode {
+  return (
+    <View style={{
+      minWidth: 46, height: 32, alignItems: "center", justifyContent: "center", paddingHorizontal: SPACE.sm,
+      borderRadius: RADIUS.sm, backgroundColor: off ? "transparent" : C.bg3, borderWidth: 1, borderColor: C.border2,
+    }}>
+      <Text style={{ color: off ? C.text3 : C.text, fontSize: 13, fontFamily: MONO }}>{label}</Text>
+    </View>
   );
 }
 
@@ -278,7 +252,7 @@ export default function TerminalSettingsScreen(): React.ReactNode {
  *  treatment and the tap target are written once. */
 function Arrow({ label, glyph, disabled, onPress }: {
   label: string;
-  glyph: string;
+  glyph: "up" | "down";
   disabled: boolean;
   onPress: () => void;
 }): React.ReactNode {
@@ -289,11 +263,14 @@ function Arrow({ label, glyph, disabled, onPress }: {
       accessibilityRole="button"
       accessibilityLabel={label}
       style={({ pressed }) => ({
-        width: 34, height: TAP, alignItems: "center", justifyContent: "center",
-        opacity: disabled ? 0.25 : pressed ? 0.6 : 1,
+        width: 40, height: TAP, borderRadius: 20, alignItems: "center", justifyContent: "center",
+        opacity: disabled ? 0.25 : 1, backgroundColor: pressed ? C.bg3 : "transparent",
       })}
     >
-      <Text style={{ color: C.text3, fontSize: T.body }}>{glyph}</Text>
+      {/* One chevron, turned for "earlier": the pair reads as a pair. */}
+      <View style={{ transform: [{ rotate: glyph === "up" ? "180deg" : "0deg" }] }}>
+        <Glyph name="down" color={C.text2} size={20} />
+      </View>
     </Pressable>
   );
 }
