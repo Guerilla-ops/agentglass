@@ -64,7 +64,7 @@ const ROUTES: { path: string; name: string; expect: RegExp; pane?: boolean }[] =
   // A `read` pairing gets the Terminal screen's own refusal, not a pane.
   { path: "/terminal", name: "Terminal", pane: true,
     expect: /Attaching|Disconnected|Nothing open|Looking|only looks|answers agents|·p\d|^\s*\d+ /im },
-  { path: "/prs", name: "PRs", expect: /My review|Nothing open|Cannot ask GitHub/i },
+  { path: "/prs", name: "PRs", expect: /Review|Nothing open|Can.t ask GitHub/i },
   // The detail is reached with two params and nothing else knows them, so this
   // walks it directly. `#0` is not a pull request anywhere, which is the point:
   // what is asserted is that the screen mounts and SAYS it could not read it,

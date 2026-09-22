@@ -1,38 +1,56 @@
 /*
- * Pull requests, per repository.
+ * Pull requests, across every repository at once.
  *
- * Three questions get answered on the row itself, because they are the ones
- * that decide whether you open it at all: is CI red, has somebody approved it,
- * and how big is it. A row that makes you tap to find out CI failed is a row
- * that sends you to a browser.
+ * ── all of them, then narrowed ───────────────────────────────────────────
+ * The screen used to show ONE repository, picked from a sheet behind the
+ * title, which meant the question "is anything waiting on me" had to be asked
+ * once per repository. It opens on all of them now, grouped under each
+ * repository's name, and a row of chips narrows it to one.
  *
- * The check rollup arrives on a SECOND pass — it costs about four times the
- * rest of the row — so a row that has not had it says "checks…" rather than
- * "no checks". Those are different claims and only one of them is true at that
- * moment.
+ * Capped at the eight most recently touched repositories, and the cap is a
+ * real limit stated rather than hidden: each costs a GitHub-backed request per
+ * filter, and a machine with thirty would spend a minute of radio to draw a
+ * list whose bottom nobody scrolls to. Picking a chip reaches any of them.
+ *
+ * ── the row ──────────────────────────────────────────────────────────────
+ * Three lines, each answering one of the questions that decide whether it is
+ * opened: the title beside a mark that says what CI thinks; the review and
+ * the checks as chips, with the size; and whose it is, how old, and its
+ * number. The words and tones are decided in model/prLook.ts.
  */
-import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { FlatList, Pressable, RefreshControl, Text, View } from "react-native";
-import { useNavigation, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import type { GitRepoRef, PrSummary } from "../../../shared/types.ts";
 import { ask } from "../../src/lib/api.ts";
 import { useAgentglass } from "../../src/state/host-context.tsx";
 import { usePaletteTick } from "../../src/state/use-palette.ts";
-import { Card, HeaderPick, Label, Note, Segmented, Sheet, SheetRow, groupEdge } from "../../src/ui.tsx";
+import { Card, Chip, FilterChips, GroupTitle, Note, Segmented, groupEdge } from "../../src/ui.tsx";
 import { mainCheckouts } from "../../src/model/prRows.ts";
+import { ciLook, flatten, reviewLook, type CiMark, type RepoGroup } from "../../src/model/prLook.ts";
+import { Glyph, type GlyphName } from "../../src/nav/glyphs.tsx";
 import { since } from "../../src/lib/dates.ts";
-import { C, MONO, RADIUS, SPACE, T } from "../../src/theme.ts";
+import { C, MONO, SPACE, T } from "../../src/theme.ts";
 
 type Filter = "mine" | "review" | "all";
 
 /** "review" first is deliberate: somebody is blocked on you in that one. */
 const FILTERS: Filter[] = ["review", "mine", "all"];
 const FILTER_LABEL: Record<Filter, string> = {
-  review: "My review",
+  review: "Review",
   mine: "Mine",
   all: "All",
 };
 
+/** How many repositories "All repos" asks. See the note at the top. */
+const REPO_CAP = 8;
+const ALL = "*";
+
+/** What `/prs/list` answers with.
+ *
+ *  Declared here rather than imported because the server's copy lives in
+ *  `server/src/prs.ts` and not in `shared/types.ts` — this app compiles
+ *  against the shared wire types and nothing else. */
 interface PrList {
   ok: boolean;
   error?: string;
@@ -42,85 +60,64 @@ interface PrList {
   total?: number;
 }
 
-/** What `/prs/counts` answers with.
- *
- *  Declared here rather than imported, the same way `PrList` above is, because
- *  the server's copy lives in `server/src/prs.ts` and not in `shared/types.ts`
- *  — this app compiles against the shared wire types and nothing else. The one
- *  field this screen reads is named after a filter, which is what keeps the two
- *  in step: a rename on either side stops matching `FILTERS`. */
+/** What `/prs/counts` answers with. Same reason as `PrList`. The one field
+ *  this screen reads is named after a filter, which is what keeps the two in
+ *  step: a rename on either side stops matching `FILTERS`. */
 interface PrViewCounts { review: number; mine: number; failing: number; ready: number; all: number }
 
-/** What CI is saying, in one chip. Null when there is genuinely nothing to say. */
-function checkChip(pr: PrSummary): { text: string; ink: string } | null {
-  if (pr.checksLoaded === false) return { text: "checks…", ink: C.text4 };
-  const { total, failure, pending, verdict } = pr.checks ?? { total: 0, failure: 0, pending: 0, verdict: null };
-  if (!total) return null;
-  if (failure > 0) return { text: `${failure} failed`, ink: C.error };
-  if (pending > 0) return { text: `${pending} running`, ink: C.warning };
-  if (verdict === "green") return { text: "green", ink: C.success };
-  return null;
-}
+const MARK: Record<CiMark, { glyph: GlyphName; ink: () => string; says: string }> = {
+  fail: { glyph: "x_circle", ink: () => C.error, says: "Checks failed" },
+  run: { glyph: "run_circle", ink: () => C.warning, says: "Checks running" },
+  ok: { glyph: "ok_circle", ink: () => C.success, says: "Checks passed" },
+  draft: { glyph: "draft_circle", ink: () => C.text3, says: "Draft" },
+  none: { glyph: "circle", ink: () => C.text4, says: "No checks" },
+  loading: { glyph: "circle", ink: () => C.text4, says: "Checks not read yet" },
+};
 
-/** Approved, or blocked on a review. Draft outranks both — a draft is nobody's
- *  problem yet, and colouring it "review required" adds a queue entry that is
- *  not real. */
-function reviewChip(pr: PrSummary): { text: string; ink: string } | null {
-  if (pr.isDraft) return { text: "draft", ink: C.text4 };
-  if (pr.reviewDecision === "APPROVED") return { text: "approved", ink: C.success };
-  if (pr.reviewDecision === "CHANGES_REQUESTED") return { text: "changes asked", ink: C.error };
-  if (pr.reviewDecision === "REVIEW_REQUIRED") return { text: "needs review", ink: C.warning };
-  return null;
-}
-
-function Chip({ text, ink }: { text: string; ink: string }): React.ReactNode {
-  return (
-    <View style={{
-      paddingHorizontal: SPACE.sm, paddingVertical: 2, borderRadius: RADIUS.sm,
-      borderWidth: 1, borderColor: ink,
-    }}>
-      <Text style={{ color: ink, fontSize: T.eyebrow }}>{text}</Text>
-    </View>
-  );
-}
-
-function Row({ pr, now, onOpen }: {
+function Row({ pr, now, forMe, onOpen }: {
   pr: PrSummary;
   now: number;
+  forMe: boolean;
   onOpen: () => void;
 }): React.ReactNode {
-  const checks = checkChip(pr);
-  const review = reviewChip(pr);
+  const ci = ciLook(pr);
+  const review = reviewLook(pr, forMe);
+  const mark = MARK[ci.mark];
   return (
-    <Pressable onPress={onOpen} accessibilityRole="button">
-      {/* Padding, not a card. The surface and the border belong to the group
-          this row sits in — see groupEdge in src/ui.tsx — and a Card here
-          would draw a second one inside the first. */}
-      <View style={{ padding: SPACE.lg, gap: SPACE.sm }}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: SPACE.sm }}>
-          <Text style={{ color: C.text4, fontSize: T.eyebrow, fontFamily: MONO }}>#{pr.number}</Text>
-          <Text style={{ color: C.text4, fontSize: T.eyebrow }}>{pr.author}</Text>
-          <View style={{ flex: 1 }} />
-          <Text style={{ color: C.text4, fontSize: T.eyebrow }}>{since(pr.updatedAt, now)}</Text>
+    <Pressable
+      onPress={onOpen}
+      accessibilityRole="button"
+      accessibilityLabel={`${pr.title}. ${mark.says}${ci.label ? `, ${ci.label}` : ""}. ${review?.label ?? ""}. #${pr.number} by ${pr.author}`}
+    >
+      {({ pressed }) => (
+        /* Padding, not a card. The surface and the border belong to the group
+           this row sits in — see groupEdge in src/ui.tsx. */
+        <View style={{
+          flexDirection: "row", gap: SPACE.md, paddingHorizontal: SPACE.lg, paddingVertical: 14,
+          backgroundColor: pressed ? C.bg3 : "transparent",
+        }}>
+          <View style={{ paddingTop: 1 }}><Glyph name={mark.glyph} color={mark.ink()} size={20} weight={1.9} /></View>
+          <View style={{ flex: 1, minWidth: 0, gap: 6 }}>
+            <Text numberOfLines={2} style={{ color: C.text, fontSize: 15, fontWeight: "500", lineHeight: 20 }}>
+              {pr.title}
+            </Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              {review ? <Chip label={review.label} tone={review.tone} /> : null}
+              {ci.label ? <Chip label={ci.label} tone={ci.tone} /> : null}
+              <View style={{ flex: 1 }} />
+              {/* Size, because "is this ten minutes or an afternoon" is the other
+                  thing that decides whether you open it now. */}
+              <Text style={{ fontSize: T.small, fontFamily: MONO }}>
+                <Text style={{ color: C.success }}>+{pr.additions}</Text>
+                <Text style={{ color: C.error }}> −{pr.deletions}</Text>
+              </Text>
+            </View>
+            <Text numberOfLines={1} style={{ color: C.text3, fontSize: T.small }}>
+              #{pr.number} · {pr.author} · {since(pr.updatedAt, now)}
+            </Text>
+          </View>
         </View>
-
-        <Text style={{ color: C.text, fontSize: T.body, lineHeight: 19 }}>{pr.title}</Text>
-
-        <View style={{ flexDirection: "row", alignItems: "center", gap: SPACE.sm, flexWrap: "wrap" }}>
-          {review ? <Chip {...review} /> : null}
-          {checks ? <Chip {...checks} /> : null}
-          {/* Size, because "is this ten minutes or an afternoon" is the other
-              thing that decides whether you open it now. */}
-          <Text style={{ color: C.text4, fontSize: T.eyebrow, fontFamily: MONO }}>
-            {pr.changedFiles}f <Text style={{ color: C.success }}>+{pr.additions}</Text>{" "}
-            <Text style={{ color: C.error }}>−{pr.deletions}</Text>
-          </Text>
-        </View>
-
-        <Text style={{ color: C.text4, fontSize: T.eyebrow, fontFamily: MONO }} numberOfLines={1}>
-          {pr.headRefName} → {pr.baseRefName}
-        </Text>
-      </View>
+      )}
     </Pressable>
   );
 }
@@ -128,125 +125,131 @@ function Row({ pr, now, onOpen }: {
 export default function PrsScreen(): React.ReactNode {
   usePaletteTick(); // a scene repaints only if it asks — see use-palette.ts
   const { host } = useAgentglass();
-  const navigation = useNavigation();
   const router = useRouter();
   const [repos, setRepos] = useState<GitRepoRef[] | null>(null);
-  const [root, setRoot] = useState<string | null>(null);
-  const [picking, setPicking] = useState(false);
+  /** A repository's root, or ALL. */
+  const [pick, setPick] = useState<string>(ALL);
   const [filter, setFilter] = useState<Filter>("review");
-  const [list, setList] = useState<PrList | null>(null);
+  const [groups, setGroups] = useState<RepoGroup<PrSummary>[] | null>(null);
+  const [failed, setFailed] = useState<{ error: string; needsAuth: boolean } | null>(null);
+  const [loading, setLoading] = useState(false);
   /**
-   * The five numbers behind the segmented control.
+   * The numbers behind the segmented control, summed over what is shown.
    *
-   * `/prs/counts` answers all of them in ONE GraphQL call and caches it, which
-   * is the whole reason the control can carry counts at all: the alternative
-   * was three list requests to label three segments.
-   *
+   * `/prs/counts` answers all of them in ONE GraphQL call per repository and
+   * caches it, which is the whole reason the control can carry counts at all.
    * Null while it has not answered, and the control simply draws no numbers —
-   * a zero on "My review" that means "we have not asked" is the kind of lie
-   * this app spends comments avoiding elsewhere.
+   * a zero on "Review" that means "we have not asked" is the kind of lie this
+   * app spends comments avoiding elsewhere.
    */
   const [counts, setCounts] = useState<PrViewCounts | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [pulling, setPulling] = useState(false);
 
   useEffect(() => {
     if (!host) return;
     void (async () => {
       const answer = await ask<{ repos: GitRepoRef[] }>(host, "/git/repos");
-      if (!answer.ok) { setError(answer.error); return; }
+      if (!answer.ok) { setFailed({ error: answer.error, needsAuth: false }); return; }
       /*
        * One entry per REPOSITORY, not per checkout.
        *
-       * Measured against the real machine: 23 checkouts, six of them linked
+       * Measured against a real machine: 23 checkouts, six of them linked
        * worktrees of one repository, each answering with the same 19 pull
-       * requests. A strip of six identical-looking tabs showing identical
-       * lists is not a choice — it is the same answer six times, and it pushes
-       * every other repository off the screen.
+       * requests. Six identical-looking chips showing identical lists are not
+       * a choice — they are the same answer six times.
        *
        * `mainCheckouts` is the browser companion's, already tested: it drops a
        * worktree whose main checkout is present and KEEPS one whose main
        * checkout is not, because that repository's pull requests have to come
-       * from somewhere.
+       * from somewhere. Most recently touched first is what `/git/repos`
+       * already answers with.
        */
-      const found = mainCheckouts(Array.isArray(answer.value.repos) ? answer.value.repos : []);
-      setRepos(found);
-      // Most recently touched first is what `/git/repos` already answers with,
-      // so the default is the repository you were last in.
-      setRoot((current) => current ?? found[0]?.root ?? null);
+      setRepos(mainCheckouts(Array.isArray(answer.value.repos) ? answer.value.repos : []));
     })();
   }, [host]);
 
+  const shown = useMemo(
+    () => (repos ?? []).filter((r) => pick === ALL || r.root === pick).slice(0, pick === ALL ? REPO_CAP : 1),
+    [repos, pick],
+  );
+
   const load = useCallback(async (): Promise<void> => {
-    if (!host || !root) return;
-    const query = `root=${encodeURIComponent(root)}&filter=${filter}&state=open`;
-    const answer = await ask<PrList>(host, `/prs/list?${query}`);
-    if (!answer.ok) { setError(answer.error); setList(null); return; }
-    setError(null);
-    setList(answer.value);
-  }, [host, root, filter]);
+    if (!host || !shown.length) return;
+    const answers = await Promise.all(shown.map(async (repo) => ({
+      repo,
+      answer: await ask<PrList>(host, `/prs/list?root=${encodeURIComponent(repo.root)}&filter=${filter}&state=open`),
+    })));
+    const good = answers.filter((a) => a.answer.ok && a.answer.value.ok);
+    // Said only when NOTHING answered: one repository without a GitHub remote
+    // among eight is not a reason to hide the other seven.
+    if (!good.length) {
+      const first = answers[0]?.answer;
+      setFailed({
+        error: first && !first.ok ? first.error : (first?.ok && first.value.error) || "GitHub did not answer",
+        needsAuth: answers.some((a) => a.answer.ok && a.answer.value.needsAuth),
+      });
+      setGroups(null);
+      return;
+    }
+    setFailed(null);
+    setLoading(good.some((a) => a.answer.ok && a.answer.value.loading));
+    setGroups(good.map(({ repo, answer }) => ({
+      root: repo.root,
+      name: repo.name,
+      items: answer.ok && Array.isArray(answer.value.prs) ? answer.value.prs : [],
+    })));
+  }, [host, shown, filter]);
 
-  useEffect(() => { setList(null); void load(); }, [load]);
+  useEffect(() => { setGroups(null); void load(); }, [load]);
 
-  // Counts follow the repository and not the filter — they are the counts OF
+  // Counts follow what is shown and not the filter — they are the counts OF
   // the filters, so re-asking when one is tapped would be asking the same
   // question again.
   useEffect(() => {
-    if (!host || !root) return;
+    if (!host || !shown.length) return;
     let gone = false;
     setCounts(null);
     void (async () => {
-      const answer = await ask<{ ok: boolean; counts?: PrViewCounts }>(
-        host, `/prs/counts?root=${encodeURIComponent(root)}&state=open`,
-      );
-      if (gone || !answer.ok || !answer.value.ok) return;
-      setCounts(answer.value.counts ?? null);
+      const answers = await Promise.all(shown.map((r) =>
+        ask<{ ok: boolean; counts?: PrViewCounts }>(host, `/prs/counts?root=${encodeURIComponent(r.root)}&state=open`)));
+      if (gone) return;
+      const got = answers.flatMap((a) => (a.ok && a.value.ok && a.value.counts ? [a.value.counts] : []));
+      if (!got.length) return;
+      setCounts(got.reduce((sum, c) => ({
+        review: sum.review + c.review, mine: sum.mine + c.mine, failing: sum.failing + c.failing,
+        ready: sum.ready + c.ready, all: sum.all + c.all,
+      })));
     })();
     return () => { gone = true; };
-  }, [host, root]);
-
-  const repo = repos?.find((r) => r.root === root) ?? null;
-
-  /*
-   * The repository moved into the header, and the strip under it is gone.
-   *
-   * setOptions rather than an inline options prop, for the reason the old
-   * Review screen wrote down: that component's effect keys on the options
-   * OBJECT, so a literal is a fresh reference every render and calls
-   * setOptions on each one. This fires when the name changes and not
-   * otherwise. The closure reads the palette at header render time, so a theme
-   * change still repaints it.
-   */
-  useLayoutEffect(() => {
-    navigation.setOptions({
-      headerTitleAlign: "center",
-      headerTitle: () => (
-        <HeaderPick label={repo?.name ?? "Pull requests"} onPress={() => setPicking(true)} />
-      ),
-    });
-  }, [navigation, repo?.name]);
+  }, [host, shown]);
 
   // The check rollup lands on a second pass, so one re-read a moment later is
   // the difference between "checks…" forever and the row settling.
   useEffect(() => {
-    if (!list?.loading) return;
+    if (!loading) return;
     const timer = setTimeout(() => { void load(); }, 2500);
     return () => clearTimeout(timer);
-  }, [list?.loading, load]);
+  }, [loading, load]);
 
   const onRefresh = useCallback((): void => {
     setPulling(true);
     void load().finally(() => setPulling(false));
   }, [load]);
 
-  const prs = useMemo(() => (Array.isArray(list?.prs) ? list.prs : []), [list]);
+  const rows = useMemo(() => flatten(groups ?? []), [groups]);
+  const isItem = (r: (typeof rows)[number] | undefined): boolean => !!r && "item" in r;
   const now = Date.now();
 
   if (!host) return null;
 
+  const chips = [
+    { id: ALL, label: "All repos" },
+    ...(repos ?? []).map((r) => ({ id: r.root, label: r.name })),
+  ];
+
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
-      <View style={{ paddingHorizontal: SPACE.lg, paddingTop: SPACE.md }}>
+      <View style={{ paddingHorizontal: SPACE.lg, paddingTop: SPACE.xs, paddingBottom: SPACE.md }}>
         <Segmented
           value={filter}
           onChange={setFilter}
@@ -257,61 +260,52 @@ export default function PrsScreen(): React.ReactNode {
           }))}
         />
       </View>
-
-      <Sheet open={picking} onClose={() => setPicking(false)} title="Repository">
-        {(repos ?? []).map((r) => (
-          <SheetRow
-            key={r.root}
-            label={r.name}
-            sub={`${r.branch}${r.ahead ? ` · ${r.ahead} to push` : ""}${r.behind ? ` · ${r.behind} behind` : ""}`}
-            on={r.root === root}
-            onPress={() => { setRoot(r.root); setPicking(false); }}
-          />
-        ))}
-        {/* Said once, at the bottom, because a list of twenty-three that has
-            silently become nine needs to account for the fourteen. */}
-        <View style={{ paddingTop: SPACE.md }}>
-          <Note>
-            Worktrees are folded into the repository they belong to — several checkouts of one
-            repository answer with the same pull requests.
-          </Note>
-        </View>
-      </Sheet>
+      {/* Only with more than one repository: a single chip is a label. */}
+      {(repos?.length ?? 0) > 1 ? <FilterChips label="Repository" options={chips} value={pick} onChange={setPick} /> : null}
 
       <FlatList
-        data={prs}
-        keyExtractor={(pr) => String(pr.number)}
+        data={rows}
+        keyExtractor={(row) => ("heading" in row ? `h:${row.heading}` : `${row.root}#${row.item.number}`)}
         /* No gap between rows: they are one card divided by hairlines, not a
            stack of cards. See groupEdge in src/ui.tsx. */
-        contentContainerStyle={{ padding: SPACE.lg, paddingBottom: SPACE.xl }}
+        contentContainerStyle={{ padding: SPACE.lg, paddingTop: SPACE.sm, paddingBottom: SPACE.xl }}
         refreshControl={<RefreshControl refreshing={pulling} onRefresh={onRefresh} tintColor={C.text3} />}
         ListEmptyComponent={
-          list === null && !error ? null : (
+          groups === null && !failed ? null : (
             <Card>
-              <Label text={error || list?.error ? "Cannot ask GitHub" : "Nothing open"} />
-              <Note tone={error || list?.error ? "bad" : "quiet"}>
-                {error
-                  ?? list?.error
-                  ?? (list?.needsAuth
-                    ? "GitHub has not been signed in to on the computer — run `gh auth login` there."
-                    : "No open pull request matches this filter in this repository.")}
+              <Text style={{ color: failed ? C.error : C.text, fontSize: T.body, fontWeight: "600" }}>
+                {failed ? "Can't ask GitHub" : "Nothing open"}
+              </Text>
+              <Note tone={failed ? "bad" : "quiet"}>
+                {failed
+                  ? (failed.needsAuth
+                    ? "GitHub has not been signed in to on the computer. Run `gh auth login` there."
+                    : failed.error)
+                  : filter === "review"
+                    ? "Nobody is waiting on your review."
+                    : `No open pull request matches this filter${pick === ALL ? "" : " in this repository"}.`}
               </Note>
             </Card>
           )
         }
-        renderItem={({ item, index }) => (
-          <View style={groupEdge(index === 0, index === prs.length - 1)}>
-            <Row
-            pr={item}
-            now={now}
-            // The object form, not a built string: a checkout path is full of
-            // characters a URL segment has opinions about, and `root` is one.
-            onOpen={() => router.push({
-              pathname: "/pr/[number]",
-              params: { number: String(item.number), root: root ?? "" },
-            })}
-          />
-        </View>
+        renderItem={({ item: row, index }) => (
+          "heading" in row
+            ? <GroupTitle text={row.heading} trailing={<Text style={{ color: C.text3, fontSize: 13 }}>{row.count}</Text>} />
+            : (
+              <View style={groupEdge(!isItem(rows[index - 1]), !isItem(rows[index + 1]))}>
+                <Row
+                  pr={row.item}
+                  now={now}
+                  forMe={filter === "review"}
+                  // The object form, not a built string: a checkout path is full
+                  // of characters a URL segment has opinions about.
+                  onOpen={() => router.push({
+                    pathname: "/pr/[number]",
+                    params: { number: String(row.item.number), root: row.root },
+                  })}
+                />
+              </View>
+            )
         )}
       />
     </View>

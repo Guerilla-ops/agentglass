@@ -14,7 +14,7 @@ import {
   type StyleProp, type TextStyle, type ViewStyle,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { C, RADIUS, SCRIM, SPACE, T, ink } from "./theme.ts";
+import { C, RADIUS, SCRIM, SPACE, T, ink, tint } from "./theme.ts";
 import { ChevronIcon } from "./nav/icons.tsx";
 
 /**
@@ -639,5 +639,88 @@ export function Row({ title, sub, lead, trail, chevron, onPress, disabled, tone,
     >
       {({ pressed }) => body(pressed)}
     </Pressable>
+  );
+}
+
+export type ChipTone = "neutral" | "accent" | "good" | "warn" | "bad";
+
+/**
+ * A short fact in a pill: "Approved", "2 failed", "bug".
+ *
+ * There were four: an outlined one in the pull requests, a tinted one on the
+ * cards, a label pill on issues and a status pill on the card detail, each
+ * with its own radius and padding. One now, filled with a tint of its tone and
+ * written in the tone itself, so the colour carries the meaning twice and the
+ * word carries it for somebody who cannot see the colour.
+ */
+export function Chip({ label, tone = "neutral", icon }: {
+  label: string;
+  tone?: ChipTone;
+  icon?: ReactNode;
+}): ReactNode {
+  const ink_ = tone === "accent" ? C.primary : tone === "good" ? C.success : tone === "warn" ? C.warning
+    : tone === "bad" ? C.error : C.text2;
+  return (
+    <View style={{
+      flexDirection: "row", alignItems: "center", gap: 4, height: 24, paddingHorizontal: 8,
+      borderRadius: 6, backgroundColor: tone === "neutral" ? C.bg3 : tint(ink_, 0.14), flexShrink: 1,
+    }}>
+      {icon}
+      <Text numberOfLines={1} style={{ color: ink_, fontSize: T.small, fontWeight: "500" }}>{label}</Text>
+    </View>
+  );
+}
+
+/**
+ * A row of filters, scrolled sideways: "All repos", then each repository.
+ *
+ * A scrolling row rather than the full-width `Segmented`, because this list
+ * grows with the machine and a segmented control cannot. The selected one is
+ * filled and ticked, so it is findable without reading every label.
+ */
+export function FilterChips<V extends string>({ options, value, onChange, label }: {
+  options: { id: V; label: string }[];
+  value: V;
+  onChange: (v: V) => void;
+  label: string;
+}): ReactNode {
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      accessibilityLabel={label}
+      contentContainerStyle={{ paddingHorizontal: SPACE.lg, gap: SPACE.sm }}
+      style={{ flexGrow: 0 }}
+    >
+      {options.map((o) => {
+        const on = o.id === value;
+        return (
+          <Pressable
+            key={o.id}
+            accessibilityRole="radio"
+            accessibilityState={{ checked: on }}
+            onPress={() => onChange(o.id)}
+            hitSlop={{ top: 8, bottom: 8 }}
+            style={({ pressed }) => ({
+              flexDirection: "row", alignItems: "center", gap: 6, height: 32,
+              paddingHorizontal: 12, borderRadius: RADIUS.sm,
+              backgroundColor: on ? tint(C.primary, 0.16) : "transparent",
+              borderWidth: 1, borderColor: on ? "transparent" : C.border2,
+              transform: [{ scale: pressed ? 0.97 : 1 }],
+            })}
+          >
+            {on ? (
+              <View style={{
+                width: 9, height: 5, borderLeftWidth: 2, borderBottomWidth: 2, borderColor: C.primary,
+                transform: [{ rotate: "-45deg" }], marginTop: -2,
+              }} />
+            ) : null}
+            <Text style={{ color: on ? C.primary : C.text2, fontSize: 13, fontWeight: on ? "600" : "500" }}>
+              {o.label}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </ScrollView>
   );
 }
