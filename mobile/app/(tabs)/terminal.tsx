@@ -2302,7 +2302,10 @@ function TerminalPane(): React.ReactNode {
             <SheetRow
               label="Source control"
               sub="What has changed, the commits, the pull request"
-              onPress={() => { setMore(false); router.push("/repos"); }}
+              onPress={() => {
+                setMore(false);
+                router.push({ pathname: "/repos", params: { root: open.where } });
+              }}
             />
             <SheetRow
               label="Files"

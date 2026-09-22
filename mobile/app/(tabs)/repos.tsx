@@ -26,8 +26,9 @@ import { useAgentglass } from "../../src/state/host-context.tsx";
 import { usePaletteTick } from "../../src/state/use-palette.ts";
 import { Btn, Card, Label, Note, Segmented, TAP, groupEdge } from "../../src/ui.tsx";
 import { C, MONO, RADIUS, SPACE, T } from "../../src/theme.ts";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { ChevronIcon } from "../../src/nav/icons.tsx";
+import { checkoutFor } from "../../src/model/checkout.ts";
 
 /** The glyph for what happened to a file. A letter as well as a colour: at
  *  11px outdoors, colour alone is not a signal to rely on, and for a good
@@ -109,6 +110,9 @@ interface BranchPrs {
 export default function ReposScreen(): React.ReactNode {
   usePaletteTick(); // a scene repaints only if it asks — see use-palette.ts
   const { host } = useAgentglass();
+  /** The checkout it was opened for — the terminal passes the pane's own
+   *  directory. See model/checkout.ts for why this is not `found[0]`. */
+  const asked = useLocalSearchParams<{ root?: string }>().root || null;
   const [repos, setRepos] = useState<GitRepoRef[] | null>(null);
   const [root, setRoot] = useState<string | null>(null);
   const [status, setStatus] = useState<RepoStatus | null>(null);
@@ -137,9 +141,10 @@ export default function ReposScreen(): React.ReactNode {
       if (!answer.ok) { setSaid({ ok: false, text: answer.error }); return; }
       const found = Array.isArray(answer.value.repos) ? answer.value.repos : [];
       setRepos(found);
-      setRoot((current) => current ?? found[0]?.root ?? null);
+      const roots = found.map((r) => r.root);
+      setRoot((current) => (asked ? checkoutFor(asked, roots) : current ?? found[0]?.root ?? null));
     })();
-  }, [host]);
+  }, [host, asked]);
 
   const load = useCallback(async (): Promise<void> => {
     if (!host || !root) return;
