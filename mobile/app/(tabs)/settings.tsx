@@ -9,6 +9,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Alert, AppState, Linking, Pressable, ScrollView, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useAgentglass } from "../../src/state/host-context.tsx";
+import { useComputer } from "../../src/state/use-computer.ts";
 import { useUsage } from "../../src/state/use-usage.ts";
 import {
   ageLabel, planState, quotaTone, remainingOf, resetLabel, tightestWindow,
@@ -366,6 +367,7 @@ export default function SettingsScreen(): React.ReactNode {
    */
   usePaletteTick();
   const { host, live, fleet, forget } = useAgentglass();
+  const computer = useComputer(host);
   const router = useRouter();
   /* Straight off the store: a pending gate is the fact, not an interpretation
      of one. Same count the terminal's band draws. */
@@ -432,7 +434,7 @@ export default function SettingsScreen(): React.ReactNode {
   return (
     <ScrollView contentContainerStyle={{ padding: SPACE.lg, gap: SPACE.lg }}>
       <Section label="Paired with">
-        <Text style={{ color: C.text, fontSize: T.title, fontWeight: "600" }}>{host.label}</Text>
+        <Text style={{ color: C.text, fontSize: T.title, fontWeight: "600" }}>{computer}</Text>
         <Row name="Address" value={host.origin} />
         <Row
           name="Live"

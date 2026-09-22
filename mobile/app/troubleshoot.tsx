@@ -34,6 +34,7 @@ import type { DepStatus } from "../../shared/deps.ts";
 import { ask } from "../src/lib/api.ts";
 import { DEP_LOOK, depNeedsAttention, type DepTone } from "../src/model/depLook.ts";
 import { useAgentglass } from "../src/state/host-context.tsx";
+import { useComputer } from "../src/state/use-computer.ts";
 import { usePaletteTick } from "../src/state/use-palette.ts";
 import { Btn, Note, Section, TAP, groupEdge } from "../src/ui.tsx";
 import { C, MONO, RADIUS, SPACE, T } from "../src/theme.ts";
@@ -71,6 +72,7 @@ const INK: Record<DepTone, () => string> = {
 export default function TroubleshootScreen(): React.ReactNode {
   usePaletteTick(); // a scene repaints only if it asks — see use-palette.ts
   const { host, live, fleet } = useAgentglass();
+  const computer = useComputer(host);
 
   const [answer, setAnswer] = useState<Answer | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -109,7 +111,8 @@ export default function TroubleshootScreen(): React.ReactNode {
         label="This phone"
         note="What it can reach, and what it was allowed to do when it paired."
       >
-        <Row name="Computer" value={host.label} />
+        <Row name="Computer" value={computer} />
+        <Row name="This phone" value={host.label} />
         <Row
           name="Live connection"
           value={live === "open" ? "connected" : live === "connecting" ? "connecting…" : "offline"}

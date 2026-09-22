@@ -11,7 +11,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createECDH, hkdfSync, createDecipheriv } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { INFO } from "../src/pairing.ts";
 import { freePort } from "./freePort.ts";
@@ -222,6 +222,18 @@ describe("what a paired phone can do", () => {
     const { token, deviceId } = await pair("answer", "Pixel");
     const me = await jsonOf(await get("/pair/whoami", token));
     expect(me).toMatchObject({ paired: true, machine: false, scope: "answer", label: "Pixel", id: deviceId });
+  });
+
+  test("and what it is talking to: the label names the phone, so the computer's name travels apart", async () => {
+    const { token } = await pair("read", "Pixel");
+    const me = await jsonOf(await get("/pair/whoami", token)) as { label: string; computer: string };
+    expect(me.computer).toBe(hostname());
+    expect(me.computer).not.toBe(me.label);
+  });
+
+  test("the computer's name is not handed to a caller with no credential", async () => {
+    const res = await fetch(base + "/health");
+    expect(JSON.stringify(await res.json())).not.toContain(hostname());
   });
 });
 
