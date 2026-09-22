@@ -62,7 +62,9 @@ import {
   clearFocusTimer, endsTheLine, focusCapture, liveDetail, scheduleFocus, type FocusTimer,
 } from "../../src/terminal/liveFocus.ts";
 import { onHandoff, takeHandoff } from "../../src/terminal/handoff.ts";
-import { BackIcon, ImageIcon, KeyboardIcon, MicIcon } from "../../src/nav/icons.tsx";
+import { GateCard } from "../../src/terminal/GateCard.tsx";
+import { gatesInOrder } from "../../src/model/gates.ts";
+import { ImageIcon, KeyboardIcon, MicIcon, SettingsIcon } from "../../src/nav/icons.tsx";
 import { since } from "../../src/lib/dates.ts";
 import { canRunAgents } from "../../src/model/scope.ts";
 import type { AgentSessionRow, DeviceScope } from "../../../shared/types.ts";
@@ -140,62 +142,69 @@ export default function TerminalScreen(): React.ReactNode {
   return <TerminalPane />;
 }
 
-/** What a phone that may not type sees instead of a pane that cannot open. */
+/**
+ * What a phone that may not type sees instead of a pane that cannot open.
+ *
+ * The destination stays in the bar for every pairing, because "what are the
+ * agents doing, and is one waiting on me" is a question every pairing asks. A
+ * phone paired to answer gets the held gates to answer, here; a phone paired
+ * to look is told so, and what would change it.
+ */
 function TerminalRefused({ scope }: { scope: DeviceScope }): React.ReactNode {
   usePaletteTick(); // a scene repaints only if it asks — see use-palette.ts
-  const { fleet } = useAgentglass();
+  const { host, fleet, refresh } = useAgentglass();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const held = fleet.gates.length;
+  const gates = gatesInOrder(fleet.gates);
+  const answers = scope === "answer";
   return (
     <View style={{ flex: 1, backgroundColor: C.bg, paddingTop: insets.top }}>
-      {/* The same back control the pane draws, for the same reason: this
-          screen has no navigator header, and `back` in a tab navigator lands
-          on the Inbox anyway. */}
-      <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: SPACE.xs }}>
+      <View style={{ flexDirection: "row", alignItems: "center", minHeight: 56, paddingLeft: SPACE.lg }}>
+        <Text style={{ color: C.text, fontSize: T.head, fontWeight: "600", flex: 1 }}>Terminal</Text>
         <Pressable
-          onPress={() => router.replace("/")}
+          onPress={() => router.push("/settings")}
           accessibilityRole="button"
-          accessibilityLabel="Back to the inbox"
+          accessibilityLabel="Settings"
           style={({ pressed }) => ({
-            width: 40, minHeight: 44, alignItems: "center", justifyContent: "center",
-            opacity: pressed ? 0.6 : 1,
+            width: TAP, height: TAP, marginRight: SPACE.xs, borderRadius: TAP / 2,
+            alignItems: "center", justifyContent: "center",
+            backgroundColor: pressed ? C.bg3 : "transparent",
           })}
         >
-          <BackIcon color={C.text3} size={20} />
+          <SettingsIcon color={C.text2} size={22} />
         </Pressable>
-        <Text style={{ color: C.text, fontSize: T.body, fontWeight: "700" }}>Terminal</Text>
       </View>
-      <View style={{ padding: SPACE.lg, gap: SPACE.lg }}>
+      <ScrollView contentContainerStyle={{ padding: SPACE.lg, gap: SPACE.lg }}>
         <Card>
-          <Label text="Not on this phone" />
+          <Text style={{ color: C.text, fontSize: T.title, fontWeight: "600" }}>
+            {answers ? "This phone answers agents" : "This phone only looks"}
+          </Text>
           <Note>
-            {scope === "answer"
-              ? "This phone was paired to answer things — approving a held command and replying to a "
-                + "running session. Opening a terminal needs the full grant, which is given at the computer "
-                + "when a phone is paired."
-              : "This phone was paired to look only. Opening a terminal needs the full grant, which is "
-                + "given at the computer when a phone is paired."}
+            {answers
+              ? "It can approve or refuse a held command. Typing into a terminal needs full access, which is "
+                + "chosen at the computer when a phone is paired."
+              : "It can read pull requests, checks, issues and cards. Typing into a terminal or answering an "
+                + "agent needs more access, which is chosen at the computer when a phone is paired."}
           </Note>
         </Card>
-        {/* The door the pane keeps for an `answer` phone stays open here: a
-            held gate is the one thing such a phone is FOR, and the pane was
-            where it was pointed at. */}
-        {held > 0 ? (
-          <Btn
-            label={held === 1 ? "An agent is waiting on you" : `${held} agents are waiting on you`}
-            tone="primary"
-            onPress={() => router.push("/now")}
-          />
+        {answers && host ? (
+          <View style={{ gap: SPACE.sm }}>
+            <Text style={{ color: C.text2, fontSize: T.body, fontWeight: "600" }}>
+              {gates.length ? `Waiting on you · ${gates.length}` : "Nothing is waiting on you"}
+            </Text>
+            {gates.map((gate) => (
+              <GateCard key={gate.id} gate={gate} host={host} colors={C} now={Date.now()} onDone={refresh} />
+            ))}
+          </View>
         ) : null}
-      </View>
+      </ScrollView>
     </View>
   );
 }
 
 function TerminalPane(): React.ReactNode {
   usePaletteTick(); // a scene repaints only if it asks — see use-palette.ts
-  const { host, fleet } = useAgentglass();
+  const { host, fleet, refresh } = useAgentglass();
   const router = useRouter();
   /*
    * The pane is painted by the COMPUTER, so when the computer says which palette
@@ -239,7 +248,8 @@ function TerminalPane(): React.ReactNode {
      rather than through the queue's rules: a pending gate IS the fact — the
      hook's request is open and nothing proceeds until somebody answers — and
      it needs no interpretation to be counted. */
-  const held = fleet.gates.length;
+  const gates = gatesInOrder(fleet.gates);
+  const [allGates, setAllGates] = useState(false);
 
   /*
    * The strip itself, and not the pane list it came from.
@@ -1418,29 +1428,11 @@ function TerminalPane(): React.ReactNode {
         */}
         <View style={{
           flexDirection: "row", alignItems: "center", gap: SPACE.sm,
-          paddingHorizontal: SPACE.xs, paddingTop: SPACE.xs,
+          paddingLeft: SPACE.lg, paddingRight: SPACE.xs, paddingTop: SPACE.xs,
         }}>
-          {/*
-            The way out, and it is load-bearing rather than decorative.
-
-            This screen is the one that does not draw the tab bar — see the
-            note in src/nav/TabBar.tsx for why it gives the pane those ninety
-            points. Which means this is the only control on it that leads
-            anywhere, and without it the way back would be Android's own
-            gesture, which on the first tab of a navigator closes the app
-            rather than going anywhere.
-          */}
-          <Pressable
-            onPress={() => router.replace("/")}
-            accessibilityRole="button"
-            accessibilityLabel="Back to the inbox"
-            style={({ pressed }) => ({
-              width: 40, minHeight: 44, alignItems: "center", justifyContent: "center",
-              opacity: pressed ? 0.6 : 1,
-            })}
-          >
-            <BackIcon color={C.text3} size={20} />
-          </Pressable>
+          {/* No way back: the bar is under the pane now, and the terminal is
+              one of its four destinations rather than a place the Inbox sent
+              you to. */}
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text
               numberOfLines={1}
@@ -1685,37 +1677,49 @@ function TerminalPane(): React.ReactNode {
       </View>
 
       {/*
-        A held gate, and the way to answer it.
+        A held gate, answered here.
 
-        This is the door the Inbox gave up. Approving a command an agent is
-        stopped on is the reason this app exists — it is the only POST a
-        phone paired for "answer" may make — and when agents left the Inbox
-        it was left reachable only from Settings, which is not where anybody
-        would look for it.
+        Approving a command an agent is stopped on is the reason this app
+        exists. This used to be a band that counted the held gates and sent
+        you to the Now screen to answer them, so answering an agent meant
+        leaving it. The card is the answer itself: which window is asking,
+        what it wants to run, Deny and Allow — and a way to that window when it
+        is not the one on screen.
 
-        Here, because this is where agents live now: the star is the one
-        surface that shows what an agent is doing, so it is the one that
-        should say when an agent has stopped and is waiting. It draws only
-        when something is actually held, which is what keeps it a signal —
-        the same rule the two strips below follow.
+        The oldest first, and one at a time unless asked: two cards over a
+        pane leave no pane. It draws only when something is held, which is
+        what keeps it a signal.
       */}
-      {held > 0 ? (
-        <Pressable
-          onPress={() => router.push("/now")}
-          accessibilityRole="button"
-          accessibilityLabel={`${held} ${held === 1 ? "agent is" : "agents are"} waiting on you. Opens the queue.`}
-          style={{
-            flexDirection: "row", alignItems: "center", gap: SPACE.sm,
-            paddingHorizontal: SPACE.lg, paddingVertical: SPACE.sm,
-            backgroundColor: C.bg2, borderTopWidth: 2, borderTopColor: C.error,
-          }}
-        >
-          <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: C.error }} />
-          <Text style={{ color: C.text, fontSize: T.small, fontWeight: "700", flex: 1 }} numberOfLines={1}>
-            {held === 1 ? "An agent is stopped, waiting on you" : `${held} agents are stopped, waiting on you`}
-          </Text>
-          <Text style={{ color: C.primary, fontSize: T.small, fontWeight: "700" }}>Answer</Text>
-        </Pressable>
+      {gates.length > 0 && host ? (
+        <View style={{ paddingHorizontal: SPACE.sm, paddingTop: SPACE.sm, gap: SPACE.sm, backgroundColor: paneColours.bg }}>
+          {(allGates ? gates : gates.slice(0, 1)).map((gate) => {
+            const there = gate.pane ? all.find((t) => t.paneId === gate.pane) : undefined;
+            return (
+              <GateCard
+                key={gate.id}
+                gate={gate}
+                host={host}
+                colors={paneColours}
+                now={Date.now()}
+                onDone={refresh}
+                onOpen={there && there.paneId !== active
+                  ? () => { setSession(there.session); setActive(there.paneId); setWhy(null); }
+                  : undefined}
+              />
+            );
+          })}
+          {gates.length > 1 ? (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setAllGates((v) => !v)}
+              style={{ minHeight: TAP, justifyContent: "center", alignItems: "center" }}
+            >
+              <Text style={{ color: paneColours.primary, fontSize: T.small, fontWeight: "600" }}>
+                {allGates ? "Show one" : `${gates.length - 1} more waiting on you`}
+              </Text>
+            </Pressable>
+          ) : null}
+        </View>
       ) : null}
 
       {/* Said quietly, and only when it is not fine: a status line that is
@@ -2381,6 +2385,21 @@ function TerminalPane(): React.ReactNode {
         ) : (
           <Note>Attach to a pane first — these all need to know which checkout.</Note>
         )}
+        {/* The two that are about the app rather than this checkout, last and
+            apart. The key bar's own screen was reachable only from a row deep
+            in Settings, while the bar it edits is on this screen. */}
+        <View style={{ gap: SPACE.xs, paddingBottom: SPACE.md }}>
+          <SheetRow
+            label="Key bar"
+            sub="Which keys sit above the keyboard, and in what order"
+            onPress={() => { setMore(false); router.push("/terminal-settings"); }}
+          />
+          <SheetRow
+            label="Settings"
+            sub="The computer, notifications and appearance"
+            onPress={() => { setMore(false); router.push("/settings"); }}
+          />
+        </View>
       </Sheet>
 
       <Sheet open={picking} onClose={() => setPicking(false)} title="New tab">

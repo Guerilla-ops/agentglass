@@ -1,5 +1,5 @@
 /*
- * Whether this machine tracks work anywhere, and what the Inbox does about it.
+ * Whether this machine tracks work anywhere, and what the bar does about it.
  *
  * The question this app was getting wrong is not "is ClickUp connected". It is
  * the general one — ClickUp is one task provider of several, and a phone that
@@ -60,7 +60,7 @@ describe("tracksWork", () => {
 });
 
 describe("taskDestinations", () => {
-  const all: Destination[] = [...BAR.filter((d) => d.route !== "index"), { route: "repos", label: "Source control" }];
+  const all: Destination[] = BAR;
 
   test("keeps cards when something is tracked", () => {
     expect(taskDestinations(all, true).map((d) => d.route)).toContain("tasks");
@@ -76,10 +76,8 @@ describe("taskDestinations", () => {
   });
 
   test("drops cards and nothing else", () => {
-    /* There is nothing to promote in its place, and that is not an oversight:
-       the five-slot bar that made a removal need a replacement is retired, and
-       source control — the destination that would have been promoted — is
-       already in this list. */
+    /* There is nothing to promote in its place: four is not an arithmetic
+       the bar needs to keep, the way the odd count that centred the star was. */
     const before = all.map((d) => d.route);
     const after = taskDestinations(all, false).map((d) => d.route);
     expect(after).toEqual(before.filter((r) => r !== "tasks"));
@@ -93,11 +91,11 @@ describe("taskDestinations", () => {
   });
 
   test("BAR itself is untouched — it is the claim, not the drawing", () => {
-    // Every other reader of BAR (the Inbox's own list, keyLayout's ordering)
-    // still sees the five this app is for.
+    // Every other reader of BAR (the launch route, keyLayout's ordering)
+    // still sees the four this app is for.
     taskDestinations(all, false);
     expect(BAR.map((d) => d.route)).toContain("tasks");
-    expect(BAR.length).toBe(5);
+    expect(BAR.length).toBe(4);
   });
 });
 

@@ -20,7 +20,7 @@ import {
 } from "../../src/notifications/notify.ts";
 import { Btn, Card, Label, Note, Section, TAP } from "../../src/ui.tsx";
 import {
-  ChevronIcon, NowIcon, ReposIcon, SettingsIcon, TerminalIcon, type IconProps,
+  ChevronIcon, SettingsIcon, TerminalIcon, type IconProps,
 } from "../../src/nav/icons.tsx";
 import {
   ACCENTS, C, MONO, RADIUS, SPACE, T, currentLook, ink, setLook, toneColor,
@@ -369,9 +369,6 @@ export default function SettingsScreen(): React.ReactNode {
   const { host, live, fleet, forget } = useAgentglass();
   const computer = useComputer(host);
   const router = useRouter();
-  /* Straight off the store: a pending gate is the fact, not an interpretation
-     of one. Same count the terminal's band draws. */
-  const held = fleet.gates.length;
   const [going, setGoing] = useState(false);
   /*
    * Whether an alert can actually be DELIVERED — not whether permission was
@@ -546,17 +543,6 @@ export default function SettingsScreen(): React.ReactNode {
         label="Elsewhere"
         note="What an agent is doing is read in the terminal it is running in. The queue is where a stopped one is answered."
       >
-        {/* The count is ON the row rather than above it. Two lines saying
-            "Held right now: 3 waiting" and then "Open the queue" are one
-            thought split in half, and the half with the number is the half
-            that decides whether you press the other one. */}
-        <Go
-          mark={NowIcon}
-          name="The queue"
-          value={held ? `${held} waiting` : "nothing"}
-          onPress={() => router.push("/now")}
-        />
-        <Go mark={ReposIcon} name="Working tree" onPress={() => router.push("/repos")} />
         <Go
           mark={TerminalIcon}
           name="The key bar"
