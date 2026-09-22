@@ -18,7 +18,7 @@
  * A listing and a file, not two routes. The back gesture out of a file should
  * land on the directory it came from and nothing else, and a pushed route per
  * folder would build a stack somebody has to unwind a level at a time. The
- * crumb at the top is the way up, and it is the same control in both states.
+ * crumbs at the top are the way up, and they are the same control in both states.
  *
  * ── what it will not do ──────────────────────────────────────────────────
  * Edit. A file is read here and changed where agents change files, which is
@@ -31,7 +31,10 @@ import { Stack, useLocalSearchParams } from "expo-router";
 import { ask } from "../src/lib/api.ts";
 import { useAgentglass } from "../src/state/host-context.tsx";
 import { usePaletteTick } from "../src/state/use-palette.ts";
-import { BackIcon, ChevronIcon } from "../src/nav/icons.tsx";
+import * as Clipboard from "expo-clipboard";
+import * as Haptics from "expo-haptics";
+import { ChevronIcon, ReposIcon } from "../src/nav/icons.tsx";
+import { Glyph } from "../src/nav/glyphs.tsx";
 import { Card, Label, Note, TAP, groupEdge } from "../src/ui.tsx";
 import { C, MONO, RADIUS, SPACE, T } from "../src/theme.ts";
 
@@ -45,15 +48,6 @@ interface Entry { name: string; rel: string; dir: boolean }
  *  to lay that out stops answering. The cap is on CHARACTERS rather than lines
  *  for that reason: a line count would let exactly that file through. */
 const CAP = 60_000;
-
-/** The parent of a relative path, or "" for the root. Written out rather than
- *  taken from a path module: this is a repo-relative POSIX path off the wire,
- *  and node's `dirname` answers "." for a bare name, which is not a rel the
- *  server would accept. */
-function parentOf(rel: string): string {
-  const cut = rel.lastIndexOf("/");
-  return cut <= 0 ? "" : rel.slice(0, cut);
-}
 
 export default function FilesScreen(): React.ReactNode {
   usePaletteTick(); // a scene repaints only if it asks — see use-palette.ts
@@ -110,42 +104,86 @@ export default function FilesScreen(): React.ReactNode {
 
   const shown = text === null ? "" : text.length > CAP ? text.slice(0, CAP) : text;
 
-  /** Up one, or out of the file back to its folder. One control for both,
-   *  because "where am I" and "how do I leave" are the same question here. */
-  const up = useCallback((): void => {
-    if (open) { setOpen(null); setText(null); setError(null); return; }
-    setRel((at) => parentOf(at));
+  /* The crumbs: the checkout, then each folder down to where you are, each
+     one a way straight back to it. A single "up" control made the way from a
+     file four folders deep back to the top four taps; and it named where you
+     were only as a path cut at the head. */
+  const leaf = (root ?? "").split("/").filter(Boolean).pop() ?? "checkout";
+  const parts = (open ?? rel).split("/").filter(Boolean);
+  const goTo = useCallback((depth: number): void => {
+    setOpen(null); setText(null); setError(null);
+    setRel(parts.slice(0, depth).join("/"));
+  }, [parts]);
+
+  const copyPath = useCallback((): void => {
+    if (!open) return;
+    void Clipboard.setStringAsync(open);
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   }, [open]);
 
-  const where = open ?? rel;
+  // A file's final newline ends its last line; it does not start another.
+  const lines = useMemo(() => (shown ? shown.replace(/\n$/, "").split("\n") : []), [shown]);
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
-      <Stack.Screen options={{ title: "Files" }} />
+      <Stack.Screen
+        options={{
+          headerTitle: () => (
+            <View>
+              <Text numberOfLines={1} style={{ color: C.text, fontSize: T.title, fontWeight: "600", fontFamily: open ? MONO : undefined }}>
+                {open ? parts[parts.length - 1] : "Files"}
+              </Text>
+              <Text numberOfLines={1} ellipsizeMode="head" style={{ color: C.text3, fontSize: T.small }}>
+                {open ? [leaf, ...parts.slice(0, -1)].join("/") : leaf}
+              </Text>
+            </View>
+          ),
+          headerRight: open ? () => (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Copy the path"
+              onPress={copyPath}
+              style={({ pressed }) => ({
+                width: TAP, height: TAP, borderRadius: TAP / 2, alignItems: "center", justifyContent: "center",
+                backgroundColor: pressed ? C.bg3 : "transparent",
+              })}
+            >
+              <Glyph name="copy" color={C.text2} size={20} />
+            </Pressable>
+          ) : undefined,
+        }}
+      />
 
-      {/* The crumb. Pressable when there is anywhere above, and drawn plainly
-          when there is not — a chevron that does nothing is worse than none. */}
-      <Pressable
-        onPress={up}
-        disabled={!open && !rel}
-        accessibilityRole="button"
-        accessibilityLabel={open ? "Back to the folder" : "Up one folder"}
-        style={({ pressed }) => ({
-          flexDirection: "row", alignItems: "center", gap: SPACE.sm,
-          paddingHorizontal: SPACE.lg, minHeight: TAP,
-          borderBottomWidth: 1, borderBottomColor: C.border,
-          opacity: pressed ? 0.6 : 1,
-        })}
+      {/* Drawn over a file too, with the file as the last crumb: the folder it
+          is in is one tap away, which is where the back from a file should
+          land and nowhere else. */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={{ flexGrow: 0, borderBottomWidth: 1, borderBottomColor: C.border }}
+        contentContainerStyle={{ paddingHorizontal: SPACE.lg, alignItems: "center", gap: 4, minHeight: 48 }}
       >
-        {!open && !rel ? null : <BackIcon color={C.primary} size={20} />}
-        <Text
-          numberOfLines={1}
-          ellipsizeMode="head"
-          style={{ color: C.text2, fontSize: T.small, fontFamily: MONO, flex: 1 }}
-        >
-          {where || "/"}
-        </Text>
-      </Pressable>
+        {[leaf, ...parts].map((name, i, all) => {
+          const last = i === all.length - 1;
+          return (
+            <View key={`${i}:${name}`} style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+              {i ? <ChevronIcon color={C.text3} size={14} /> : null}
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={last ? `${name}, here` : `Go to ${name}`}
+                disabled={last}
+                onPress={() => goTo(i)}
+                hitSlop={{ top: 8, bottom: 8 }}
+                style={{ paddingVertical: SPACE.md, paddingHorizontal: 2 }}
+              >
+                <Text style={{
+                  color: last ? C.text : C.primary, fontSize: 13, fontFamily: MONO, fontWeight: last ? "600" : "500",
+                }}>{name}</Text>
+              </Pressable>
+            </View>
+          );
+        })}
+      </ScrollView>
 
       {error ? (
         <View style={{ padding: SPACE.lg }}>
@@ -168,14 +206,29 @@ export default function FilesScreen(): React.ReactNode {
               {/* Its own horizontal scroller: a line of code is as long as it
                   is, and wrapping one at 393 points makes it unreadable in a
                   different way. The page never scrolls sideways; this does. */}
-              <ScrollView horizontal contentContainerStyle={{ padding: SPACE.md }} style={{
-                backgroundColor: C.bg2, borderRadius: RADIUS.md,
-                borderWidth: 1, borderColor: C.border, marginTop: SPACE.sm,
+              <View style={{
+                flexDirection: "row", backgroundColor: C.bg2, borderRadius: RADIUS.lg,
+                borderWidth: 1, borderColor: C.border, marginTop: SPACE.sm, paddingVertical: SPACE.md,
               }}>
-                <Text selectable style={{
-                  color: C.text2, fontSize: 10.5, fontFamily: MONO, lineHeight: 16,
-                }}>{shown || "(empty)"}</Text>
-              </ScrollView>
+                {/* The numbers, as one column beside the text rather than a row
+                    per line: a file is up to sixty thousand characters, and a
+                    view per line of that is a phone that stops answering. */}
+                <Text style={{
+                  color: C.text3, fontSize: 11.5, fontFamily: MONO, lineHeight: 20, textAlign: "right",
+                  paddingLeft: SPACE.sm, paddingRight: SPACE.md,
+                }}>{lines.map((_, i) => i + 1).join("\n")}</Text>
+                {/* Its own horizontal scroller: a line of code is as long as it
+                    is, and wrapping one at 393 points makes it unreadable in a
+                    different way. The page never scrolls sideways; this does. */}
+                <ScrollView horizontal contentContainerStyle={{ paddingRight: SPACE.md }}>
+                  <Text selectable style={{
+                    color: C.text2, fontSize: 11.5, fontFamily: MONO, lineHeight: 20,
+                  }}>{shown || "(empty)"}</Text>
+                </ScrollView>
+              </View>
+              <Text style={{ color: C.text3, fontSize: T.small, paddingTop: SPACE.md, paddingHorizontal: SPACE.xs }}>
+                {text.length < 1024 ? `${text.length} B` : `${(text.length / 1024).toFixed(1)} KB`} · read only
+              </Text>
             </>
           ) : null}
         </ScrollView>
@@ -193,38 +246,25 @@ export default function FilesScreen(): React.ReactNode {
               style={({ pressed }) => [
                 groupEdge(i === 0, i === sorted.length - 1),
                 {
-                  flexDirection: "row", alignItems: "center", gap: SPACE.md,
-                  paddingHorizontal: SPACE.lg, minHeight: TAP,
-                  opacity: pressed ? 0.6 : 1,
+                  flexDirection: "row", alignItems: "center", gap: 14,
+                  paddingHorizontal: SPACE.lg, minHeight: 48,
+                  backgroundColor: pressed ? C.bg3 : C.bg2,
                 },
               ]}
             >
-              {/* A folder reads as a folder before the name is read. Drawn as
-                  two rules rather than a glyph, for the reason the whole of
-                  src/nav/icons.tsx exists: Android's font has no dependable
-                  mark for this and the fallback runs out at an empty box. */}
-              <View style={{ width: 14, alignItems: "center" }}>
-                {entry.dir ? (
-                  <View style={{
-                    width: 13, height: 10, borderRadius: 2,
-                    borderWidth: 1, borderColor: C.text3,
-                  }} />
-                ) : (
-                  <View style={{
-                    width: 9, height: 12, borderRadius: 1,
-                    borderWidth: 1, borderColor: C.text4,
-                  }} />
-                )}
-              </View>
+              {/* A folder reads as a folder before the name is read — drawn, for
+                  the reason the whole of src/nav/icons.tsx exists. */}
+              {entry.dir
+                ? <ReposIcon color={C.primary} size={20} />
+                : <Glyph name="file" color={C.text3} size={20} />}
               <Text
                 numberOfLines={1}
                 style={{
-                  color: entry.dir ? C.text : C.text2, fontSize: T.small,
-                  fontFamily: MONO, flex: 1,
-                  fontWeight: entry.dir ? "600" : "400",
+                  color: C.text, fontSize: 14, fontFamily: MONO, flex: 1,
+                  fontWeight: entry.dir ? "500" : "400",
                 }}
               >{entry.name}</Text>
-              {entry.dir ? <ChevronIcon color={C.text4} size={16} /> : null}
+              {entry.dir ? <ChevronIcon color={C.text3} size={18} /> : null}
             </Pressable>
           ))}
         </ScrollView>
