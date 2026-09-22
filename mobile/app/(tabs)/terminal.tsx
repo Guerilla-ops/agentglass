@@ -37,7 +37,7 @@ import {
   ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View,
 } from "react-native";
 import * as Haptics from "expo-haptics";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { setStatusBarStyle } from "expo-status-bar";
 import { isDark, setTerminalPalette } from "../../src/nav/barPalette.ts";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -68,6 +68,7 @@ import { GateCard } from "../../src/terminal/GateCard.tsx";
 import { Glyph } from "../../src/nav/glyphs.tsx";
 import { UsageChip } from "../../src/usage/Usage.tsx";
 import { gatesInOrder } from "../../src/model/gates.ts";
+import { paneFor } from "../../src/model/checkout.ts";
 import { ImageIcon, KeyboardIcon, MicIcon, SettingsIcon } from "../../src/nav/icons.tsx";
 import { since } from "../../src/lib/dates.ts";
 import { canRunAgents } from "../../src/model/scope.ts";
@@ -635,6 +636,23 @@ function TerminalPane(): React.ReactNode {
   const [more, setMore] = useState(false);
   /** Every session and window on the machine, opened from the title. */
   const [sessionsOpen, setSessionsOpen] = useState(false);
+  /*
+   * Arriving FOR a window: "Open in terminal" on a started issue sends the
+   * worktree and the window name. Picked as soon as the strip lists it, and
+   * the request is then dropped, so it cannot pull the selection back later.
+   * Kept while the strip does not have it yet — a window just opened on the
+   * computer is on the next poll, not this one.
+   */
+  const arriving = useLocalSearchParams<{ where?: string; window?: string }>();
+  useEffect(() => {
+    if (!arriving.where || !strip) return;
+    const tab = paneFor(strip, arriving.where, arriving.window);
+    if (!tab) return;
+    setSession(tab.session);
+    setActive(tab.paneId);
+    setWhy(null);
+    router.setParams({ where: undefined, window: undefined });
+  }, [arriving.where, arriving.window, strip, router]);
   const [past, setPast] = useState<AgentSessionRow[] | null>(null);
   useEffect(() => onTermPrefs(() => {
     setBar(keyLayout()); setColumns(termColumns()); setAssist(termAssist());

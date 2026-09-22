@@ -27,7 +27,10 @@ import { useAgentglass } from "../../src/state/host-context.tsx";
 import { Md } from "../../src/md/Md.tsx";
 import { usePaletteTick } from "../../src/state/use-palette.ts";
 import { requestHandoff } from "../../src/terminal/handoff.ts";
+import { openLinkedPr } from "../../src/state/open-pr.ts";
+import { repoOf } from "../../src/model/prRef.ts";
 import { since } from "../../src/lib/dates.ts";
+import { canRunAgents } from "../../src/model/scope.ts";
 import { Btn, Card, Label, Note } from "../../src/ui.tsx";
 import { RADIUS as R } from "../../src/theme.ts";
 import { C, MONO, RADIUS, SPACE, T } from "../../src/theme.ts";
@@ -339,7 +342,15 @@ export default function IssueScreen(): React.ReactNode {
               prs.map((pr) => {
                 const tone = prTone(pr);
                 return (
-                  <Pressable key={pr.number} onPress={() => { if (pr.url) void Linking.openURL(pr.url); }}>
+                  <Pressable
+                    key={pr.number}
+                    accessibilityRole="button"
+                    // In the app when the computer has the checkout — see
+                    // model/prRef.ts — and the browser only when it has not.
+                    onPress={() => {
+                      if (host && pr.url) void openLinkedPr(host, router, pr.url, { repo: repoOf(detail.url), root: root ?? "" });
+                    }}
+                  >
                     <Card style={{ gap: SPACE.xs }}>
                       <View style={{ flexDirection: "row", alignItems: "center", gap: SPACE.sm }}>
                         <Text style={{ color: C.text4, fontSize: T.eyebrow, fontFamily: MONO }}>#{pr.number}</Text>
@@ -384,7 +395,7 @@ export default function IssueScreen(): React.ReactNode {
           borderTopWidth: 1, borderTopColor: C.border, backgroundColor: C.bg2,
         }}>
           <Btn
-            label="✦ Start with Claude"
+            label="Start with Claude"
             tone="primary"
             busy={starting}
             onPress={() => { void start(); }}
@@ -392,15 +403,29 @@ export default function IssueScreen(): React.ReactNode {
         </View>
       ) : null}
 
+      {/* Already started: the way back to it, not a sentence telling you to
+          go and find it. "Open it in the terminal." used to be a line of text
+          with nothing to press. The terminal picks the window this issue's
+          work is in — by its name, then by its directory. */}
       {detail?.work ? (
         <View style={{
-          paddingHorizontal: SPACE.lg, paddingTop: SPACE.md, paddingBottom: SPACE.lg,
+          paddingHorizontal: SPACE.lg, paddingTop: SPACE.md, paddingBottom: SPACE.lg, gap: SPACE.sm,
           borderTopWidth: 1, borderTopColor: C.border, backgroundColor: C.bg2,
         }}>
           <Note>
-            Already started as <Text style={{ fontFamily: MONO, color: C.text2 }}>{detail.work.branch}</Text>.
-            Open it in the terminal.
+            Started as <Text style={{ fontFamily: MONO, color: C.text2 }}>{detail.work.branch}</Text>
+            {" "}· {since(new Date(detail.work.startedAt).toISOString(), now)}
           </Note>
+          {canRunAgents(host?.scope) ? (
+            <Btn
+              label="Open in terminal"
+              tone="primary"
+              onPress={() => router.push({
+                pathname: "/terminal",
+                params: { where: detail.work!.path, window: detail.work!.window ?? `i${detail.number}` },
+              })}
+            />
+          ) : null}
         </View>
       ) : null}
     </KeyboardAvoidingView>

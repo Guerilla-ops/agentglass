@@ -20,3 +20,26 @@ export function checkoutFor(where: string, roots: string[]): string {
   }
   return best ?? where;
 }
+
+/**
+ * The window a piece of work is in, among the terminal's tabs.
+ *
+ * "Open in terminal" on a started issue carries the worktree it was started in
+ * and the window name it was given (`i231`). The name wins when a tab carries
+ * it — two windows can sit in one worktree — and the directory is the fallback,
+ * the deepest match, for a window somebody has since renamed.
+ */
+export function paneFor<T extends { label: string; where: string }>(
+  tabs: T[], where: string, window?: string,
+): T | null {
+  const inside = (t: T): boolean => {
+    const w = t.where.replace(/\/+$/, "");
+    const p = where.replace(/\/+$/, "");
+    return w === p || w.startsWith(p + "/");
+  };
+  const named = window
+    ? tabs.find((t) => inside(t) && t.label.split(/\s+/).slice(1).join(" ").split("·")[0] === window)
+      ?? tabs.find((t) => t.label.split(/\s+/).slice(1).join(" ").split("·")[0] === window)
+    : undefined;
+  return named ?? tabs.find(inside) ?? null;
+}

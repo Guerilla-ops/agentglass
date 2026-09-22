@@ -51,6 +51,7 @@ import { useAgentglass } from "../../src/state/host-context.tsx";
 import { Md, outline } from "../../src/md/Md.tsx";
 import { usePaletteTick } from "../../src/state/use-palette.ts";
 import { providerTitle } from "../../src/model/taskProviders.ts";
+import { openLinkedPr } from "../../src/state/open-pr.ts";
 import { requestHandoff } from "../../src/terminal/handoff.ts";
 import { mainCheckouts } from "../../src/model/prRows.ts";
 import { cardSkills, namedForIt, skillCommand, skillModes, windowName } from "../../../shared/cardSkills.ts";
@@ -676,7 +677,9 @@ export default function CardScreen(): React.ReactNode {
                     <Pressable
                       key={pr.number}
                       accessibilityRole="button"
-                      onPress={() => { void Linking.openURL(pr.url); }}
+                      // In the app when the computer has a checkout of it — see
+                      // model/prRef.ts — and the browser only when it has not.
+                      onPress={() => { if (host) void openLinkedPr(host, router, pr.url); }}
                       style={{ flexDirection: "row", alignItems: "center", gap: SPACE.sm, minHeight: TAP }}
                     >
                       <Text style={{ color: prInk(pr), fontSize: T.eyebrow, fontFamily: MONO, width: 52 }}>
