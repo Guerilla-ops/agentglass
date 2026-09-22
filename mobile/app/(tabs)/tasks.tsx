@@ -37,9 +37,10 @@ import { usePaletteTick } from "../../src/state/use-palette.ts";
 import { useTaskProvider } from "../../src/state/use-tracks-work.ts";
 import { localMeta, visibleLocal } from "../../src/model/localTasks.ts";
 import { matchesQuery } from "../../../shared/taskref.ts";
-import { Card, HeaderPick, Label, Note, Segmented, Sheet, SheetRow, TAP, groupEdge } from "../../src/ui.tsx";
+import { Card, Label, Note, Segmented, Sheet, SheetRow, TAP, groupEdge } from "../../src/ui.tsx";
+import { Glyph } from "../../src/nav/glyphs.tsx";
 import { dueIn } from "../../src/lib/dates.ts";
-import { C, MONO, RADIUS, SPACE, T } from "../../src/theme.ts";
+import { C, MONO, RADIUS, SPACE, T, tint } from "../../src/theme.ts";
 
 /*
  * `/clickup/views` answers `ClickUpBoards` — the shared type the server
@@ -85,26 +86,31 @@ function Row({ task, prefix, onCopied, onOpen }: {
           would draw a second one inside the first. */}
       <View style={{ padding: SPACE.lg, gap: SPACE.sm }}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: SPACE.sm }}>
-          <Text style={{ color: C.text4, fontSize: T.eyebrow, fontFamily: MONO }}>
+          <Text style={{ color: C.text3, fontSize: T.small, fontFamily: MONO }}>
             {task.customId || task.id}
           </Text>
           <View style={{ flex: 1 }} />
           {when ? (
-            <Text style={{ color: when.late ? C.error : C.text4, fontSize: T.eyebrow }}>{when.text}</Text>
+            <Text style={{ color: when.late ? C.error : C.text3, fontSize: T.small, fontWeight: "500" }}>{when.text}</Text>
           ) : null}
         </View>
 
-        <Text style={{ color: C.text, fontSize: T.body, lineHeight: 19 }}>{task.title}</Text>
+        <Text style={{ color: C.text, fontSize: 15, fontWeight: "500", lineHeight: 20 }}>{task.title}</Text>
 
         <View style={{ flexDirection: "row", alignItems: "center", gap: SPACE.sm, flexWrap: "wrap" }}>
+          {/* The status in the colour the board gave it, as a dot and a tint
+              behind the word, and the word itself in the text colour: some
+              boards pick their colours against a white page, and a status
+              written in its own pale yellow was unreadable on this one. */}
           <View style={{
-            paddingHorizontal: SPACE.sm, paddingVertical: 2, borderRadius: RADIUS.sm,
-            borderWidth: 1, borderColor: statusInk,
+            flexDirection: "row", alignItems: "center", gap: 6, height: 24, paddingHorizontal: 8, borderRadius: 6,
+            backgroundColor: /^#[0-9a-f]{6}$/i.test(statusInk) ? tint(statusInk, 0.18) : C.bg3,
           }}>
-            <Text style={{ color: statusInk, fontSize: T.eyebrow }}>{task.status}</Text>
+            <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: statusInk }} />
+            <Text style={{ color: C.text, fontSize: T.small, fontWeight: "500" }}>{task.status}</Text>
           </View>
-          {task.list ? <Text style={{ color: C.text4, fontSize: T.eyebrow }}>{task.list}</Text> : null}
-          {task.sprint ? <Text style={{ color: C.text4, fontSize: T.eyebrow }}>· {task.sprint}</Text> : null}
+          {task.list ? <Text style={{ color: C.text3, fontSize: T.small }}>{task.list}</Text> : null}
+          {task.sprint ? <Text style={{ color: C.text3, fontSize: T.small }}>· {task.sprint}</Text> : null}
         </View>
       </View>
     </Pressable>
@@ -261,19 +267,13 @@ export default function TasksScreen(): React.ReactNode {
 
   const view = views?.views.find((v) => v.id === chosen) ?? null;
 
-  // The view is the title — see prs.tsx for why this is setOptions and not an
-  // inline options object. On the local list there is no view to pick, so the
-  // title is the tracker's own name and does not open anything.
+  /* The screen is "Cards" on the board, like every destination is its own
+     name. On the machine's own list it is the tracker's name, because that is
+     what the list IS. The view moved out of the title into a chip under the
+     filter: a title that is secretly a picker is a control nobody finds. */
   useLayoutEffect(() => {
-    navigation.setOptions({
-      headerTitleAlign: "center",
-      headerTitle: () => (
-        board
-          ? <HeaderPick label={view?.name ?? "Cards"} onPress={() => setPicking(true)} />
-          : <Text style={{ color: C.text, fontSize: T.body, fontWeight: "600" }}>{provider?.title ?? "Cards"}</Text>
-      ),
-    });
-  }, [navigation, view?.name, board, provider?.title]);
+    navigation.setOptions({ title: board || !provider ? "Cards" : provider.title });
+  }, [navigation, board, provider]);
 
   if (!host) return null;
 
@@ -295,6 +295,22 @@ export default function TasksScreen(): React.ReactNode {
               { id: "all" as const, label: "All" },
             ]}
           />
+          {board ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`View: ${view?.name ?? "none"}. Change view`}
+              onPress={() => setPicking(true)}
+              hitSlop={{ top: 8, bottom: 8 }}
+              style={({ pressed }) => ({
+                alignSelf: "flex-start", flexDirection: "row", alignItems: "center", gap: 4, height: 32,
+                marginTop: SPACE.md, paddingLeft: 12, paddingRight: 8, borderRadius: RADIUS.sm,
+                borderWidth: 1, borderColor: C.border2, backgroundColor: pressed ? C.bg3 : "transparent",
+              })}
+            >
+              <Text style={{ color: C.text, fontSize: 13, fontWeight: "500" }}>View: {view?.name ?? "…"}</Text>
+              <Glyph name="down" color={C.text3} size={18} />
+            </Pressable>
+          ) : null}
         </View>
       ) : null}
 
@@ -316,11 +332,6 @@ export default function TasksScreen(): React.ReactNode {
         </View>
       </Sheet>
 
-      {said ? (
-        <View style={{ paddingHorizontal: SPACE.lg, paddingVertical: SPACE.xs, backgroundColor: C.bg2 }}>
-          <Text style={{ color: C.success, fontSize: T.eyebrow }}>{said} copied</Text>
-        </View>
-      ) : null}
 
       {/*
         Three states, where there were two.
@@ -422,6 +433,22 @@ export default function TasksScreen(): React.ReactNode {
           )}
         />
       )}
+
+      {/* A snackbar, over the list and above the bar, rather than a strip
+          pushed in at the top: the strip moved every row down by its height
+          under the thumb that had just long-pressed one of them. */}
+      {said ? (
+        <View
+          accessibilityLiveRegion="polite"
+          style={{
+            position: "absolute", left: SPACE.lg, right: SPACE.lg, bottom: SPACE.xl + SPACE.lg,
+            minHeight: 48, justifyContent: "center", paddingHorizontal: SPACE.lg,
+            borderRadius: RADIUS.sm, backgroundColor: C.text,
+          }}
+        >
+          <Text style={{ color: C.bg, fontSize: T.body }}>{said} copied</Text>
+        </View>
+      ) : null}
 
       {provider ? (
         <View style={{ paddingHorizontal: SPACE.lg, paddingBottom: SPACE.sm }}>
