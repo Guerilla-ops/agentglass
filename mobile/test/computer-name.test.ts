@@ -23,7 +23,7 @@ describe("the computer's name", () => {
 
   it("is the address until the server says, never the phone's own label", () => {
     expect(computerName(undefined, "http://192.168.1.20:4000")).toBe("192.168.1.20");
-    expect(computerName("  ", "https://studio.example.ts.net")).toBe("studio.example.ts.net");
+    expect(computerName("  ", "https://studio.example.net")).toBe("studio.example.net");
   });
 
   it("keeps an IPv6 address whole", () => {
