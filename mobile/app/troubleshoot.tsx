@@ -30,14 +30,17 @@
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from "react-native";
 import { Stack } from "expo-router";
+import * as Clipboard from "expo-clipboard";
+import * as Haptics from "expo-haptics";
 import type { DepStatus } from "../../shared/deps.ts";
 import { ask } from "../src/lib/api.ts";
-import { DEP_LOOK, depNeedsAttention, type DepTone } from "../src/model/depLook.ts";
+import { DEP_LOOK, depNeedsAttention, depSummary, type DepTone } from "../src/model/depLook.ts";
 import { useAgentglass } from "../src/state/host-context.tsx";
 import { useComputer } from "../src/state/use-computer.ts";
 import { usePaletteTick } from "../src/state/use-palette.ts";
-import { Btn, Note, Section, TAP, groupEdge } from "../src/ui.tsx";
-import { C, MONO, RADIUS, SPACE, T } from "../src/theme.ts";
+import { Chip, Group, GroupTitle, Note, Row, TAP } from "../src/ui.tsx";
+import { Glyph, type GlyphName } from "../src/nav/glyphs.tsx";
+import { C, MONO, RADIUS, SPACE, T, tint } from "../src/theme.ts";
 
 /** One row of `/dependencies`. Declared here rather than in shared/ — it is
  *  this route's reply, and the desktop reads its own copy of the same shape. */
@@ -77,10 +80,9 @@ export default function TroubleshootScreen(): React.ReactNode {
   const [answer, setAnswer] = useState<Answer | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  /** Which rows are expanded. Collapsed by default: twenty tools with a
-   *  paragraph each is a wall, and the ones that matter are the broken ones —
-   *  which is why those are open from the start. */
-  const [open, setOpen] = useState<Set<string>>(new Set());
+  /* Which rows are expanded is each row's own: a required tool that is broken
+     starts open — somebody on this screen is here because something is broken,
+     and making them tap to find out which is the failure it exists to fix. */
 
   const load = useCallback(async (): Promise<void> => {
     if (!host) return;
@@ -90,152 +92,229 @@ export default function TroubleshootScreen(): React.ReactNode {
     if (!got.ok) { setError(got.error); return; }
     setError(null);
     setAnswer(got.value);
-    // Anything not fine starts expanded. Somebody on this screen is here
-    // because something is broken, and making them tap to find out which is
-    // the whole failure it exists to fix.
-    setOpen(new Set((got.value.deps ?? []).filter((d) => depNeedsAttention(d.status)).map((d) => d.id)));
   }, [host]);
 
   useEffect(() => { void load(); }, [load]);
 
   const deps = answer?.deps ?? [];
   const broken = deps.filter((d) => depNeedsAttention(d.status));
+  const fine = deps.filter((d) => !depNeedsAttention(d.status));
+  const [allFine, setAllFine] = useState(false);
+  const summary = depSummary(deps);
+  const summaryInk = summary.tone === "good" ? C.success : summary.tone === "warn" ? C.warning : C.error;
+
+  const copy = useCallback((line: string): void => {
+    void Clipboard.setStringAsync(line);
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  }, []);
 
   if (!host) return null;
 
   return (
-    <ScrollView contentContainerStyle={{ padding: SPACE.lg, gap: SPACE.lg, paddingBottom: SPACE.xl }}>
-      <Stack.Screen options={{ title: "Troubleshooting" }} />
-
-      <Section
-        label="This phone"
-        note="What it can reach, and what it was allowed to do when it paired."
-      >
-        <Row name="Computer" value={computer} />
-        <Row name="This phone" value={host.label} />
-        <Row
-          name="Live connection"
-          value={live === "open" ? "connected" : live === "connecting" ? "connecting…" : "offline"}
-          ink={live === "open" ? C.success : live === "connecting" ? C.warning : C.error}
-        />
-        <Row name="Address" value={host.origin} mono />
-        <Row name="Allowed to" value={host.scope} />
-        <Row
-          name="Last answer"
-          value={fleet.at ? new Date(fleet.at).toLocaleTimeString() : "never"}
-        />
-        {fleet.error ? <Note tone="bad">{fleet.error}</Note> : null}
-        {live !== "open" ? (
-          <Note tone="bad">
-            {/* The one failure this screen can be reached during and cannot
-                diagnose, so it says what to check rather than guessing. */}
-            Nothing below can be read while the computer is unreachable. Check that agentglass is
-            running on it, and that this phone is on the same network or the same tailnet.
-          </Note>
-        ) : null}
-      </Section>
-
-      <Section
-        label="On the computer"
-        note={
-          broken.length === 0 && deps.length
-            ? "Everything this app shells out to is installed."
-            : "What is missing here is what is greyed out or refusing on the other screens."
-        }
-      >
-        {error ? <Note tone="bad">{error}</Note> : null}
-        {!answer && !error ? <ActivityIndicator color={C.text3} /> : null}
-        {answer && !deps.length ? <Note>That computer reported nothing to check.</Note> : null}
-
-        {deps.map((dep, i) => {
-          const look = DEP_LOOK[dep.status] ?? DEP_LOOK.attention;
-          const ink = INK[look.tone]();
-          const shown = open.has(dep.id);
-          return (
+    <ScrollView contentContainerStyle={{ padding: SPACE.lg, paddingTop: SPACE.xs, gap: SPACE.xs, paddingBottom: SPACE.xl }}>
+      <Stack.Screen
+        options={{
+          title: "Troubleshooting",
+          headerRight: () => (
             <Pressable
-              key={dep.id}
-              onPress={() => setOpen((was) => {
-                const next = new Set(was);
-                if (next.has(dep.id)) next.delete(dep.id); else next.add(dep.id);
-                return next;
-              })}
               accessibilityRole="button"
-              accessibilityLabel={`${dep.title}, ${look.word}`}
-              style={[
-                groupEdge(i === 0, i === deps.length - 1),
-                {
-                  paddingHorizontal: SPACE.md, paddingVertical: SPACE.sm, gap: SPACE.xs,
-                  // The tap target is the row itself, so the floor belongs here
-                  // rather than on the line inside it — which is what
-                  // test/tap-floor.test.ts caught when it was the other way
-                  // round.
-                  minHeight: TAP,
-                },
-              ]}
+              accessibilityLabel="Check again"
+              accessibilityState={{ busy }}
+              onPress={() => { void load(); }}
+              style={({ pressed }) => ({
+                width: TAP, height: TAP, borderRadius: TAP / 2, alignItems: "center", justifyContent: "center",
+                backgroundColor: pressed ? C.bg3 : "transparent",
+              })}
             >
-              <View style={{ flexDirection: "row", alignItems: "center", gap: SPACE.sm, flex: 1 }}>
-                <View style={{
-                  width: 8, height: 8, borderRadius: 4, backgroundColor: ink,
-                }} />
-                <Text numberOfLines={1} style={{ color: C.text, fontSize: T.small, flex: 1 }}>
-                  {dep.title}
-                  {dep.required ? null : (
-                    <Text style={{ color: C.text3, fontSize: T.eyebrow }}>  optional</Text>
-                  )}
-                </Text>
-                <Text style={{ color: ink, fontSize: T.eyebrow }}>
-                  {dep.status === "ok" && dep.detail ? dep.detail : look.word}
-                </Text>
-              </View>
-
-              {shown ? (
-                <View style={{ gap: SPACE.xs, paddingBottom: SPACE.xs }}>
-                  {/* The desktop's own sentence, not a rewrite. Two places
-                      describing one dependency in two ways is how they drift. */}
-                  <Text style={{ color: C.text3, fontSize: T.small, lineHeight: 18 }}>{dep.what}</Text>
-                  {dep.status !== "ok" && dep.detail ? (
-                    // "not used on linux" is a fact, not a warning; it keeps
-                    // the row's own ink rather than borrowing the amber.
-                    <Text style={{ color: look.tone === "mute" ? ink : C.warning, fontSize: T.eyebrow }}>{dep.detail}</Text>
-                  ) : null}
-                  {dep.install ? (
-                    <View style={{
-                      backgroundColor: C.bg, borderRadius: RADIUS.sm,
-                      borderWidth: 1, borderColor: C.border, padding: SPACE.sm,
-                    }}>
-                      {/* Selectable and not runnable. Every remedy here is a
-                          package install on somebody else's computer, and a
-                          phone that could run one would be a phone that can run
-                          anything as whoever owns it. */}
-                      <Text selectable style={{ color: C.text2, fontSize: 11, fontFamily: MONO }}>
-                        {dep.install}
-                      </Text>
-                    </View>
-                  ) : null}
-                </View>
-              ) : null}
+              {busy ? <ActivityIndicator color={C.text2} /> : <Glyph name="refresh" color={C.text2} size={22} />}
             </Pressable>
-          );
-        })}
+          ),
+        }}
+      />
 
-        {answer?.manager ? (
+      {/*
+        The unreachable computer first, and alone. It is the one failure this
+        screen can be reached during and cannot diagnose, so it says what to
+        check rather than guessing — and nothing under it can be read.
+      */}
+      {live !== "open" ? (
+        <Banner ink={C.error} glyph="offline" title={`Can't reach ${computer}`}>
+          Nothing below can be read while the computer is unreachable. Check that agentglass is
+          running on it, and that this phone is on the same network or the same tailnet.
+        </Banner>
+      ) : answer && deps.length ? (
+        /* The answer to what somebody arrives with — is anything I need
+           missing — said once, before the list it was counted from. */
+        <Banner
+          ink={summaryInk}
+          glyph={summary.tone === "good" ? "ok_circle" : "alert"}
+          title={summary.title}
+        >{summary.sub}</Banner>
+      ) : null}
+
+      {error ? <Note tone="bad">{error}</Note> : null}
+      {!answer && !error && live === "open" ? <ActivityIndicator color={C.text3} /> : null}
+      {answer && !deps.length ? <Note>That computer reported nothing to check.</Note> : null}
+
+      {broken.length ? (
+        <>
+          <GroupTitle text="Needs attention" />
+          <Group>
+            {/* Required first, and only those start open: measured on a
+                machine missing fourteen optional tools, opening every row was
+                a wall of install lines over the one that mattered. */}
+            {[...broken].sort((a, b) => Number(b.required) - Number(a.required)).map((dep) => (
+              <Tool key={dep.id} dep={dep} open={dep.required} onCopy={copy} />
+            ))}
+          </Group>
+        </>
+      ) : null}
+
+      {fine.length ? (
+        <>
+          <GroupTitle text="Found" />
+          {/* Collapsed to the first few. Twenty tools with a paragraph each is a
+              wall, and the ones that matter are the broken ones above. */}
+          <Group inset={36}>
+            {(allFine ? fine : fine.slice(0, 4)).map((dep) => <Tool key={dep.id} dep={dep} onCopy={copy} />)}
+            {!allFine && fine.length > 4 ? (
+              <Row title={`${fine.length - 4} more`} lead={<View style={{ width: 8 }} />} chevron onPress={() => setAllFine(true)} />
+            ) : null}
+          </Group>
+        </>
+      ) : null}
+
+      {answer?.manager ? (
+        <View style={{ paddingHorizontal: SPACE.xs, paddingTop: SPACE.sm }}>
           <Note>
-            Those lines are for {answer.manager} on {answer.platform}. Run them where the computer
-            is — this phone deliberately cannot.
+            Install commands are for {answer.manager} on {answer.platform}. Run them on the computer; this
+            phone deliberately cannot.
           </Note>
-        ) : null}
-      </Section>
+        </View>
+      ) : null}
 
-      <Section label="Ask again" note="Re-reads what is installed on that computer.">
-        <Btn label="Check again" busy={busy} onPress={() => { void load(); }} />
-      </Section>
+      <GroupTitle text="This phone" />
+      <Group>
+        <View style={{ paddingHorizontal: SPACE.lg, paddingVertical: SPACE.sm }}>
+          <Line name="Computer" value={computer} />
+          <Line name="This phone" value={host.label} />
+          <Line
+            name="Live connection"
+            value={live === "open" ? "connected" : live === "connecting" ? "connecting…" : "offline"}
+            ink={live === "open" ? C.success : live === "connecting" ? C.warning : C.error}
+          />
+          <Line name="Address" value={host.origin} mono />
+          <Line name="Allowed to" value={host.scope} />
+          <Line name="Last answer" value={fleet.at ? new Date(fleet.at).toLocaleTimeString() : "never"} />
+          {fleet.error ? <Note tone="bad">{fleet.error}</Note> : null}
+        </View>
+      </Group>
     </ScrollView>
   );
 }
 
+/** A tinted box with a mark, a line and a sentence: the screen's verdict. */
+function Banner({ ink, glyph, title, children }: {
+  ink: string;
+  glyph: GlyphName;
+  title: string;
+  children: React.ReactNode;
+}): React.ReactNode {
+  return (
+    <View
+      accessibilityRole="summary"
+      style={{
+        flexDirection: "row", gap: 14, alignItems: "center", padding: SPACE.lg,
+        borderRadius: RADIUS.lg, backgroundColor: tint(ink, 0.14),
+      }}
+    >
+      <Glyph name={glyph} color={ink} size={28} weight={1.9} />
+      <View style={{ flex: 1, gap: 2 }}>
+        <Text style={{ color: C.text, fontSize: 16, fontWeight: "600" }}>{title}</Text>
+        <Text style={{ color: C.text2, fontSize: 13, lineHeight: 18 }}>{children}</Text>
+      </View>
+    </View>
+  );
+}
+
+/** One tool. Open, it says why this app cares, what is wrong and the line
+ *  that installs it; closed, it is a dot, a name and a version. */
+function Tool({ dep, open: startOpen, onCopy }: {
+  dep: Dep;
+  open?: boolean;
+  onCopy: (line: string) => void;
+}): React.ReactNode {
+  const [open, setOpen] = useState(!!startOpen);
+  const look = DEP_LOOK[dep.status] ?? DEP_LOOK.attention;
+  const ink = INK[look.tone]();
+  return (
+    <Pressable
+      onPress={() => setOpen((v) => !v)}
+      accessibilityRole="button"
+      accessibilityState={{ expanded: open }}
+      accessibilityLabel={`${dep.title}, ${look.word}`}
+      style={({ pressed }) => ({
+        paddingHorizontal: SPACE.lg, paddingVertical: SPACE.md, gap: SPACE.sm, minHeight: 48,
+        justifyContent: "center", backgroundColor: pressed ? C.bg3 : "transparent",
+      })}
+    >
+      <View style={{ flexDirection: "row", alignItems: "center", gap: SPACE.md }}>
+        <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: ink }} />
+        <Text numberOfLines={1} style={{ color: C.text, fontSize: 15, fontWeight: "500", flexShrink: 1 }}>{dep.title}</Text>
+        {dep.required ? null : <Chip label="optional" />}
+        <View style={{ flex: 1 }} />
+        <Text numberOfLines={1} style={{
+          color: dep.status === "ok" ? C.text3 : ink, fontSize: 13, fontFamily: dep.status === "ok" ? MONO : undefined,
+          fontWeight: dep.status === "ok" ? "400" : "500", flexShrink: 1,
+        }}>
+          {dep.status === "ok" && dep.detail ? dep.detail : look.word}
+        </Text>
+      </View>
+
+      {open ? (
+        <View style={{ gap: SPACE.sm, paddingLeft: 20 }}>
+          {/* The desktop's own sentence, not a rewrite. Two places describing
+              one dependency in two ways is how they drift. */}
+          <Text style={{ color: C.text3, fontSize: 13, lineHeight: 18 }}>{dep.what}</Text>
+          {dep.status !== "ok" && dep.detail ? (
+            // "not used on linux" is a fact, not a warning; it keeps the row's
+            // own ink rather than borrowing the amber.
+            <Text style={{ color: look.tone === "mute" ? ink : C.warning, fontSize: T.small }}>{dep.detail}</Text>
+          ) : null}
+          {dep.install ? (
+            <View style={{
+              flexDirection: "row", alignItems: "center", paddingLeft: SPACE.md,
+              backgroundColor: C.bg, borderRadius: RADIUS.md, borderWidth: 1, borderColor: C.border,
+            }}>
+              {/* Selectable and copyable, not runnable. Every remedy here is a
+                  package install on somebody else's computer, and a phone that
+                  could run one would be a phone that can run anything as
+                  whoever owns it. */}
+              <Text selectable style={{ color: C.text, fontSize: T.small, fontFamily: MONO, flex: 1 }}>
+                {dep.install}
+              </Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Copy: ${dep.install}`}
+                onPress={() => onCopy(dep.install!)}
+                style={({ pressed }) => ({
+                  width: TAP, height: TAP, alignItems: "center", justifyContent: "center",
+                  transform: [{ scale: pressed ? 0.97 : 1 }],
+                })}
+              >
+                <Glyph name="copy" color={C.text2} size={18} />
+              </Pressable>
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+    </Pressable>
+  );
+}
+
 /** A name and a value on one line. Its own component because the block above
- *  has five of them and the alignment is the point. */
-function Row({ name, value, mono, ink }: {
+ *  has six of them and the alignment is the point. */
+function Line({ name, value, mono, ink }: {
   name: string;
   value: string;
   mono?: boolean;
