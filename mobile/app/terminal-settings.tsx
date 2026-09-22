@@ -1,6 +1,10 @@
 /*
  * The key bar, arranged.
  *
+ * Only the keys. The pane's width and the keyboard's help were here too and
+ * moved to Settings ▸ Terminal: they are preferences, reached where the other
+ * preferences are, and this screen is reached from the terminal's own menu.
+ *
  * ── why this screen exists ───────────────────────────────────────────────
  * There are seventeen accessory keys and a phone shows six or seven at the
  * fold. The rest live behind a horizontal drag on a strip whose contents you
@@ -32,11 +36,8 @@ import { canHide, move, reset, rows, toggle } from "../src/terminal/keyLayout.ts
 import {
   MAX_CUSTOM, add, bytesFor, mintId, problemWith, remove,
 } from "../src/terminal/customKeys.ts";
-import {
-  COLUMNS, customKeys, keyLayout, onTermPrefs, setCustomKeys, setKeyLayout, setTermAssist,
-  setTermColumns, termAssist, termColumns,
-} from "../src/terminal/termPrefs.ts";
-import { Btn, Field, Note, Section, Segmented, TAP, Toggle, groupEdge } from "../src/ui.tsx";
+import { customKeys, keyLayout, onTermPrefs, setCustomKeys, setKeyLayout } from "../src/terminal/termPrefs.ts";
+import { Btn, Field, Note, Section, TAP, Toggle, groupEdge } from "../src/ui.tsx";
 import { C, MONO, RADIUS, SPACE, T } from "../src/theme.ts";
 
 export default function TerminalSettingsScreen(): React.ReactNode {
@@ -45,8 +46,6 @@ export default function TerminalSettingsScreen(): React.ReactNode {
   /* The layout is a module singleton so the terminal and this screen see one
      value. This is only the local mirror that makes the list repaint. */
   const [layout, setLocal] = useState(keyLayout);
-  const [cols, setCols] = useState(termColumns);
-  const [assist, setAssist] = useState(termAssist);
   /* The half-written key. Local to this screen: nothing is stored until it is
      added, so leaving with a field half-filled loses a draft rather than
      putting a broken key on somebody's bar. */
@@ -57,7 +56,7 @@ export default function TerminalSettingsScreen(): React.ReactNode {
   const [mine, setMine] = useState(customKeys);
 
   useEffect(() => onTermPrefs(() => {
-    setLocal(keyLayout()); setCols(termColumns()); setAssist(termAssist());
+    setLocal(keyLayout());
     setMine(customKeys());
   }), []);
 
@@ -77,47 +76,7 @@ export default function TerminalSettingsScreen(): React.ReactNode {
 
   return (
     <ScrollView contentContainerStyle={{ padding: SPACE.lg, gap: SPACE.lg, paddingBottom: SPACE.xl }}>
-      <Stack.Screen options={{ title: "Terminal" }} />
-
-      <Section
-        label="How wide"
-        note={
-          "How many columns the phone asks the pane for. 60 to read, 80 to work. There is no "
-          + "wider rung on purpose: measured on this screen, 120 columns clips each glyph inside "
-          + "its own cell and characters change identity — a seven loses its bar and reads as a "
-          + "slash, so a commit hash comes back wrong."
-        }
-      >
-        <Segmented
-          value={String(cols)}
-          onChange={(v) => { const n = Number(v); setTermColumns(n); setCols(n); }}
-          options={COLUMNS.map((n) => ({ id: String(n), label: `${n}c` }))}
-        />
-        <Note>
-          {/* The one thing worth saying out loud, because it is the surprise:
-              this is what the pane is RESIZED to while the phone is looking at
-              it, not a zoom applied on the glass. */}
-          A pane wider than this is shown from its left-hand edge, and the terminal says so when
-          that happens.
-        </Note>
-      </Section>
-
-      <Section
-        label="Keyboard help"
-        note={
-          "Autocorrect and suggestions in the field that composes a line. Off by default because "
-          + "that field usually holds a command: a keyboard that helps rewrites flags, paths and "
-          + "branch names into English, silently, and the first you know is a command that did not "
-          + "run — or one that ran differently."
-        }
-      >
-        <Toggle
-          on={assist}
-          label={assist ? "The keyboard may help" : "The keyboard stays out of it"}
-          sub="Keys sent straight to the pane are never touched either way."
-          onPress={() => { setTermAssist(!assist); setAssist(!assist); }}
-        />
-      </Section>
+      <Stack.Screen options={{ title: "Key bar" }} />
 
       <Section
         label="The key bar"

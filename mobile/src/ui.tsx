@@ -15,6 +15,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { C, RADIUS, SCRIM, SPACE, T, ink } from "./theme.ts";
+import { ChevronIcon } from "./nav/icons.tsx";
 
 /**
  * The floor for anything you tap.
@@ -499,6 +500,144 @@ export function SheetRow({ label, sub, on, onPress }: {
       {on ? (
         <Text style={{ color: C.primary, fontSize: T.title, fontWeight: "700" }}>✓</Text>
       ) : null}
+    </Pressable>
+  );
+}
+
+/**
+ * A preference that is on or off: the platform's shape, drawn here.
+ *
+ * `Toggle` above is a box on purpose, for choices with no undo. A setting is
+ * the other kind — flipped, looked at, flipped back — and Android people read
+ * a switch as exactly that. Settings drew its one preference as a box beside
+ * a sentence that changed wording with the state ("This phone may buzz" /
+ * "Let this phone buzz"), so the only way to tell on from off was to read it.
+ *
+ * Material 3's geometry: a 52 × 32 track, a 24 thumb carrying a tick when on
+ * and a 16 one when off, and the off track outlined so it is a control and
+ * not a hole in the card. The whole row is the target, so the switch itself
+ * needs no padding of its own.
+ */
+export function Switch({ on, disabled }: { on: boolean; disabled?: boolean }): ReactNode {
+  return (
+    <View
+      style={{
+        width: 52, height: 32, borderRadius: 16, justifyContent: "center",
+        backgroundColor: on ? C.primary : C.bg4,
+        borderWidth: on ? 0 : 2, borderColor: C.text4,
+        opacity: disabled ? 0.45 : 1,
+      }}
+    >
+      <View style={{
+        position: "absolute",
+        left: on ? 24 : 6 - 2,
+        width: on ? 24 : 16, height: on ? 24 : 16, borderRadius: 12,
+        backgroundColor: on ? ink(C.primary) : C.text3,
+        alignItems: "center", justifyContent: "center",
+      }}>
+        {on ? (
+          <View style={{
+            width: 9, height: 5, borderLeftWidth: 2, borderBottomWidth: 2,
+            borderColor: C.primary, transform: [{ rotate: "-45deg" }], marginTop: -2,
+          }} />
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
+/**
+ * A group title: sentence case, above a group, in the second text colour.
+ *
+ * The screens titled their groups in small uppercase (`Label`), which is a
+ * desk convention: at 11 points on a phone it is the least legible line on the
+ * screen, and it is the line that says what the group below is.
+ */
+export function GroupTitle({ text, trailing }: { text: string; trailing?: ReactNode }): ReactNode {
+  return (
+    <View style={{
+      flexDirection: "row", alignItems: "center", gap: SPACE.sm,
+      paddingHorizontal: SPACE.xs, paddingTop: SPACE.md, paddingBottom: SPACE.xs,
+    }}>
+      <Text accessibilityRole="header" style={{ color: C.text2, fontSize: 13, fontWeight: "600", flex: 1 }}>
+        {text}
+      </Text>
+      {trailing}
+    </View>
+  );
+}
+
+/**
+ * Rows that belong together, on one surface with hairlines between them.
+ *
+ * The same argument as `groupEdge`, for rows that are not in a FlatList: one
+ * card with its rows divided, so eight settings read as eight lines of one
+ * thing. The hairline is inset past the leading icon, the way Android draws a
+ * list, so the icons read as a column and the dividers as belonging to the
+ * text.
+ */
+export function Group({ children, inset = SPACE.lg }: { children: ReactNode; inset?: number }): ReactNode {
+  const rows = (Array.isArray(children) ? children : [children]).flat().filter(Boolean);
+  return (
+    <View style={{
+      backgroundColor: C.bg2, borderRadius: RADIUS.lg, borderWidth: 1, borderColor: C.border, overflow: "hidden",
+    }}>
+      {rows.map((row, i) => (
+        <View key={i}>
+          {i > 0 ? <View style={{ height: 1, backgroundColor: C.border, marginLeft: inset }} /> : null}
+          {row}
+        </View>
+      ))}
+    </View>
+  );
+}
+
+/**
+ * One row of a Group: a leading mark, a title with its line under it, and
+ * whatever trails — a value, a switch, or the chevron that says it opens
+ * something. 56 points tall with a line under the title, 48 without: both
+ * over the floor, and the height a list row is on Android.
+ */
+export function Row({ title, sub, lead, trail, chevron, onPress, disabled, tone, checked }: {
+  title: string;
+  /** Set when the row IS a switch: TalkBack then says "switch, on" rather
+   *  than "button", and the trailing Switch is only the drawing of it. */
+  checked?: boolean;
+  sub?: string;
+  lead?: ReactNode;
+  trail?: ReactNode;
+  chevron?: boolean;
+  onPress?: () => void;
+  disabled?: boolean;
+  tone?: "danger";
+}): ReactNode {
+  const body = (pressed: boolean): ReactNode => (
+    <View style={{
+      flexDirection: "row", alignItems: "center", gap: 14,
+      minHeight: sub ? 56 : 48, paddingHorizontal: SPACE.lg, paddingVertical: SPACE.md,
+      backgroundColor: pressed ? C.bg3 : "transparent",
+      opacity: disabled ? 0.45 : 1,
+    }}>
+      {lead}
+      <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+        <Text numberOfLines={1} style={{
+          color: tone === "danger" ? C.error : C.text, fontSize: 15, fontWeight: "500",
+        }}>{title}</Text>
+        {sub ? <Text numberOfLines={2} style={{ color: C.text3, fontSize: T.small, lineHeight: 17 }}>{sub}</Text> : null}
+      </View>
+      {trail}
+      {chevron ? <ChevronIcon color={C.text3} size={18} /> : null}
+    </View>
+  );
+  if (!onPress) return body(false);
+  return (
+    <Pressable
+      accessibilityRole={checked === undefined ? "button" : "switch"}
+      accessibilityState={checked === undefined ? { disabled: !!disabled } : { checked, disabled: !!disabled }}
+      disabled={disabled}
+      onPress={onPress}
+    >
+      {({ pressed }) => body(pressed)}
     </Pressable>
   );
 }

@@ -59,6 +59,15 @@ const ALLOWED: { file: string; height: number; because: string }[] = [
       + "chrome over a screen whose whole point is the pane below it.",
   },
   {
+    file: "app/(tabs)/settings.tsx",
+    height: 36,
+    because:
+      "a value picked on a settings row (Theme, Width), drawn as a pill at the "
+      + "end of a 56-point row where a switch would sit. The pill is 36 so it "
+      + "fits the row with its own padding; each option carries 4 points of "
+      + "hitSlop above and below, so what a thumb can land on is 44.",
+  },
+  {
     file: "src/review/FilesPane.tsx",
     height: 22,
     because:
