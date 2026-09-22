@@ -25,7 +25,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Linking, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import type { PrCheck, PrDetail, ReviewRecipe, ReviewRecipesResponse } from "../../../shared/types.ts";
+import type { PrDetail, ReviewRecipe, ReviewRecipesResponse } from "../../../shared/types.ts";
 import { ask } from "../../src/lib/api.ts";
 import { Md, outline } from "../../src/md/Md.tsx";
 import { useAgentglass } from "../../src/state/host-context.tsx";
@@ -44,9 +44,10 @@ import {
   MERGE_LABEL, MERGE_OPTION, allowedMethods, mergeSubject, pickMergeMethod,
   type MergeMethod,
 } from "../../../shared/mergeMethod.ts";
-import { Btn, Card, Label, Note, Segmented, Sheet, SheetRow, TAP, Toggle } from "../../src/ui.tsx";
+import { Btn, Card, Chip, Group, Label, Note, Row, Segmented, Sheet, SheetRow, TAP, Toggle } from "../../src/ui.tsx";
+import { Glyph, type GlyphName } from "../../src/nav/glyphs.tsx";
 import { ChevronIcon } from "../../src/nav/icons.tsx";
-import { C, MONO, RADIUS, SPACE, T } from "../../src/theme.ts";
+import { C, MONO, RADIUS, SPACE, T, ink } from "../../src/theme.ts";
 
 /** How much of a description shows before the fold. */
 const BODY_BLOCKS = 6;
@@ -54,20 +55,23 @@ const BODY_BLOCKS = 6;
 /** The rollup as one word and one colour. `pending` beats `failure` on purpose:
  *  a run still going has not failed yet, and calling it red is how a screen
  *  tells you to go and look at something that is about to go green. */
-function checksLook(pr: PrDetail): { word: string; ink: string } {
+function checksLook(pr: PrDetail): { word: string; ink: string; mark: GlyphName } {
   const { total, failure, pending, success } = pr.checks;
-  if (!total) return { word: "no checks", ink: C.text4 };
-  if (pending) return { word: `${pending} running`, ink: C.warning };
-  if (failure) return { word: `${failure} failed`, ink: C.error };
-  return { word: `${success} green`, ink: C.success };
+  if (!total) return { word: "No checks", ink: C.text4, mark: "circle" };
+  if (pending) return { word: `${pending} running`, ink: C.warning, mark: "run_circle" };
+  if (failure) return { word: `${failure} failed`, ink: C.error, mark: "x_circle" };
+  return { word: `${success} passed`, ink: C.success, mark: "ok_circle" };
 }
 
 /** What GitHub decided, in the words the list already uses — so a row and its
- *  detail cannot describe the same pull request differently. */
-function decisionLook(pr: PrDetail): { word: string; ink: string } | null {
-  if (pr.reviewDecision === "APPROVED") return { word: "approved", ink: C.success };
-  if (pr.reviewDecision === "CHANGES_REQUESTED") return { word: "changes asked", ink: C.error };
-  if (pr.reviewDecision === "REVIEW_REQUIRED") return { word: "needs review", ink: C.warning };
+ *  detail cannot describe the same pull request differently (see
+ *  model/prLook.ts). */
+function decisionLook(pr: PrDetail): { word: string; ink: string; mark: GlyphName } | null {
+  if (pr.reviewDecision === "APPROVED") return { word: "Approved", ink: C.success, mark: "check" };
+  if (pr.reviewDecision === "CHANGES_REQUESTED") return { word: "Changes requested", ink: C.error, mark: "comment" };
+  if (pr.reviewDecision === "REVIEW_REQUIRED") {
+    return { word: pr.viewerDidAuthor ? "Needs review" : "Needs your review", ink: C.warning, mark: "eye" };
+  }
   return null;
 }
 
@@ -98,48 +102,6 @@ function FileRow({ file, onOpen }: {
         {file.deletions ? <Text style={{ color: C.error }}>−{file.deletions}</Text> : null}
       </Text>
     </Pressable>
-  );
-}
-
-function CheckRow({ check, onOpen }: {
-  check: PrCheck;
-  /** Absent when there is nowhere to go. The row is a row either way — a
-   *  control that is sometimes pressable and looks identical is worse than one
-   *  that never is, so the chevron is what marks the difference. */
-  onOpen?: () => void;
-}): React.ReactNode {
-  const bad = check.state === "failure";
-  // `done` is the server's own word for "will not change without a push or a
-  // re-run", and it is not the same question as the state: a check can read
-  // `failure` and still be re-running.
-  const running = !check.done;
-  const ink = bad ? C.error : running ? C.warning : C.success;
-  const Row = onOpen ? Pressable : View;
-  return (
-    <Row
-      {...(onOpen ? { onPress: onOpen, accessibilityRole: "button" as const } : {})}
-      style={{ flexDirection: "row", alignItems: "center", gap: SPACE.sm, minHeight: TAP }}
-    >
-      {/* A dot AND a word. Colour alone is not a signal to rely on at 11px
-          outdoors — the same rule the repos screen states for its file marks. */}
-      <View style={{
-        width: 8, height: 8, borderRadius: 4,
-        backgroundColor: running ? "transparent" : ink,
-        borderWidth: running ? 1 : 0, borderColor: C.text4,
-      }} />
-      <View style={{ flex: 1, minWidth: 0 }}>
-        <Text numberOfLines={1} style={{ color: C.text2, fontSize: T.small }}>{check.name}</Text>
-        {/* The workflow, because two repositories' checks are called `test` and
-            only the workflow says which one you are looking at. */}
-        {check.workflow && check.workflow !== check.name ? (
-          <Text numberOfLines={1} style={{ color: C.text4, fontSize: T.eyebrow }}>{check.workflow}</Text>
-        ) : null}
-      </View>
-      <Text style={{ color: ink, fontSize: T.eyebrow }}>
-        {running ? "running" : bad ? "failed" : check.state}
-      </Text>
-      {onOpen ? <ChevronIcon color={C.text4} size={16} /> : null}
-    </Row>
   );
 }
 
@@ -578,44 +540,70 @@ export default function PrScreen(): React.ReactNode {
                   tracked={tracked}
                   onFind={(query) => router.push({ pathname: "/(tabs)/tasks", params: { q: query } })}
                 />
-                {detail.isDraft ? (
-                  <View style={{
-                    paddingHorizontal: SPACE.sm, paddingVertical: 2,
-                    borderRadius: RADIUS.sm, borderWidth: 1, borderColor: C.text4,
-                  }}>
-                    <Text style={{ color: C.text4, fontSize: T.eyebrow }}>draft</Text>
-                  </View>
-                ) : null}
-                {decision ? (
-                  <View style={{
-                    paddingHorizontal: SPACE.sm, paddingVertical: 2,
-                    borderRadius: RADIUS.sm, borderWidth: 1, borderColor: decision.ink,
-                  }}>
-                    <Text style={{ color: decision.ink, fontSize: T.eyebrow }}>{decision.word}</Text>
-                  </View>
-                ) : null}
-                {checks ? (
-                  <View style={{
-                    paddingHorizontal: SPACE.sm, paddingVertical: 2,
-                    borderRadius: RADIUS.sm, borderWidth: 1, borderColor: checks.ink,
-                  }}>
-                    <Text style={{ color: checks.ink, fontSize: T.eyebrow }}>{checks.word}</Text>
-                  </View>
-                ) : null}
-                <Text style={{ color: C.text4, fontSize: T.eyebrow }}>
+                {detail.isDraft ? <Chip label="Draft" /> : null}
+                <Text style={{ color: C.text3, fontSize: T.small }}>
                   {detail.author} · {since(detail.updatedAt, now)}
                 </Text>
               </View>
-              {/* A conflict is a different need from a red check, and the list
-                  already carries `mergeable` for exactly that reason. UNKNOWN
-                  is GitHub still computing it and must not be drawn as "fine". */}
-              {detail.mergeable === "CONFLICTING" ? (
-                <Note tone="bad">This branch conflicts with {detail.baseRefName}.</Note>
-              ) : null}
               {detail.forcePushedSinceReview ? (
                 <Note>The author force-pushed after a review — anything already said may be stale.</Note>
               ) : null}
             </View>
+
+            {/*
+              Is it all right: three rows, each a question with its answer.
+
+              The detail used to say this as three outlined chips in a line
+              under the title — "approved", "2 failed" — and a separate Failing
+              card further down. The questions somebody opens a pull request on
+              a phone with are exactly three, and each has a place to go for the
+              rest: the checks, the threads, the merge. So each is a row, and
+              the row is the door.
+            */}
+            <Group inset={52}>
+              <Row
+                title={checks?.word ?? "No checks"}
+                sub={failing.length
+                  ? failing.slice(0, 2).map((c) => c.name).join(", ") + (failing.length > 2 ? ` and ${failing.length - 2} more` : "")
+                  : detail.checks.pending ? "Still running" : detail.checks.total ? "Every check passed" : "This repository runs none here"}
+                lead={<Glyph name={checks?.mark ?? "circle"} color={checks?.ink ?? C.text4} size={22} weight={1.9} />}
+                chevron={detail.checks.total > 0}
+                /* Every failing check opens the same screen. The job list
+                   there is the whole run, not one check: a failing `test` is
+                   routinely a `build` that fell over first, and arriving
+                   filtered to one row hides the job that actually broke. */
+                onPress={detail.checks.total > 0 ? () => router.push({
+                  pathname: "/pr/checks",
+                  params: { number: String(number), root: root ?? "" },
+                }) : undefined}
+              />
+              <Row
+                title={decision?.word ?? "No review asked for"}
+                sub={openThreads
+                  ? `${openThreads} open ${openThreads === 1 ? "thread" : "threads"}`
+                  : (detail.threads ?? []).length ? "Every thread resolved" : "No threads"}
+                lead={<Glyph name={decision?.mark ?? "comment"} color={decision?.ink ?? C.text3} size={22} weight={1.9} />}
+                chevron
+                onPress={() => setPane("threads")}
+              />
+              <Row
+                title={detail.state !== "OPEN" ? (detail.state === "MERGED" ? "Merged" : "Closed")
+                  : detail.mergeable === "CONFLICTING" ? `Conflicts with ${detail.baseRefName}` : gate?.line ?? "Merge"}
+                sub={detail.state === "OPEN" ? `${detail.headRefName} into ${detail.baseRefName}` : undefined}
+                lead={<Glyph
+                  name="merge"
+                  color={detail.state === "MERGED" ? C.primary : gate && !gate.blocked && detail.mergeable !== "CONFLICTING" ? C.success : C.text3}
+                  size={22}
+                  weight={1.9}
+                />}
+                /* A conflict is a different need from a red check, and the list
+                   carries `mergeable` for exactly that reason. UNKNOWN is
+                   GitHub still computing it and must not be drawn as "fine",
+                   which is why only CONFLICTING is named. */
+                chevron={mayWrite && detail.state === "OPEN"}
+                onPress={mayWrite && detail.state === "OPEN" ? () => { setMergeErr(null); setMerging(true); } : undefined}
+              />
+            </Group>
 
             {detail.body.trim() ? (
               <Card style={{ gap: SPACE.md }}>
@@ -640,29 +628,6 @@ export default function PrScreen(): React.ReactNode {
                   </Pressable>
                 ) : null}
               </Card>
-            ) : null}
-
-            {failing.length ? (
-              <View style={{ gap: SPACE.sm }}>
-                <Label text={`Failing · ${failing.length}`} />
-                <Card style={{ gap: SPACE.xs, padding: SPACE.md }}>
-                  {/* Every one of them opens the same screen. The job list
-                      there is the whole run, not this check alone: a failing
-                      `test` is routinely a `build` that fell over first, and
-                      arriving filtered to the row you tapped hides the job
-                      that actually broke. */}
-                  {failing.map((c) => (
-                    <CheckRow
-                      key={c.name}
-                      check={c}
-                      onOpen={() => router.push({
-                        pathname: "/pr/checks",
-                        params: { number: String(number), root: root ?? "" },
-                      })}
-                    />
-                  ))}
-                </Card>
-              </View>
             ) : null}
 
             <View style={{ gap: SPACE.sm }}>
@@ -710,12 +675,12 @@ export default function PrScreen(): React.ReactNode {
               </View>
             ) : null}
 
-            {/* Not in the pinned bar. The bar holds the three things you open a
-                pull request on a phone to DO — hand it over, review it, merge
-                it — and a fourth button there would be a fourth button in the
-                way of those. This is the thing you do on your own pull
-                request, where the other three are off. */}
-            {mayWrite ? (
+            {/* On somebody else's pull request, a comment that is not a review
+                lives here rather than in the pinned bar: the bar holds the
+                three things you open a pull request on a phone to DO, and a
+                fourth button there would be in the way of those. On your own,
+                Comment IS the bar's middle button. */}
+            {mayWrite && !detail.viewerDidAuthor ? (
               <Btn
                 label="Comment on it"
                 onPress={() => { setCommentErr(null); setCommenting(true); }}
@@ -743,50 +708,62 @@ export default function PrScreen(): React.ReactNode {
         </View>
       ) : null}
 
-      {/* The bar, pinned. It is the reason to be on this screen, so it does not
-          scroll away under a long description. */}
-      {detail ? (
+      {/*
+        The bar, pinned: Ask Claude, Review, Merge. It is the reason to be on
+        this screen, so it does not scroll away under a long description.
+
+        Only for a phone that may write. "✦ Claude" used to be drawn for every
+        pairing while `hand` returned early without the full grant — a button
+        that did nothing on the phones most likely to press it. The scope rule
+        everywhere else is "not drawn rather than drawn and refused", and this
+        bar now keeps it.
+
+        On your own pull request the middle button is Comment: GitHub will not
+        let you review your own work, and a greyed Review there was a button
+        that could only ever be a reason.
+      */}
+      {detail && mayWrite ? (
         <View style={{
           flexDirection: "row", gap: SPACE.sm,
           paddingHorizontal: SPACE.lg, paddingTop: SPACE.md, paddingBottom: SPACE.lg,
           borderTopWidth: 1, borderTopColor: C.border, backgroundColor: C.bg2,
         }}>
-          <Btn
-            label="✦ Claude"
-            tone="primary"
-            style={{ flex: 1.2 }}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Ask Claude about #${number}`}
             onPress={() => setHanding(true)}
-          />
-          <Btn
-            label={notes.length ? `Review · ${notes.length}` : "Review"}
-            style={{ flex: 1 }}
-            // Not on your own pull request: GitHub will not let you review your
-            // own work, and neither should this.
-            disabled={!mayWrite || detail.viewerDidAuthor}
-            onPress={() => setReviewing(true)}
-          />
-          {/*
-            Merge is here rather than at the top because the Inbox has a group
-            called "Ready to merge" and tapping a row in it arrived at a screen
-            that could not.
-
-            Drawn only with `full`, like every other write — the scope rule is
-            "not drawn rather than drawn and refused". But it IS drawn when
-            merging is blocked, greyed, because the reason is the useful part
-            and a control that vanishes teaches nothing. That is the same
-            argument PrMergeState carries in shared/types.ts: "a disabled
-            control that can't say why is the thing this panel exists to
-            replace" — so the sheet says why.
-          */}
-          {mayWrite ? (
+            style={({ pressed }) => ({
+              flex: 1.3, minHeight: 48, borderRadius: RADIUS.pill, flexDirection: "row", gap: SPACE.sm,
+              alignItems: "center", justifyContent: "center", backgroundColor: C.primary,
+              transform: [{ scale: pressed ? 0.97 : 1 }],
+            })}
+          >
+            <Glyph name="spark" color={ink(C.primary)} size={18} />
+            <Text style={{ color: ink(C.primary), fontSize: T.body, fontWeight: "600" }}>Ask Claude</Text>
+          </Pressable>
+          {detail.viewerDidAuthor ? (
+            <Btn label="Comment" style={{ flex: 1 }} onPress={() => { setCommentErr(null); setCommenting(true); }} />
+          ) : (
             <Btn
-              label="Merge"
-              tone={gate && !gate.blocked ? "good" : "plain"}
+              label={notes.length ? `Review · ${notes.length}` : "Review"}
               style={{ flex: 1 }}
-              disabled={detail.state !== "OPEN"}
-              onPress={() => { setMergeErr(null); setMerging(true); }}
+              onPress={() => setReviewing(true)}
             />
-          ) : null}
+          )}
+          {/*
+            Merge is drawn when merging is blocked, greyed by its tone rather
+            than hidden, because the reason is the useful part and a control
+            that vanishes teaches nothing. That is the argument PrMergeState
+            carries in shared/types.ts: "a disabled control that can't say why
+            is the thing this panel exists to replace" — so the sheet says why.
+          */}
+          <Btn
+            label="Merge"
+            tone={gate && !gate.blocked ? "good" : "plain"}
+            style={{ flex: 1 }}
+            disabled={detail.state !== "OPEN"}
+            onPress={() => { setMergeErr(null); setMerging(true); }}
+          />
         </View>
       ) : null}
 
@@ -986,7 +963,7 @@ export default function PrScreen(): React.ReactNode {
         ) : null}
       </Sheet>
 
-      <Sheet open={handing} onClose={() => setHanding(false)} title={`Hand #${number} to Claude`}>
+      <Sheet open={handing} onClose={() => setHanding(false)} title={`Ask Claude about #${number}`}>
         {menu === null ? (
           <Note>Reading the menu from the computer…</Note>
         ) : null}
