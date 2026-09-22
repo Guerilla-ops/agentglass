@@ -44,6 +44,7 @@ import { useTracksWork } from "../state/use-tracks-work.ts";
 import { C, RADIUS, SPACE, T, ink, tint } from "../theme.ts";
 import { BAR, taskDestinations, type TabRoute } from "./bar.ts";
 import { rememberTab } from "./last.ts";
+import { useTerminalPalette } from "./barPalette.ts";
 import { IssuesIcon, PrsIcon, TasksIcon, TerminalIcon, type IconProps } from "./icons.tsx";
 
 /** Only the four the bar draws — the compiler is what keeps this in step with
@@ -65,6 +66,10 @@ export function TabBar({ state, navigation }: BottomTabBarProps): React.ReactNod
   const { host, fleet } = useAgentglass();
   const offered = taskDestinations(BAR, useTracksWork(host));
   const here = state.routes[state.index]?.name as TabRoute | undefined;
+  /* Under the terminal the bar is the last strip of the pane's surface — see
+     barPalette.ts. Everywhere else, the phone's. */
+  const desk = useTerminalPalette();
+  const K = here === "terminal" && desk ? desk : C;
 
   useEffect(() => {
     if (here && BAR.some((d) => d.route === here)) rememberTab(here);
@@ -86,9 +91,9 @@ export function TabBar({ state, navigation }: BottomTabBarProps): React.ReactNod
       accessibilityRole="tablist"
       style={{
         flexDirection: "row",
-        backgroundColor: C.bg2,
+        backgroundColor: K.bg2,
         borderTopWidth: 1,
-        borderTopColor: C.border,
+        borderTopColor: K.border,
         paddingBottom: insets.bottom,
       }}
     >
@@ -116,24 +121,24 @@ export function TabBar({ state, navigation }: BottomTabBarProps): React.ReactNod
           >
             <View style={{
               width: 56, height: 32, borderRadius: RADIUS.lg, alignItems: "center", justifyContent: "center",
-              backgroundColor: on ? tint(C.primary, 0.22) : "transparent",
+              backgroundColor: on ? tint(K.primary, 0.22) : "transparent",
             }}>
-              {Icon ? <Icon color={on ? C.text : C.text3} size={22} /> : null}
+              {Icon ? <Icon color={on ? K.text : K.text3} size={22} /> : null}
               {n > 0 ? (
                 <View style={{
                   position: "absolute", top: 0, left: 32, minWidth: 16, height: 16, borderRadius: 8,
                   paddingHorizontal: 4, alignItems: "center", justifyContent: "center",
-                  backgroundColor: dest.route === "terminal" ? C.warning : C.primary,
+                  backgroundColor: dest.route === "terminal" ? K.warning : K.primary,
                 }}>
                   <Text style={{
-                    color: ink(dest.route === "terminal" ? C.warning : C.primary),
+                    color: ink(dest.route === "terminal" ? K.warning : K.primary),
                     fontSize: T.eyebrow, fontWeight: "700", lineHeight: 14,
                   }}>{n > 99 ? "99+" : n}</Text>
                 </View>
               ) : null}
             </View>
             <Text style={{
-              color: on ? C.text : C.text3, fontSize: T.small, lineHeight: 16,
+              color: on ? K.text : K.text3, fontSize: T.small, lineHeight: 16,
               fontWeight: on ? "600" : "500",
             }}>{dest.label}</Text>
           </Pressable>
