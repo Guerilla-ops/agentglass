@@ -15,7 +15,7 @@
  * and no buttons, which is the honest shape: the grant was chosen at the
  * computer by somebody looking at the request.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator, FlatList, Pressable, RefreshControl, ScrollView, Text, TextInput, View,
 } from "react-native";
@@ -24,22 +24,27 @@ import type { GitCommit, GitFileStatus, GitRepoRef, PrBranchSummary, RepoStatus 
 import { ask } from "../../src/lib/api.ts";
 import { useAgentglass } from "../../src/state/host-context.tsx";
 import { usePaletteTick } from "../../src/state/use-palette.ts";
-import { Btn, Card, Label, Note, Segmented, TAP, groupEdge } from "../../src/ui.tsx";
-import { C, MONO, RADIUS, SPACE, T } from "../../src/theme.ts";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { Btn, Card, Chip, Label, Note, Segmented, TAP, groupEdge } from "../../src/ui.tsx";
+import { C, MONO, RADIUS, SPACE, T, ink, tint } from "../../src/theme.ts";
+import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import { ChevronIcon } from "../../src/nav/icons.tsx";
 import { checkoutFor } from "../../src/model/checkout.ts";
+import { Glyph } from "../../src/nav/glyphs.tsx";
+import { ReposIcon } from "../../src/nav/icons.tsx";
 
-/** The glyph for what happened to a file. A letter as well as a colour: at
- *  11px outdoors, colour alone is not a signal to rely on, and for a good
- *  number of people it is not a signal at all. */
-function mark(file: GitFileStatus): { glyph: string; ink: string } {
+/** What happened to a file, as a letter on a tint of its colour. A letter as
+ *  well as a colour: at small sizes outdoors, colour alone is not a signal to
+ *  rely on, and for a good number of people it is not a signal at all. The
+ *  letters are git's own, so the phone and `git status` say the same thing. */
+function mark(file: GitFileStatus): { letter: string; ink: string; says: string } {
   switch (file.status) {
-    case "added": case "untracked": return { glyph: "+", ink: C.success };
-    case "deleted": return { glyph: "−", ink: C.error };
-    case "unmerged": return { glyph: "!", ink: C.error };
-    case "renamed": case "copied": return { glyph: "→", ink: C.info };
-    default: return { glyph: "~", ink: C.warning };
+    case "added": return { letter: "A", ink: C.success, says: "Added" };
+    case "untracked": return { letter: "U", ink: C.success, says: "Untracked" };
+    case "deleted": return { letter: "D", ink: C.error, says: "Deleted" };
+    case "unmerged": return { letter: "!", ink: C.error, says: "Conflicted" };
+    case "renamed": return { letter: "R", ink: C.info, says: "Renamed" };
+    case "copied": return { letter: "C", ink: C.info, says: "Copied" };
+    default: return { letter: "M", ink: C.warning, says: "Modified" };
   }
 }
 
@@ -223,43 +228,82 @@ export default function ReposScreen(): React.ReactNode {
 
   const repo = repos?.find((r) => r.root === root) ?? null;
 
+  /* Browsing the checkout, from the screen that already knows which one you
+     are in. In the header rather than as a fourth segment: the three segments
+     are views of one question — what has changed here — and a file browser is
+     a different errand that happens to start from the same place. */
+  const navigation = useNavigation();
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Browse the files"
+          disabled={!root}
+          onPress={() => router.push({ pathname: "/files", params: { root: root ?? "" } })}
+          style={({ pressed }) => ({
+            width: TAP, height: TAP, marginRight: SPACE.xs, borderRadius: TAP / 2,
+            alignItems: "center", justifyContent: "center",
+            backgroundColor: pressed ? C.bg3 : "transparent", opacity: root ? 1 : 0.4,
+          })}
+        >
+          <ReposIcon color={C.text2} size={22} />
+        </Pressable>
+      ),
+    });
+  }, [navigation, root, router]);
+
   if (!host) return null;
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
-      <View style={{ borderBottomWidth: 1, borderBottomColor: C.border }}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: SPACE.sm, paddingVertical: SPACE.sm, gap: SPACE.xs }}
-        >
-          {(repos ?? []).map((r) => {
-            const on = r.root === root;
-            return (
-              <Pressable
-                key={r.root}
-                onPress={() => setRoot(r.root)}
-                style={{
-                  paddingHorizontal: SPACE.md, minHeight: 44, justifyContent: "center",
-                  borderRadius: RADIUS.md,
-                  backgroundColor: on ? C.bg3 : "transparent",
-                  borderWidth: 1, borderColor: on ? C.border2 : "transparent",
-                }}
-              >
-                <Text style={{ color: on ? C.text : C.text3, fontSize: T.small, fontWeight: on ? "600" : "400" }}>
-                  {r.name}
-                  {/* A dot, not a count: "there is uncommitted work here" is the
-                      thing you scan a strip of twenty checkouts for. */}
-                  {r.dirty ? <Text style={{ color: C.warning }}> ●</Text> : null}
-                </Text>
-                <Text style={{ color: C.text3, fontSize: T.eyebrow, fontFamily: MONO }} numberOfLines={1}>
-                  {r.branch}{r.ahead ? ` ↑${r.ahead}` : ""}{r.behind ? ` ↓${r.behind}` : ""}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
-      </View>
+      {/* The checkouts, as chips: the one this screen is about is filled and
+          ticked, and a dot marks uncommitted work — "there is something to
+          commit here" is the thing you scan twenty checkouts for. */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={{ flexGrow: 0 }}
+        contentContainerStyle={{ paddingHorizontal: SPACE.lg, paddingTop: SPACE.xs, gap: SPACE.sm }}
+      >
+        {(repos ?? []).map((r) => {
+          const on = r.root === root;
+          return (
+            <Pressable
+              key={r.root}
+              accessibilityRole="radio"
+              accessibilityState={{ checked: on }}
+              accessibilityLabel={`${r.name}${r.dirty ? ", has changes" : ""}`}
+              onPress={() => setRoot(r.root)}
+              hitSlop={{ top: 8, bottom: 8 }}
+              style={({ pressed }) => ({
+                flexDirection: "row", alignItems: "center", gap: 6, height: 32, paddingHorizontal: 12,
+                borderRadius: RADIUS.sm, backgroundColor: on ? tint(C.primary, 0.16) : "transparent",
+                borderWidth: 1, borderColor: on ? "transparent" : C.border2,
+                transform: [{ scale: pressed ? 0.97 : 1 }],
+              })}
+            >
+              {on ? <Glyph name="check" color={C.primary} size={16} weight={2.4} /> : null}
+              <Text style={{ color: on ? C.primary : C.text2, fontSize: 13, fontWeight: on ? "600" : "500" }}>{r.name}</Text>
+              {r.dirty ? <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: C.warning }} /> : null}
+            </Pressable>
+          );
+        })}
+      </ScrollView>
+
+      {/* Where you are in it: the branch, and what is waiting to go up or come
+          down. It was the second line of every chip, which made each chip two
+          lines tall and the strip the tallest thing on the screen. */}
+      {repo ? (
+        <View style={{ flexDirection: "row", alignItems: "center", gap: SPACE.sm, paddingHorizontal: 20, paddingVertical: SPACE.md }}>
+          <Glyph name="branch" color={C.text3} size={18} />
+          <Text numberOfLines={1} style={{ color: C.text, fontSize: 13, fontWeight: "500", fontFamily: MONO, flexShrink: 1 }}>
+            {repo.branch}
+          </Text>
+          {repo.ahead ? <Chip label={`↑${repo.ahead} to push`} tone="accent" /> : null}
+          {repo.behind ? <Chip label={`↓${repo.behind} behind`} tone="warn" /> : null}
+        </View>
+      ) : null}
 
       {/* One control, full width, at the tap floor — the same `Segmented` the
           pull requests and the cards use. Counts where there is one to give:
@@ -274,24 +318,6 @@ export default function ReposScreen(): React.ReactNode {
             { id: "pr" as const, label: "Pull request" },
           ]}
         />
-        {/* Browsing the checkout, from the screen that already knows which one
-            you are in. It is not a fourth segment: the other three are views of
-            the same question — what has changed here — and a file browser is a
-            different errand that happens to start from the same place. */}
-        <Pressable
-          onPress={() => router.push({ pathname: "/files", params: { root: root ?? "" } })}
-          disabled={!root}
-          accessibilityRole="button"
-          style={({ pressed }) => ({
-            flexDirection: "row", alignItems: "center", gap: SPACE.sm,
-            minHeight: TAP, opacity: !root ? 0.4 : pressed ? 0.6 : 1,
-          })}
-        >
-          <Text style={{ color: C.primary, fontSize: T.small, fontWeight: "600" }}>
-            Browse the files
-          </Text>
-          <ChevronIcon color={C.primary} size={15} />
-        </Pressable>
       </View>
 
       {said ? (
@@ -315,18 +341,26 @@ export default function ReposScreen(): React.ReactNode {
           />
         }
         ListHeaderComponent={
-          <View style={{ gap: SPACE.xs, paddingBottom: SPACE.sm }}>
-            <Text style={{ color: C.text, fontSize: T.title, fontWeight: "600" }}>
-              {files.length === 0
-                ? "Nothing changed here"
-                : `${files.length} changed · ${staged.length} staged`}
+          <View style={{ flexDirection: "row", alignItems: "center", paddingBottom: SPACE.sm, paddingLeft: SPACE.xs }}>
+            <Text style={{ color: C.text2, fontSize: 13, fontWeight: "600", flex: 1 }}>
+              {files.length === 0 ? "Nothing changed here" : `${files.length} changed · ${staged.length} staged`}
             </Text>
-            {repo ? (
-              <Note>
-                {repo.branch}
-                {repo.ahead ? ` · ${repo.ahead} to push` : ""}
-                {repo.behind ? ` · ${repo.behind} behind` : ""}
-              </Note>
+            {/* One tap for the common case — commit everything — without
+                taking the row-by-row choice away. */}
+            {mayWrite && files.length > staged.length ? (
+              <Pressable
+                accessibilityRole="button"
+                disabled={!!busy}
+                onPress={() => {
+                  void act("stage:all", "/git/stage", { root, paths: files.filter((f) => !f.staged).map((f) => f.path) });
+                }}
+                style={({ pressed }) => ({
+                  minHeight: TAP, justifyContent: "center", paddingHorizontal: SPACE.sm,
+                  transform: [{ scale: pressed ? 0.97 : 1 }],
+                })}
+              >
+                <Text style={{ color: C.primary, fontSize: T.body, fontWeight: "600" }}>Stage all</Text>
+              </Pressable>
             ) : null}
           </View>
         }
@@ -347,21 +381,33 @@ export default function ReposScreen(): React.ReactNode {
                   { root, paths: [item.path] },
                 );
               }}
-              style={{
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: item.staged, disabled: !mayWrite }}
+              accessibilityLabel={`${m.says}: ${item.path}`}
+              style={({ pressed }) => ({
                 flexDirection: "row", alignItems: "center", gap: SPACE.md,
-                minHeight: 44, paddingHorizontal: SPACE.lg,
-              }}
+                minHeight: 52, paddingHorizontal: SPACE.lg, backgroundColor: pressed ? C.bg3 : "transparent",
+              })}
             >
+              {/* A box, because staging is choosing — which files go in the
+                  commit — and not turning something on. */}
               <View style={{
-                width: 20, height: 20, borderRadius: 5,
-                borderWidth: 1, borderColor: item.staged ? C.success : C.border2,
-                backgroundColor: item.staged ? C.success : "transparent",
+                width: 22, height: 22, borderRadius: 6,
+                borderWidth: item.staged ? 0 : 2, borderColor: C.text4,
+                backgroundColor: item.staged ? C.primary : "transparent",
                 opacity: mayWrite ? 1 : 0.4,
                 alignItems: "center", justifyContent: "center",
-              }} />
-              <Text style={{ color: m.ink, fontSize: T.small, fontFamily: MONO, width: 12 }}>{m.glyph}</Text>
+              }}>
+                {item.staged ? <Glyph name="check" color={ink(C.primary)} size={16} weight={2.6} /> : null}
+              </View>
+              <View style={{
+                width: 22, height: 22, borderRadius: 6, alignItems: "center", justifyContent: "center",
+                backgroundColor: tint(m.ink, 0.16),
+              }}>
+                <Text style={{ color: m.ink, fontSize: T.small, fontWeight: "600", fontFamily: MONO }}>{m.letter}</Text>
+              </View>
               <Text
-                style={{ color: C.text2, fontSize: T.small, fontFamily: MONO, flex: 1 }}
+                style={{ color: C.text, fontSize: 13, fontFamily: MONO, flex: 1 }}
                 numberOfLines={1}
                 ellipsizeMode="head"
               >
@@ -387,24 +433,22 @@ export default function ReposScreen(): React.ReactNode {
                 key={c.hash}
                 style={[
                   groupEdge(i === 0, i === commits.length - 1),
-                  { paddingHorizontal: SPACE.lg, paddingVertical: SPACE.md, gap: 2 },
+                  { flexDirection: "row", gap: SPACE.md, paddingHorizontal: SPACE.lg, paddingVertical: SPACE.md },
                 ]}
               >
-                <Text numberOfLines={2} style={{ color: C.text, fontSize: T.small }}>{c.subject}</Text>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: SPACE.sm }}>
-                  <Text style={{ color: C.text3, fontSize: T.eyebrow, fontFamily: MONO }}>{c.shortHash}</Text>
-                  <Text numberOfLines={1} style={{ color: C.text3, fontSize: T.eyebrow, flex: 1 }}>
-                    {c.author} · {c.date}
+                <View style={{ paddingTop: 1 }}><Glyph name="commit" color={C.text3} size={20} /></View>
+                <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
+                  <Text numberOfLines={2} style={{ color: C.text, fontSize: 14.5, fontWeight: "500", lineHeight: 20 }}>{c.subject}</Text>
+                  <Text numberOfLines={1} style={{ color: C.text3, fontSize: T.small, fontFamily: MONO }}>
+                    {c.shortHash} · {c.author} · {c.date}
                   </Text>
+                  {/* The decorations, when git gave any. A tag or a branch head
+                      on a commit is the thing that tells you WHERE you are in a
+                      log of forty otherwise identical lines. */}
+                  {c.refs ? (
+                    <View style={{ flexDirection: "row" }}><Chip label={c.refs} tone="accent" /></View>
+                  ) : null}
                 </View>
-                {/* The decorations, when git gave any. A tag or a branch head on
-                    a commit is the thing that tells you WHERE you are in a log
-                    of forty otherwise identical lines. */}
-                {c.refs ? (
-                  <Text numberOfLines={1} style={{ color: C.primary, fontSize: T.eyebrow, fontFamily: MONO }}>
-                    {c.refs}
-                  </Text>
-                ) : null}
               </View>
             ))
           )}
@@ -475,16 +519,16 @@ export default function ReposScreen(): React.ReactNode {
             value={title}
             onChangeText={setTitle}
             placeholder="What this commit does"
-            placeholderTextColor={C.text4}
+            placeholderTextColor={C.text3}
             style={{
-              minHeight: 44, borderRadius: RADIUS.md, backgroundColor: C.bg,
+              minHeight: 48, borderRadius: RADIUS.md, backgroundColor: C.bg,
               borderWidth: 1, borderColor: C.border, color: C.text,
               paddingHorizontal: SPACE.md, fontSize: T.body,
             }}
           />
           <View style={{ flexDirection: "row", gap: SPACE.sm }}>
             <Btn
-              label={staged.length ? `Commit ${staged.length}` : "Nothing staged"}
+              label={staged.length ? `Commit ${staged.length} ${staged.length === 1 ? "file" : "files"}` : "Nothing staged"}
               tone="primary"
               style={{ flex: 1 }}
               disabled={!staged.length || !title.trim()}
