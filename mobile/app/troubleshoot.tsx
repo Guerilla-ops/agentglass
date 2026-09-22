@@ -180,7 +180,7 @@ export default function TroubleshootScreen(): React.ReactNode {
                 <Text numberOfLines={1} style={{ color: C.text, fontSize: T.small, flex: 1 }}>
                   {dep.title}
                   {dep.required ? null : (
-                    <Text style={{ color: C.text4, fontSize: T.eyebrow }}>  optional</Text>
+                    <Text style={{ color: C.text3, fontSize: T.eyebrow }}>  optional</Text>
                   )}
                 </Text>
                 <Text style={{ color: ink, fontSize: T.eyebrow }}>

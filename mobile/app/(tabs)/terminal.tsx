@@ -2481,7 +2481,7 @@ function TerminalPane(): React.ReactNode {
                     <Text style={{ color: C.warning, fontSize: T.small }}>
                       …and skip permission prompts
                     </Text>
-                    <Text style={{ color: C.text4, fontSize: T.eyebrow }}>
+                    <Text style={{ color: C.text3, fontSize: T.eyebrow }}>
                       It will not stop to ask before running a command.
                     </Text>
                   </Pressable>

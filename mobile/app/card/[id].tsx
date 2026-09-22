@@ -468,10 +468,10 @@ export default function CardScreen(): React.ReactNode {
                     {card.status}
                   </Text>
                 </View>
-                {card.list ? <Text style={{ color: C.text4, fontSize: T.eyebrow }}>{card.list}</Text> : null}
-                {card.sprint ? <Text style={{ color: C.text4, fontSize: T.eyebrow }}>· {card.sprint}</Text> : null}
+                {card.list ? <Text style={{ color: C.text3, fontSize: T.eyebrow }}>{card.list}</Text> : null}
+                {card.sprint ? <Text style={{ color: C.text3, fontSize: T.eyebrow }}>· {card.sprint}</Text> : null}
                 {when ? (
-                  <Text style={{ color: when.late ? C.error : C.text4, fontSize: T.eyebrow }}>{when.text}</Text>
+                  <Text style={{ color: when.late ? C.error : C.text3, fontSize: T.eyebrow }}>{when.text}</Text>
                 ) : null}
               </View>
             </View>
@@ -714,7 +714,7 @@ export default function CardScreen(): React.ReactNode {
                     <View key={c.id} style={{ gap: 2 }}>
                       <View style={{ flexDirection: "row", alignItems: "center", gap: SPACE.sm }}>
                         <Text style={{ color: C.text, fontSize: T.small, fontWeight: "600" }}>{c.who}</Text>
-                        <Text style={{ color: C.text4, fontSize: T.eyebrow }}>{since(c.at, now)}</Text>
+                        <Text style={{ color: C.text3, fontSize: T.eyebrow }}>{since(c.at, now)}</Text>
                       </View>
                       {c.text ? (
                         <Text style={{ color: C.text2, fontSize: T.body, lineHeight: 20 }}>{c.text}</Text>
@@ -731,7 +731,7 @@ export default function CardScreen(): React.ReactNode {
                         }}>
                           <View style={{ flexDirection: "row", alignItems: "center", gap: SPACE.sm }}>
                             <Text style={{ color: C.text2, fontSize: T.eyebrow, fontWeight: "600" }}>{r.who}</Text>
-                            <Text style={{ color: C.text4, fontSize: T.eyebrow }}>{since(r.at, now)}</Text>
+                            <Text style={{ color: C.text3, fontSize: T.eyebrow }}>{since(r.at, now)}</Text>
                           </View>
                           <Text style={{ color: C.text3, fontSize: T.small, lineHeight: 18 }}>{r.text}</Text>
                         </View>
@@ -746,7 +746,7 @@ export default function CardScreen(): React.ReactNode {
             ) : null}
 
             <View style={{ gap: SPACE.xs }}>
-              <Text style={{ color: C.text4, fontSize: T.eyebrow, fontFamily: MONO }}>
+              <Text style={{ color: C.text3, fontSize: T.eyebrow, fontFamily: MONO }}>
                 {card.customId || card.id}
               </Text>
               {card.url ? (

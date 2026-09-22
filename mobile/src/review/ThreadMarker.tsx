@@ -53,11 +53,11 @@ export function ThreadMarker({ thread, open, onPress }: {
         {state === "resolved" ? "resolved · " : state === "outdated" ? "outdated · " : ""}{gist}
       </Text>
       {replies ? (
-        <Text style={{ color: C.text4, fontSize: T.eyebrow }}>
+        <Text style={{ color: C.text3, fontSize: T.eyebrow }}>
           {replies === 1 ? "1 reply" : `${replies} replies`}
         </Text>
       ) : null}
-      <Text style={{ color: C.text4, fontSize: T.eyebrow }}>{open ? "⌄" : "›"}</Text>
+      <Text style={{ color: C.text3, fontSize: T.eyebrow }}>{open ? "⌄" : "›"}</Text>
     </Pressable>
   );
 }

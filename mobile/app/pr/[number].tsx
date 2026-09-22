@@ -787,7 +787,7 @@ export default function PrScreen(): React.ReactNode {
             {pending.map((c, i) => (
               <View key={`${c.path}:${c.line}:${i}`} style={{ paddingVertical: SPACE.xs }}>
                 <Text numberOfLines={2} style={{ color: C.text2, fontSize: T.small }}>{c.body}</Text>
-                <Text numberOfLines={1} style={{ color: C.text4, fontSize: T.eyebrow, fontFamily: MONO }}>
+                <Text numberOfLines={1} style={{ color: C.text3, fontSize: T.eyebrow, fontFamily: MONO }}>
                   {c.path}{c.line === null ? "" : `:${c.line}`}
                 </Text>
               </View>
@@ -805,7 +805,7 @@ export default function PrScreen(): React.ReactNode {
             {notes.map((n) => (
               <View key={`${n.path}:${n.line}`} style={{ paddingVertical: SPACE.xs }}>
                 <Text numberOfLines={1} style={{ color: C.text2, fontSize: T.small }}>{n.body}</Text>
-                <Text numberOfLines={1} style={{ color: C.text4, fontSize: T.eyebrow, fontFamily: MONO }}>
+                <Text numberOfLines={1} style={{ color: C.text3, fontSize: T.eyebrow, fontFamily: MONO }}>
                   {n.path}:{n.line}
                 </Text>
               </View>
@@ -1033,7 +1033,7 @@ export default function PrScreen(): React.ReactNode {
             }}>{preview.prompt}</Text>
             {preview.cwd ? (
               <Text numberOfLines={1} ellipsizeMode="head" style={{
-                color: C.text4, fontSize: T.eyebrow, fontFamily: MONO,
+                color: C.text3, fontSize: T.eyebrow, fontFamily: MONO,
               }}>in {preview.cwd}</Text>
             ) : null}
             <Btn label="Send it" tone="primary" onPress={() => hand(preview.recipe)} />

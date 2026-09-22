@@ -94,7 +94,7 @@ function Context({ from, lines }: { from: number; lines: string[] }): React.Reac
         <View key={from + i} style={{ flexDirection: "row", minHeight: 22 }}>
           <Text style={{
             width: 38, textAlign: "right", paddingRight: SPACE.sm,
-            color: C.text4, fontSize: 10.5, fontFamily: MONO, lineHeight: 20,
+            color: C.text3, fontSize: 10.5, fontFamily: MONO, lineHeight: 20,
           }}>{from + i}</Text>
           <Text style={{ width: 10, fontSize: 10.5, fontFamily: MONO, lineHeight: 20 }}> </Text>
           <Text style={{
@@ -477,7 +477,7 @@ export function FilesPane({ number, root, path, bar = true }: {
         {dir === "down" ? bar : null}
         {failed ? (
           <Text style={{
-            color: C.text4, fontSize: T.eyebrow, paddingHorizontal: SPACE.md, paddingVertical: SPACE.xs,
+            color: C.text3, fontSize: T.eyebrow, paddingHorizontal: SPACE.md, paddingVertical: SPACE.xs,
           }}>{failed}</Text>
         ) : null}
       </>
@@ -511,14 +511,14 @@ export function FilesPane({ number, root, path, bar = true }: {
               look at once. */}
           <Text style={{
             width: 38, textAlign: "right", paddingRight: SPACE.sm,
-            color: C.text4, fontSize: 10.5, fontFamily: MONO, lineHeight: 20,
+            color: C.text3, fontSize: 10.5, fontFamily: MONO, lineHeight: 20,
           }}>{line.newNo ?? line.oldNo ?? ""}</Text>
           <Text style={{
             width: 10, color: face.ink, fontSize: 10.5, fontFamily: MONO, lineHeight: 20,
           }}>{face.mark}</Text>
           <Text
             style={{
-              flex: 1, color: line.kind === "meta" ? C.text4 : C.text2,
+              flex: 1, color: line.kind === "meta" ? C.text3 : C.text2,
               fontSize: 10.5, fontFamily: MONO, lineHeight: 20, paddingRight: SPACE.sm,
             }}
           >
@@ -596,7 +596,7 @@ export function FilesPane({ number, root, path, bar = true }: {
             {file ? fileLabel(file) : "…"} ▾
           </Text>
         </Pressable>
-        <Text style={{ color: C.text4, fontSize: T.eyebrow, fontFamily: MONO }}>
+        <Text style={{ color: C.text3, fontSize: T.eyebrow, fontFamily: MONO }}>
           {files.length ? `${at + 1}/${files.length}` : ""}
         </Text>
       </View>

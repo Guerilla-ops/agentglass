@@ -338,7 +338,7 @@ export function Segmented<T extends string>({ options, value, onChange, style }:
             >{option.label}</Text>
             {option.count === undefined ? null : (
               <Text style={{
-                color: on ? C.text3 : C.text4, fontSize: T.eyebrow, fontVariant: ["tabular-nums"],
+                color: on ? C.text2 : C.text3, fontSize: T.eyebrow, fontVariant: ["tabular-nums"],
               }}>{option.count}</Text>
             )}
           </Pressable>

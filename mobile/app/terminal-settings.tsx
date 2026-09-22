@@ -198,7 +198,7 @@ export default function TerminalSettingsScreen(): React.ReactNode {
               <Text numberOfLines={1} style={{ color: C.text2, fontSize: T.small, fontFamily: MONO }}>
                 {k.text}
               </Text>
-              <Text style={{ color: C.text4, fontSize: T.eyebrow }}>
+              <Text style={{ color: C.text3, fontSize: T.eyebrow }}>
                 {k.enter ? "and runs it" : "puts it on the line"}
               </Text>
             </View>

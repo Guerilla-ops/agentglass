@@ -34,7 +34,7 @@ import {
   ACCENTS, C, MONO, RADIUS, SPACE, T, currentLook, ink, setLook, tint, type ThemeMode,
 } from "../../src/theme.ts";
 import { usePaletteTick } from "../../src/state/use-palette.ts";
-import { accentFor } from "../../../shared/palettes.ts";
+import { phonePalette } from "../../../shared/palettes.ts";
 import type { DeviceScope } from "../../../shared/types.ts";
 import { ACCESSORY_KEYS } from "../../src/terminal/keys.ts";
 import { rows as keyRows } from "../../src/terminal/keyLayout.ts";
@@ -156,7 +156,9 @@ function Swatches(): React.ReactNode {
     }}>
       {ACCENTS.map((a) => {
         const on = look.accent === a.id;
-        const face = accentFor(look.polarity, a.id).primary;
+        // What will actually be painted, which on the phone is the accent
+        // walked to a shade that reads — see phonePalette.
+        const face = phonePalette(look.polarity, a.id).primary;
         return (
           <Pressable
             key={a.id}

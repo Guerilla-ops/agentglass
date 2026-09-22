@@ -78,7 +78,7 @@ function PrLine({ pr, root, router, first, last }: {
     >
       <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
         <Text numberOfLines={2} style={{ color: C.text, fontSize: T.small }}>{pr.title}</Text>
-        <Text numberOfLines={1} style={{ color: C.text4, fontSize: T.eyebrow, fontFamily: MONO }}>
+        <Text numberOfLines={1} style={{ color: C.text3, fontSize: T.eyebrow, fontFamily: MONO }}>
           #{pr.number} · {pr.author} · {pr.headRefName} → {pr.baseRefName}
         </Text>
       </View>
@@ -252,7 +252,7 @@ export default function ReposScreen(): React.ReactNode {
                       thing you scan a strip of twenty checkouts for. */}
                   {r.dirty ? <Text style={{ color: C.warning }}> ●</Text> : null}
                 </Text>
-                <Text style={{ color: C.text4, fontSize: T.eyebrow, fontFamily: MONO }} numberOfLines={1}>
+                <Text style={{ color: C.text3, fontSize: T.eyebrow, fontFamily: MONO }} numberOfLines={1}>
                   {r.branch}{r.ahead ? ` ↑${r.ahead}` : ""}{r.behind ? ` ↓${r.behind}` : ""}
                 </Text>
               </Pressable>
@@ -392,8 +392,8 @@ export default function ReposScreen(): React.ReactNode {
               >
                 <Text numberOfLines={2} style={{ color: C.text, fontSize: T.small }}>{c.subject}</Text>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: SPACE.sm }}>
-                  <Text style={{ color: C.text4, fontSize: T.eyebrow, fontFamily: MONO }}>{c.shortHash}</Text>
-                  <Text numberOfLines={1} style={{ color: C.text4, fontSize: T.eyebrow, flex: 1 }}>
+                  <Text style={{ color: C.text3, fontSize: T.eyebrow, fontFamily: MONO }}>{c.shortHash}</Text>
+                  <Text numberOfLines={1} style={{ color: C.text3, fontSize: T.eyebrow, flex: 1 }}>
                     {c.author} · {c.date}
                   </Text>
                 </View>

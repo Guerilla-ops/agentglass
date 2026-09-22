@@ -145,12 +145,12 @@ function LocalRow({ task, onCopied }: {
       <View style={{ padding: SPACE.lg, gap: SPACE.sm }}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: SPACE.sm }}>
           {/* The short uuid, the way the tool itself prints one. */}
-          <Text style={{ color: C.text4, fontSize: T.eyebrow, fontFamily: MONO }}>
+          <Text style={{ color: C.text3, fontSize: T.eyebrow, fontFamily: MONO }}>
             {task.uuid.slice(0, 8)}
           </Text>
           <View style={{ flex: 1 }} />
           {when ? (
-            <Text style={{ color: when.late ? C.error : C.text4, fontSize: T.eyebrow }}>{when.text}</Text>
+            <Text style={{ color: when.late ? C.error : C.text3, fontSize: T.eyebrow }}>{when.text}</Text>
           ) : null}
         </View>
 
@@ -161,7 +161,7 @@ function LocalRow({ task, onCopied }: {
         {meta.length ? (
           <View style={{ flexDirection: "row", alignItems: "center", gap: SPACE.sm, flexWrap: "wrap" }}>
             {meta.map((piece, i) => (
-              <Text key={`${piece}-${i}`} style={{ color: C.text4, fontSize: T.eyebrow }}>{piece}</Text>
+              <Text key={`${piece}-${i}`} style={{ color: C.text3, fontSize: T.eyebrow }}>{piece}</Text>
             ))}
           </View>
         ) : null}

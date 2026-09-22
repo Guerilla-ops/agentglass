@@ -48,8 +48,8 @@ function labelInk(hex: string): string {
  *  promises a fix nobody committed to. */
 function prTone(pr: IssuePr): { word: string; ink: string } {
   if (pr.state === "MERGED") return { word: "merged", ink: C.success };
-  if (pr.state === "CLOSED") return { word: "closed", ink: C.text4 };
-  if (pr.draft) return { word: "draft", ink: C.text4 };
+  if (pr.state === "CLOSED") return { word: "closed", ink: C.text3 };
+  if (pr.draft) return { word: "draft", ink: C.text3 };
   return { word: pr.linked ? "will close this" : "mentions it", ink: pr.linked ? C.success : C.text3 };
 }
 
@@ -218,7 +218,7 @@ export default function IssueScreen(): React.ReactNode {
                 paddingHorizontal: SPACE.sm, paddingVertical: 2, borderRadius: RADIUS.sm,
                 borderWidth: 1, borderColor: closed ? C.text4 : C.success,
               }}>
-                <Text style={{ color: closed ? C.text4 : C.success, fontSize: T.eyebrow }}>
+                <Text style={{ color: closed ? C.text3 : C.success, fontSize: T.eyebrow }}>
                   {closed ? "closed" : "open"}
                 </Text>
               </View>
@@ -233,7 +233,7 @@ export default function IssueScreen(): React.ReactNode {
                   </View>
                 );
               })}
-              <Text style={{ color: C.text4, fontSize: T.eyebrow }}>
+              <Text style={{ color: C.text3, fontSize: T.eyebrow }}>
                 {detail.author} · {since(detail.updatedAt, now)}
               </Text>
             </View>
@@ -353,7 +353,7 @@ export default function IssueScreen(): React.ReactNode {
                   >
                     <Card style={{ gap: SPACE.xs }}>
                       <View style={{ flexDirection: "row", alignItems: "center", gap: SPACE.sm }}>
-                        <Text style={{ color: C.text4, fontSize: T.eyebrow, fontFamily: MONO }}>#{pr.number}</Text>
+                        <Text style={{ color: C.text3, fontSize: T.eyebrow, fontFamily: MONO }}>#{pr.number}</Text>
                         <Text style={{ color: tone.ink, fontSize: T.eyebrow }}>{tone.word}</Text>
                       </View>
                       <Text style={{ color: C.text, fontSize: T.body, lineHeight: 19 }}>{pr.title}</Text>
