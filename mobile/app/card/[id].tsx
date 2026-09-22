@@ -58,6 +58,7 @@ import { cardSkills, namedForIt, skillCommand, skillModes, windowName } from "..
 import { dueIn, since } from "../../src/lib/dates.ts";
 import { Btn, Card, Label, Note, Sheet, SheetRow, TAP, Toggle } from "../../src/ui.tsx";
 import { ChevronIcon } from "../../src/nav/icons.tsx";
+import { Glyph } from "../../src/nav/glyphs.tsx";
 import { C, MONO, RADIUS, SPACE, T } from "../../src/theme.ts";
 
 /**
@@ -621,9 +622,11 @@ export default function CardScreen(): React.ReactNode {
                       onPress={() => router.push({ pathname: "/card/[id]", params: { id: sub.id } })}
                       style={{ flexDirection: "row", alignItems: "center", gap: SPACE.sm, minHeight: TAP }}
                     >
-                      <Text style={{ color: statusInk(sub.statusColor), fontSize: T.eyebrow }}>
-                        {sub.statusKind === "done" ? "✓" : "○"}
-                      </Text>
+                      <Glyph
+                        name={sub.statusKind === "done" ? "ok_circle" : "circle"}
+                        color={statusInk(sub.statusColor)}
+                        size={18}
+                      />
                       <Text
                         numberOfLines={1}
                         style={{
@@ -647,9 +650,7 @@ export default function CardScreen(): React.ReactNode {
                              test/tap-floor.test.ts has nothing to weigh. */
                           style={{ flexDirection: "row", alignItems: "center", gap: SPACE.sm, paddingVertical: 3 }}
                         >
-                          <Text style={{ color: item.done ? C.success : C.text4, fontSize: T.eyebrow }}>
-                            {item.done ? "✓" : "○"}
-                          </Text>
+                          <Glyph name={item.done ? "ok_circle" : "circle"} color={item.done ? C.success : C.text3} size={16} />
                           <Text
                             style={{
                               color: item.done ? C.text4 : C.text2, fontSize: T.small, flex: 1,
@@ -763,7 +764,7 @@ export default function CardScreen(): React.ReactNode {
           borderTopWidth: 1, borderTopColor: C.border, backgroundColor: C.bg2,
         }}>
           <Btn
-            label="✦ Hand to Claude"
+            label="Start with Claude"
             tone="primary"
             onPress={() => { setFind(""); setPicking(true); }}
           />

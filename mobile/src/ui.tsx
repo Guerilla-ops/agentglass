@@ -56,7 +56,10 @@ export function Btn({ label, onPress, tone = "plain", busy, disabled, style }: {
           backgroundColor: face,
           borderWidth: tone === "plain" ? 1 : 0,
           borderColor: C.border,
-          opacity: off ? 0.45 : pressed ? 0.75 : 1,
+          // A press is the face moving under the thumb, not fading: 0.97, the
+          // same everywhere a thing can be pressed.
+          opacity: off ? 0.45 : 1,
+          transform: [{ scale: pressed && !off ? 0.97 : 1 }],
         },
         style,
       ]}
@@ -111,11 +114,17 @@ export const Field = forwardRef<TextInput, {
   );
 });
 
+/**
+ * The name of a block, in sentence case.
+ *
+ * It was 11-point uppercase with letter-spacing — a desk convention, and on a
+ * phone the least legible line on the screen, on the line that says what the
+ * block below is. Now it is the group title's type: 13 points, the second ink,
+ * weight 600, written as the words are written.
+ */
 export function Label({ text }: { text: string }): ReactNode {
   return (
-    <Text style={{
-      color: C.text3, fontSize: T.eyebrow, letterSpacing: 0.8, textTransform: "uppercase",
-    }}>{text}</Text>
+    <Text accessibilityRole="header" style={{ color: C.text2, fontSize: 13, fontWeight: "600" }}>{text}</Text>
   );
 }
 
@@ -349,44 +358,6 @@ export function Segmented<T extends string>({ options, value, onChange, style }:
 }
 
 /**
- * The header's title, when the title is also a choice.
- *
- * The repository strip used to be a whole row under the header, and the header
- * above it said "Pull requests" — a word the tab below was already saying. So
- * the row is gone and the name of what you are looking at moved into the space
- * that was spending itself on the category.
- *
- * It is a title first and a control second, which is why it is the header's own
- * type and not a button's: the chevron is the entire affordance, and it is
- * enough because the alternative reading — that this static word opens
- * something — costs one tap to discover and nothing to be wrong about.
- */
-export function HeaderPick({ label, onPress }: { label: string; onPress: () => void }): ReactNode {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={`${label}. Opens the list.`}
-      onPress={onPress}
-      style={({ pressed }) => ({
-        minHeight: TAP,
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: SPACE.xs,
-        paddingHorizontal: SPACE.sm,
-        opacity: pressed ? 0.6 : 1,
-      })}
-    >
-      <Text
-        numberOfLines={1}
-        style={{ color: C.text, fontSize: T.title, fontWeight: "700", maxWidth: 210 }}
-      >{label}</Text>
-      <Text style={{ color: C.text3, fontSize: T.small }}>▾</Text>
-    </Pressable>
-  );
-}
-
-/**
  * A list that comes up from the bottom, for choosing one of many.
  *
  * What this replaces is a horizontal strip of chips, and the argument against
@@ -498,7 +469,10 @@ export function SheetRow({ label, sub, on, onPress }: {
           a list of twenty without reading every line, and a mark at a fixed
           x-position is what the eye can run down. */}
       {on ? (
-        <Text style={{ color: C.primary, fontSize: T.title, fontWeight: "700" }}>✓</Text>
+        <View style={{
+          width: 12, height: 7, borderLeftWidth: 2.5, borderBottomWidth: 2.5, borderColor: C.primary,
+          transform: [{ rotate: "-45deg" }], marginTop: -3, marginRight: 4,
+        }} />
       ) : null}
     </Pressable>
   );

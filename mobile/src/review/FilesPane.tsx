@@ -71,6 +71,7 @@ import { ThreadMarker } from "./ThreadMarker.tsx";
 import { useThreadActions } from "./useThreadActions.ts";
 import { Btn, Card, Label, Note, Sheet, SheetRow, TAP } from "../ui.tsx";
 import { C, MONO, RADIUS, SPACE, T, tint } from "../theme.ts";
+import { Glyph } from "../nav/glyphs.tsx";
 
 /** The two backgrounds a changed line takes.
  *
@@ -592,9 +593,12 @@ export function FilesPane({ number, root, path, bar = true }: {
           accessibilityRole="button"
           style={{ flex: 1, minHeight: TAP, justifyContent: "center" }}
         >
-          <Text numberOfLines={1} style={{ color: C.text, fontSize: T.small, fontFamily: MONO }}>
-            {file ? fileLabel(file) : "…"} ▾
-          </Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+            <Text numberOfLines={1} style={{ color: C.text, fontSize: T.small, fontFamily: MONO, flexShrink: 1 }}>
+              {file ? fileLabel(file) : "…"}
+            </Text>
+            <Glyph name="down" color={C.text3} size={16} />
+          </View>
         </Pressable>
         <Text style={{ color: C.text3, fontSize: T.eyebrow, fontFamily: MONO }}>
           {files.length ? `${at + 1}/${files.length}` : ""}
@@ -706,7 +710,7 @@ export function FilesPane({ number, root, path, bar = true }: {
         borderTopWidth: 1, borderTopColor: C.border, backgroundColor: C.bg2,
       }}>
         <Btn
-          label="‹ Previous"
+          label="Previous"
           style={{ flex: 1 }}
           disabled={at === 0}
           onPress={() => { setWriting(null); setAt((n) => Math.max(0, n - 1)); }}
@@ -723,7 +727,7 @@ export function FilesPane({ number, root, path, bar = true }: {
           />
         ) : null}
         <Btn
-          label="Next ›"
+          label="Next"
           style={{ flex: 1 }}
           disabled={at >= files.length - 1}
           onPress={() => { setWriting(null); setAt((n) => Math.min(files.length - 1, n + 1)); }}

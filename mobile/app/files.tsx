@@ -31,7 +31,7 @@ import { Stack, useLocalSearchParams } from "expo-router";
 import { ask } from "../src/lib/api.ts";
 import { useAgentglass } from "../src/state/host-context.tsx";
 import { usePaletteTick } from "../src/state/use-palette.ts";
-import { ChevronIcon } from "../src/nav/icons.tsx";
+import { BackIcon, ChevronIcon } from "../src/nav/icons.tsx";
 import { Card, Label, Note, TAP, groupEdge } from "../src/ui.tsx";
 import { C, MONO, RADIUS, SPACE, T } from "../src/theme.ts";
 
@@ -137,9 +137,7 @@ export default function FilesScreen(): React.ReactNode {
           opacity: pressed ? 0.6 : 1,
         })}
       >
-        <Text style={{ color: !open && !rel ? C.text4 : C.primary, fontSize: T.title }}>
-          {!open && !rel ? "" : "‹"}
-        </Text>
+        {!open && !rel ? null : <BackIcon color={C.primary} size={20} />}
         <Text
           numberOfLines={1}
           ellipsizeMode="head"

@@ -17,7 +17,7 @@ import * as SplashScreen from "expo-splash-screen";
 import { HostProvider, useAgentglass } from "../src/state/host-context.tsx";
 import { usePaletteTick } from "../src/state/use-palette.ts";
 import { UsageProvider } from "../src/state/use-usage.ts";
-import { C, currentLook } from "../src/theme.ts";
+import { C, T, currentLook } from "../src/theme.ts";
 
 void SplashScreen.preventAutoHideAsync();
 
@@ -61,8 +61,12 @@ function Gate(): React.ReactNode {
       <Stack
         screenOptions={{
           headerStyle: { backgroundColor: C.bg },
+          // No rule under the header: the screen below starts with its own
+          // surface, and a hairline across the top of every pushed screen was
+          // a seam between two things of the same colour.
+          headerShadowVisible: false,
           headerTintColor: C.text,
-          headerTitleStyle: { fontSize: 16 },
+          headerTitleStyle: { fontSize: T.title, fontWeight: "600" },
           contentStyle: { backgroundColor: C.bg },
           // A back gesture out of the pairing screen would leave the app on a
           // tab that cannot load anything.

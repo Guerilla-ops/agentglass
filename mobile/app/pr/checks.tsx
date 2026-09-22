@@ -146,7 +146,7 @@ export default function ChecksScreen(): React.ReactNode {
             paddingHorizontal: SPACE.lg, paddingTop: SPACE.sm, paddingBottom: SPACE.lg,
             borderTopWidth: 1, borderTopColor: C.border, backgroundColor: C.bg2,
           }}>
-            <Btn label="‹ Every job" onPress={() => { setOpen(null); setLog(null); setLogErr(null); }} />
+            <Btn label="Every job" onPress={() => { setOpen(null); setLog(null); setLogErr(null); }} />
           </View>
         </>
       ) : (
