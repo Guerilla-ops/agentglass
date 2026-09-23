@@ -4882,7 +4882,13 @@ const server = Bun.serve<WsData>({
     if (pathname === "/search") {
       const q = url.searchParams.get("q") || "";
       const limit = Math.min(200, Number(url.searchParams.get("limit") || 60));
-      return json({ hits: q.trim() ? searchEvents(q, limit) : [] });
+      // Optional cockpit filters — same knobs /stats already honours. Absent
+      // means "all retained project history" (backward compatible).
+      const sinceRaw = url.searchParams.get("since");
+      const sinceNum = sinceRaw != null && sinceRaw !== "" ? Number(sinceRaw) : NaN;
+      const since = Number.isFinite(sinceNum) ? sinceNum : undefined;
+      const provider = url.searchParams.get("provider") || undefined;
+      return json({ hits: q.trim() ? searchEvents(q, limit, { since, provider }) : [] });
     }
     if (pathname === "/changes") {
       const limit = Math.min(500, Number(url.searchParams.get("limit") || 200));

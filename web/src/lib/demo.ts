@@ -555,7 +555,7 @@ export function insights(): { insights: Insight[] } {
   ] };
 }
 
-export function search(q: string): { hits: SearchHit[] } {
+export function search(q: string, _opts?: { since?: number; provider?: string }): { hits: SearchHit[] } {
   if (!q.trim()) return { hits: [] };
   const now = Date.now();
   return { hits: Array.from({ length: 12 }, (_, i) => {
