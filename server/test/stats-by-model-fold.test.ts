@@ -53,6 +53,14 @@ beforeAll(async () => {
   db.insertEvent(event("claude-opus-4-5", "s-only-45", 3000) as any);
   // A different model, so the fold has something to keep apart.
   db.insertEvent(event("claude-haiku-4-5", "s-haiku", 500) as any);
+  // #248 F21 residual: OpenAI 5.x ids that used to all display as "GPT-5"
+  // must stay on separate slices when their PRICE_TABLE rates differ.
+  db.insertEvent(event("gpt-5", "s-gpt5", 100) as any);
+  db.insertEvent(event("gpt-5.4", "s-gpt54", 100) as any);
+  db.insertEvent(event("gpt-5.5", "s-gpt55", 100) as any);
+  db.insertEvent(event("gpt-5.6-luna", "s-luna", 100) as any);
+  db.insertEvent(event("gpt-5.6-terra", "s-terra", 100) as any);
+  db.insertEvent(event("gpt-5.6-sol", "s-sol", 100) as any);
 });
 
 const byLabel = (s: any, label: string) => s.by_model.filter((m: any) => m.model_name === label);
@@ -92,5 +100,18 @@ describe("by_model folds raw ids into one row per label", () => {
   test("rows arrive in a deterministic order, dearest first", () => {
     const costs = db.statsSummary(3_600_000).by_model.map((m: any) => m.cost_usd);
     expect([...costs].sort((a: number, b: number) => b - a)).toEqual(costs);
+  });
+
+  test("OpenAI 5.x rate tiers do not collapse into one GPT-5 slice", () => {
+    const s = db.statsSummary(3_600_000);
+    const labels = [
+      "GPT-5", "GPT-5.4", "GPT-5.5",
+      "GPT-5.6 Luna", "GPT-5.6 Terra", "GPT-5.6 Sol",
+    ];
+    for (const label of labels) {
+      expect(byLabel(s, label).length, `${label} missing or duplicated`).toBe(1);
+    }
+    // Plain GPT-5 must not have swallowed the others.
+    expect(byLabel(s, "GPT-5")[0].input_tokens).toBe(100);
   });
 });
