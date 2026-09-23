@@ -14,7 +14,7 @@
  * thumb lands on the right, and the loud button is the one somebody has just
  * read the command for.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import * as Haptics from "expo-haptics";
 import type { PendingGate } from "../../../shared/types.ts";
@@ -24,11 +24,21 @@ import { gateAsk, gateDetail, gateWhere, waited } from "../model/gates.ts";
 import { MONO, RADIUS, SPACE, T, ink, tint, type Palette } from "../theme.ts";
 import { TAP } from "../ui.tsx";
 
-export function GateCard({ gate, host, colors, now, onDone, onOpen }: {
+/** A clock that moves once a minute — the grain of `waited`, and the same
+ *  cadence the usage chip uses so a held gate does not re-render every second. */
+function useMinute(): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+  return now;
+}
+
+export function GateCard({ gate, host, colors, onDone, onOpen }: {
   gate: PendingGate;
   host: Host;
   colors: Palette;
-  now: number;
   /** Called once the machine has taken the answer, so the list is re-read. */
   onDone: () => void;
   /** Show the window it is in. Absent when that is the window on screen, or
@@ -36,6 +46,7 @@ export function GateCard({ gate, host, colors, now, onDone, onOpen }: {
   onOpen?: () => void;
 }): React.ReactNode {
   const K = colors;
+  const now = useMinute();
   const [busy, setBusy] = useState<"allow" | "deny" | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
 
