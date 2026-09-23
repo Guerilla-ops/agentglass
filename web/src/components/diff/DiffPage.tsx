@@ -26,7 +26,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import type { ChangeRow } from "../../../../shared/types.ts";
 import {
   filterRows, groupRows, reviewKeyOf, rowByKey, statusWord, totalsOf, useChangeRows, useFileDiff,
-  visibleRows, whenLabel, type DiffMode, type GroupBy, type RowGroup,
+  visibleRows, whenLabel, type DiffMode, type DiffState, type GroupBy, type RowGroup,
 } from "../../lib/changeRows.ts";
 import { useIncremental } from "../../lib/useIncremental.ts";
 import { openPeek } from "../../lib/openPeek.ts";
@@ -41,8 +41,16 @@ import { diffSplit, diffWrap, setDiffSplit, setDiffWrap, diffNoWhitespace, setDi
 import { subscribeWorktreeJump, worktreeJump } from "../../lib/worktreeJump.ts";
 import { hunkChanges, hunkWithoutWhitespace } from "../../lib/diffNoWhitespace.ts";
 import { useDiffHighlight, HiliteCtx } from "../../lib/diffHighlight.ts";
-import { SplitDiff, UnifiedDiff, SCROLLBAR_CSS, SPLIT_SEL_CSS } from "./DiffLines.tsx";
+import { SplitDiff, UnifiedDiff, SCROLLBAR_CSS, SPLIT_SEL_CSS, LINEBTN_CSS, type LinePick, type LineSel } from "./DiffLines.tsx";
 import { FileIcon, IconLabel } from "../../lib/glyphIcons.tsx";
+import { agentsOf, subscribeAgents } from "../../lib/fleetAgents.ts";
+import { SHARED_TREE_HINT, SHARED_TREE_TOOLTIP, isSharedCwd, liveSharedCwds } from "../../lib/sharedTree.ts";
+import {
+  addLocalComment, buildPrompt, captureSnippet, clearLocalReview, getLocalReview,
+  lineTextAt, markStale, removeLocalComment, replaceLocalComments, reviewChatTitle,
+  setLocalIntro, setLocalOutro, subscribeLocalReview,
+  type LocalDiffComment,
+} from "../../lib/localDiffReview.ts";
 
 /* Storage keys are v3 on purpose: the two before them stored a group-by that no
    longer exists and ticks keyed by an id that no longer exists either. */
@@ -62,7 +70,12 @@ const read = <T,>(key: string, fallback: T, parse: (raw: string) => T): T => {
 };
 const write = (key: string, value: string) => { try { localStorage.setItem(key, value); } catch { /* private mode */ } };
 
-export function DiffPage({ active, onClose }: { active: boolean; onClose?: () => void }) {
+export function DiffPage({ active, onClose, onOpenChatWith }: {
+  active: boolean;
+  onClose?: () => void;
+  /** Seed a chat with cwd = the change's repoRoot and switch to the Chat view. */
+  onOpenChatWith?: (cwd: string, prompt: string, title: string) => void;
+}) {
   const [mode, setMode] = useState<DiffMode>(() => read(K_MODE, "working", (r) => (r === "committed" ? "committed" : "working")));
   const [groupBy, setGroupBy] = useState<GroupBy>(() =>
     read(K_GROUP, "worktree", (r) => (r === "time" || r === "folder" ? (r as GroupBy) : "worktree")));
@@ -139,6 +152,13 @@ export function DiffPage({ active, onClose }: { active: boolean; onClose?: () =>
   const groups = useMemo(() => groupRows(shown, groupBy), [shown, groupBy]);
   const totals = useMemo(() => totalsOf(shown, reviewed), [shown, reviewed]);
 
+  // Live fleet → which checkouts are shared. Exact repoRoot === cwd for v1.
+  // The tick, not the setter: a setter never changes, so a memo keyed on it
+  // computes once and the shared-tree warning never follows the fleet.
+  const [agentsTick, bumpAgents] = useState(0);
+  useEffect(() => subscribeAgents(() => bumpAgents((n) => n + 1)), []);
+  const sharedCwds = useMemo(() => liveSharedCwds(agentsOf()), [agentsTick]);
+
   // The selection heals to something that is on screen — but only when what it
   // pointed at has actually gone, so a poll cannot move the reader.
   const selected = useMemo(() => rowByKey(shown, selKey) ?? shown[0] ?? null, [shown, selKey]);
@@ -200,7 +220,7 @@ export function DiffPage({ active, onClose }: { active: boolean; onClose?: () =>
 
   return (
     <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-      <style>{SCROLLBAR_CSS}{SPLIT_SEL_CSS}</style>
+      <style>{SCROLLBAR_CSS}{SPLIT_SEL_CSS}{LINEBTN_CSS}</style>
 
       <div className={viewHeaderClass} style={viewHeaderStyle}>
         <h2 className="sr-only">Diff</h2>
@@ -261,7 +281,7 @@ export function DiffPage({ active, onClose }: { active: boolean; onClose?: () =>
             groups={groups} collapsed={collapsed} onToggleSection={toggleSection}
             selKey={selected?.key ?? null} onSelect={setSelKey}
             reviewed={reviewed} onToggleReviewed={toggleReviewed}
-            groupBy={groupBy}
+            groupBy={groupBy} sharedCwds={sharedCwds}
             empty={loading && !rows.length ? "Reading git…"
               : error ? error
               /*
@@ -302,7 +322,7 @@ export function DiffPage({ active, onClose }: { active: boolean; onClose?: () =>
 
         <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
           {selected
-            ? <Body row={selected} state={body} split={split} wrap={wrap} noWs={noWs} />
+            ? <Body row={selected} state={body} split={split} wrap={wrap} noWs={noWs} onOpenChatWith={onOpenChatWith} />
             : <Blank>Nothing selected</Blank>}
         </div>
       </div>
@@ -413,10 +433,18 @@ function Tick({ on }: { on: boolean }) {
   );
 }
 
+
+/** A section is shared when its checkout key matches a live shared cwd (worktree
+ *  group), or when any row in it does (time / folder groups). */
+function sectionShared(g: RowGroup, groupBy: GroupBy, shared: ReadonlySet<string>): boolean {
+  if (groupBy === "worktree") return isSharedCwd(g.key, shared);
+  return g.rows.some((r) => isSharedCwd(r.repoRoot, shared));
+}
+
 /* ── the list ─────────────────────────────────────────────────────────────── */
 
 function List({
-  ref, groups, collapsed, onToggleSection, selKey, onSelect, reviewed, onToggleReviewed, groupBy, empty, notice,
+  ref, groups, collapsed, onToggleSection, selKey, onSelect, reviewed, onToggleReviewed, groupBy, sharedCwds, empty, notice,
 }: {
   ref: React.Ref<HTMLDivElement>;
   groups: RowGroup[];
@@ -427,6 +455,7 @@ function List({
   reviewed: ReadonlySet<string>;
   onToggleReviewed: (r: ChangeRow) => void;
   groupBy: GroupBy;
+  sharedCwds: ReadonlySet<string>;
   /** A node, not a string: when a filter comes from a jump the empty case has
    *  something to OFFER — the other mode, with the filter kept. See `emptyLine`. */
   empty: React.ReactNode;
@@ -459,6 +488,11 @@ function List({
               {" "}<span style={{ color: "var(--error)" }}>−{g.del}</span>
             </span>
           </button>
+          {sectionShared(g, groupBy, sharedCwds) && (
+            <p className="px-3 pb-1 text-[10.5px]" style={{ color: "var(--warning)" }} title={SHARED_TREE_TOOLTIP}>
+              {SHARED_TREE_HINT}
+            </p>
+          )}
           {!collapsed.has(g.key) && (
             <div className="pl-3">
               {g.rows.map((r) => (
@@ -562,12 +596,13 @@ function Row({ r, selected, reviewed, onSelect, onToggleReviewed }: {
 
 /* ── the diff ─────────────────────────────────────────────────────────────── */
 
-function Body({ row, state, split, wrap, noWs }: {
+function Body({ row, state, split, wrap, noWs, onOpenChatWith }: {
   row: ChangeRow;
-  state: { diff: { hunks: { oldStart: number; oldLines: number; newStart: number; newLines: number; lines: string[] }[]; truncated: boolean; binary: boolean; error?: string } | null; loading: boolean; error: string | null };
+  state: DiffState;
   split: boolean; wrap: boolean;
   /** Fold whitespace-only changes into context — see diffNoWhitespace.ts. */
   noWs: boolean;
+  onOpenChatWith?: (cwd: string, prompt: string, title: string) => void;
 }) {
   const { hilite } = useDiffHighlight(row.path);
   const [copied, setCopied] = useState(false);
@@ -576,6 +611,85 @@ function Body({ row, state, split, wrap, noWs }: {
      that leaves none at all, the file says so below instead of rendering as blank. */
   const hunks = useMemo(() => (noWs ? raw.map(hunkWithoutWhitespace).filter(hunkChanges) : raw), [noWs, raw]);
   const allWs = noWs && raw.length > 0 && hunks.length === 0;
+
+  /* Pending review for this checkout — intro / outro + line comments with
+     captured snippets. Shared across files in the same repoRoot. */
+  const review = useSyncExternalStore(
+    subscribeLocalReview,
+    () => getLocalReview(row.repoRoot),
+    () => getLocalReview(row.repoRoot),
+  );
+  const [selRange, setSelRange] = useState<LineSel>(null);
+  const [composing, setComposing] = useState<{
+    line: number; startLine?: number; side: "LEFT" | "RIGHT";
+  } | null>(null);
+  const [draftBody, setDraftBody] = useState("");
+  const composeRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (composing) {
+      setDraftBody("");
+      const t = requestAnimationFrame(() => composeRef.current?.focus());
+      return () => cancelAnimationFrame(t);
+    }
+  }, [composing?.line, composing?.side, composing?.startLine]);
+
+  /* When the file body refreshes (agent edited), re-check anchors for this path. */
+  const sig = state.diff?.sig;
+  useEffect(() => {
+    if (!state.diff) return;
+    const next = markStale(review.comments, row.path, state.diff);
+    const changed = next.some((c, i) => c.stale !== review.comments[i]?.stale);
+    if (changed) replaceLocalComments(row.repoRoot, next);
+  }, [sig, row.path, row.repoRoot, state.diff, review.comments]);
+
+  const pickLine = useCallback((pk: LinePick) => {
+    if (pk.shift && selRange && selRange.side === pk.side) {
+      const sel = { start: selRange.start, end: pk.line, side: pk.side };
+      const line = Math.max(sel.start, sel.end);
+      const startLine = Math.min(sel.start, sel.end);
+      setSelRange(sel);
+      setComposing({ line, startLine: startLine !== line ? startLine : undefined, side: pk.side });
+      return;
+    }
+    setSelRange({ start: pk.line, end: pk.line, side: pk.side });
+    setComposing({ line: pk.line, side: pk.side });
+  }, [selRange]);
+
+  const cancelCompose = () => { setComposing(null); setSelRange(null); setDraftBody(""); };
+
+  const addComment = () => {
+    if (!composing || !draftBody.trim()) return;
+    /* Always capture against the raw file body — the same hunks markStale
+       re-reads — so Ignore-space does not invent a false stale. */
+    const source = state.diff?.hunks ?? raw;
+    const snippet = captureSnippet(source, composing.line, composing.side, composing.startLine);
+    const primary = lineTextAt(source, composing.line, composing.side);
+    addLocalComment(row.repoRoot, {
+      path: row.path,
+      line: composing.line,
+      startLine: composing.startLine,
+      side: composing.side,
+      body: draftBody.trim(),
+      snippet,
+      sig: state.diff?.sig,
+      lineText: primary,
+    });
+    cancelCompose();
+  };
+
+  const sendToChat = () => {
+    if (!review.comments.length || !onOpenChatWith) return;
+    /* Re-stamp stale against the current body so the prompt notice is honest. */
+    const comments = state.diff
+      ? markStale(review.comments, row.path, state.diff)
+      : review.comments;
+    const prompt = buildPrompt({ ...review, comments });
+    if (!prompt.trim()) return;
+    onOpenChatWith(row.repoRoot, prompt, reviewChatTitle({ ...review, comments }));
+    clearLocalReview(row.repoRoot);
+    cancelCompose();
+  };
 
   /**
    * Open it in the viewer, the way the pull request does.
@@ -608,6 +722,67 @@ function Body({ row, state, split, wrap, noWs }: {
     } catch { /* a clipboard that refuses is not worth an error state here */ }
   };
 
+  const pendingHere = useMemo(
+    () => review.comments.filter((c) => c.path === row.path),
+    [review.comments, row.path],
+  );
+
+  const rowAfter = (newN: number | null | undefined, oldN: number | null | undefined) => {
+    const composeHere = composing && (
+      (composing.side === "RIGHT" && composing.line === newN) ||
+      (composing.side === "LEFT" && composing.line === oldN)
+    );
+    const onLine = pendingHere.filter((c) =>
+      (c.side === "RIGHT" && c.line === newN) || (c.side === "LEFT" && c.line === oldN));
+    if (!composeHere && !onLine.length) return null;
+    const pfx = composing?.side === "LEFT" ? "L" : "R";
+    return (
+      <div className="px-3 py-2 border-b" style={{ background: "color-mix(in srgb, var(--bg2) 80%, transparent)", borderColor: "color-mix(in srgb, var(--border) 40%, transparent)" }}>
+        {onLine.map((c) => (
+          <CommentChip key={c.id} c={c} onDrop={() => removeLocalComment(row.repoRoot, c.id)} />
+        ))}
+        {composeHere && composing && (
+          <div className="mt-1">
+            <p className="text-[10.5px] mb-1" style={{ color: "var(--text3)" }}>
+              {composing.startLine
+                ? `Comment on lines ${pfx}${composing.startLine}–${composing.line}`
+                : `Add a comment on line ${pfx}${composing.line}`}
+            </p>
+            <textarea
+              ref={composeRef}
+              value={draftBody}
+              onChange={(e) => setDraftBody(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") { e.preventDefault(); cancelCompose(); }
+                if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); addComment(); }
+              }}
+              rows={3}
+              placeholder="What should the agent do with this line?"
+              className="w-full rounded-md px-2 py-1.5 text-[12px] resize-y outline-none"
+              style={{
+                background: "var(--bg)", color: "var(--text)",
+                border: "1px solid color-mix(in srgb, var(--border) 50%, transparent)",
+                fontFamily: "inherit",
+              }}
+            />
+            <div className="flex items-center gap-2 mt-1.5">
+              <button type="button" onClick={addComment} disabled={!draftBody.trim()}
+                className="px-2.5 py-1 rounded-md text-[11px] font-medium disabled:opacity-40"
+                style={{ background: "var(--primary)", color: "#fff" }}>
+                Add to review
+              </button>
+              <button type="button" onClick={cancelCompose}
+                className="px-2 py-1 rounded-md text-[11px]" style={{ color: "var(--text3)" }}>
+                Cancel
+              </button>
+              <span className="text-[10px] ml-auto" style={{ color: "var(--text4)" }}>⌘↵ to add</span>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <>
       <div className="flex items-center gap-2 px-4 py-2 shrink-0 border-b" style={{ borderColor: "color-mix(in srgb, var(--border) 35%, transparent)" }}>
@@ -638,6 +813,14 @@ function Body({ row, state, split, wrap, noWs }: {
         </button>
       </div>
 
+      {review.comments.length > 0 && (
+        <PendingBar
+          review={review}
+          repoRoot={row.repoRoot}
+          canSend={!!onOpenChatWith}
+          onSend={sendToChat}
+        />
+      )}
 
       <div className="agx-scroll flex-1 min-h-0 overflow-auto">
         {state.loading && !state.diff && <Blank>Reading the diff…</Blank>}
@@ -659,8 +842,8 @@ function Body({ row, state, split, wrap, noWs }: {
         {hunks.length > 0 && (
           <HiliteCtx.Provider value={hilite}>
             {split
-              ? <SplitDiff hunks={hunks} wrap={wrap} />
-              : <UnifiedDiff hunks={hunks} wrap={wrap} />}
+              ? <SplitDiff hunks={hunks} wrap={wrap} onPick={pickLine} sel={selRange} rowAfter={rowAfter} />
+              : <UnifiedDiff hunks={hunks} wrap={wrap} onPick={pickLine} sel={selRange} rowAfter={rowAfter} />}
           </HiliteCtx.Provider>
         )}
         {state.diff?.truncated && (
@@ -670,6 +853,103 @@ function Body({ row, state, split, wrap, noWs }: {
         )}
       </div>
     </>
+  );
+}
+
+function CommentChip({ c, onDrop }: { c: LocalDiffComment; onDrop: () => void }) {
+  const where = c.startLine && c.startLine !== c.line
+    ? `L${Math.min(c.startLine, c.line)}–${Math.max(c.startLine, c.line)}`
+    : `L${c.line}`;
+  return (
+    <div className="flex items-start gap-2 mb-1.5 last:mb-0 rounded-md px-2 py-1.5"
+      style={{ background: "color-mix(in srgb, var(--primary) 8%, transparent)" }}>
+      <div className="min-w-0 flex-1">
+        <p className="text-[10px] tabular-nums" style={{ color: c.stale ? "var(--warning)" : "var(--text4)" }}>
+          {where} · {c.side}{c.stale ? " · stale" : ""}
+        </p>
+        <p className="text-[11.5px] whitespace-pre-wrap" style={{ color: "var(--text2)" }}>{c.body}</p>
+      </div>
+      <button type="button" onClick={onDrop} title="Remove from pending review"
+        className="shrink-0 text-[10px] px-1.5 py-0.5 rounded" style={{ color: "var(--text4)" }}>
+        Remove
+      </button>
+    </div>
+  );
+}
+
+function PendingBar({ review, repoRoot, canSend, onSend }: {
+  review: ReturnType<typeof getLocalReview>;
+  repoRoot: string;
+  canSend: boolean;
+  onSend: () => void;
+}) {
+  const staleN = review.comments.filter((c) => c.stale).length;
+  return (
+    <div className="shrink-0 border-b px-3 py-2 flex flex-col gap-2"
+      style={{ borderColor: "color-mix(in srgb, var(--border) 35%, transparent)", background: "color-mix(in srgb, var(--bg2) 70%, transparent)" }}>
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-[11px] font-medium" style={{ color: "var(--text)" }}>
+          Pending review · {review.comments.length} comment{review.comments.length === 1 ? "" : "s"}
+          {staleN > 0 && <span style={{ color: "var(--warning)" }}> · {staleN} stale</span>}
+        </span>
+        <div className="ml-auto flex items-center gap-2">
+          <button type="button" onClick={() => clearLocalReview(repoRoot)}
+            className="px-2 py-1 rounded-md text-[10.5px]" style={{ color: "var(--text3)" }}>
+            Discard
+          </button>
+          <button type="button" onClick={onSend} disabled={!canSend}
+            title={canSend ? "Build one prompt and open it in Chat (cwd = this checkout)" : "Chat handoff is unavailable"}
+            className="px-2.5 py-1 rounded-md text-[11px] font-medium disabled:opacity-40"
+            style={{ background: "var(--primary)", color: "#fff" }}>
+            Send to chat
+          </button>
+        </div>
+      </div>
+      <div className="grid gap-2" style={{ gridTemplateColumns: "1fr 1fr" }}>
+        <label className="flex flex-col gap-0.5 min-w-0">
+          <span className="text-[10px] uppercase tracking-wider" style={{ color: "var(--text4)" }}>Intro</span>
+          <textarea
+            value={review.intro}
+            onChange={(e) => setLocalIntro(repoRoot, e.target.value)}
+            rows={2}
+            placeholder="Optional lead-in for the agent…"
+            className="w-full rounded-md px-2 py-1 text-[11.5px] resize-y outline-none"
+            style={{ background: "var(--bg)", color: "var(--text)", border: "1px solid color-mix(in srgb, var(--border) 45%, transparent)" }}
+          />
+        </label>
+        <label className="flex flex-col gap-0.5 min-w-0">
+          <span className="text-[10px] uppercase tracking-wider" style={{ color: "var(--text4)" }}>Outro</span>
+          <textarea
+            value={review.outro}
+            onChange={(e) => setLocalOutro(repoRoot, e.target.value)}
+            rows={2}
+            placeholder="Optional closing notes…"
+            className="w-full rounded-md px-2 py-1 text-[11.5px] resize-y outline-none"
+            style={{ background: "var(--bg)", color: "var(--text)", border: "1px solid color-mix(in srgb, var(--border) 45%, transparent)" }}
+          />
+        </label>
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {review.comments.map((c) => {
+          const name = c.path.slice(c.path.lastIndexOf("/") + 1) || c.path;
+          const where = c.startLine && c.startLine !== c.line
+            ? `L${Math.min(c.startLine, c.line)}–${Math.max(c.startLine, c.line)}`
+            : `L${c.line}`;
+          return (
+            <button key={c.id} type="button" onClick={() => removeLocalComment(repoRoot, c.id)}
+              title={`${c.path}:${where}\n${c.body}${c.stale ? "\n(stale)" : ""}\nClick to remove`}
+              className="text-[10.5px] px-1.5 py-0.5 rounded-md truncate max-w-[220px]"
+              style={{
+                color: c.stale ? "var(--warning)" : "var(--text2)",
+                background: "color-mix(in srgb, var(--text) 8%, transparent)",
+                border: "1px solid color-mix(in srgb, var(--border) 40%, transparent)",
+              }}>
+              {name}:{where}{c.stale ? " · stale" : ""}
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 

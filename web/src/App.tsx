@@ -8,6 +8,7 @@ import { setPaneJump } from "./lib/paneJump.ts";
 import { useStats } from "./lib/useStats.ts";
 import { deriveAgents, deriveAlerts, buildTitles, buildRollups, providersSeen } from "./lib/derive.ts";
 import { publishFleet } from "./lib/demoBridge.ts";
+import { publishAgents } from "./lib/fleetAgents.ts";
 import { providerOf } from "./lib/format.ts";
 import { api, IS_DEMO } from "./lib/api.ts";
 import { initialTheme, applyTheme, THEMES } from "./lib/themes.ts";
@@ -590,6 +591,12 @@ export default function App() {
   useEffect(() => {
     publishFleet(agentsAll, stats?.totals.cost_usd ?? 0);
   }, [agentsAll, stats]);
+
+  // Diff / SessionModal need the same live AgentCards Fleet already has, so
+  // they can flag shared working trees without a second derive pass.
+  useEffect(() => {
+    publishAgents(agentsAll);
+  }, [agentsAll]);
 
   const clearFilters = useCallback(() => setFilter({ app: "", type: "", provider: "" }), []);
 
