@@ -191,6 +191,35 @@ describe("resolveByRule paths", () => {
     // Assert the contract the route implements rather than spinning a server.
     const hookBody = { decision: stored.decision, reason: "" };
     expect(hookBody).toEqual({ decision: "allow", reason: "" });
+    // Reattach (/gate/status → awaitGate) must match that same empty-reason
+    // contract; history/getGate still keep the allowlist reason + resolution.
+    expect(gate.awaitGate(id)).toEqual({ decision: "allow", reason: "" });
+    expect(db.getGate(id)!.reason).toMatch(/allowlist/);
+    expect(db.getGate(id)!.resolution).toBe("rule");
+  });
+
+  test("awaitGate keeps reason for rule deny and human allow", () => {
+    process.env.XDG_CONFIG_HOME = DENY;
+    const denyId = newId();
+    gate.resolveByRule(req(denyId, "Bash"), {
+      decision: "deny",
+      reason: "Denied by agentglass tool denylist (Bash). Do not retry.",
+    });
+    expect(gate.awaitGate(denyId)).toEqual({
+      decision: "deny",
+      reason: "Denied by agentglass tool denylist (Bash). Do not retry.",
+    });
+    expect(db.getGate(denyId)!.resolution).toBe("rule");
+
+    process.env.XDG_CONFIG_HOME = NONE;
+    const humanId = newId();
+    gate.submitGate(req(humanId, "Bash"), 60_000);
+    expect(gate.decideGate(humanId, "allow", "reviewed — ok")).toBe(true);
+    expect(gate.awaitGate(humanId)).toEqual({
+      decision: "allow",
+      reason: "reviewed — ok",
+    });
+    expect(db.getGate(humanId)!.resolution).toBe("human");
   });
 
   test("deny records resolution=rule with a no-retry reason", () => {

@@ -288,6 +288,14 @@ export function awaitGate(id: string): Promise<GateOutcome> | GateOutcome | null
   }
   const row = getGate(id);
   if (!row || !row.decision) return null;
+  // Rule-allow must match the POST /gate hook contract: history keeps the
+  // allowlist reason, but reattach (/gate/status → awaitGate) must omit it so
+  // gate_event falls through to allow_silently() instead of allow-with-reason
+  // (which would skip Claude Code's own prompt). Human/timeout/restart allows
+  // and any deny keep the stored reason.
+  if (row.decision === "allow" && row.resolution === "rule") {
+    return { decision: "allow", reason: "" };
+  }
   return { decision: row.decision, reason: row.reason || "" };
 }
 
