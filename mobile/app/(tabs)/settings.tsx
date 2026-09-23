@@ -21,6 +21,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, AppState, Linking, Pressable, ScrollView, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import Constants from "expo-constants";
+import * as Clipboard from "expo-clipboard";
+import * as Haptics from "expo-haptics";
+import { since } from "../../src/lib/dates.ts";
 import { useAgentglass } from "../../src/state/host-context.tsx";
 import { useComputer } from "../../src/state/use-computer.ts";
 import {
@@ -205,6 +208,10 @@ function ComputerSheet({ open, onClose, onForget }: {
   const router = useRouter();
   if (!host) return null;
   const scope = SCOPE[host.scope];
+  /* How long ago this pairing was made. Worth a row because the sheet is where
+     somebody asks "is this the phone I paired last week, or the one from the
+     spring", and the label alone does not say. */
+  const ago = since(host.pairedAt, Date.now());
   return (
     <Sheet open={open} onClose={onClose} title={computer}>
       <View style={{ gap: SPACE.md, paddingBottom: SPACE.md }}>
@@ -213,7 +220,18 @@ function ComputerSheet({ open, onClose, onForget }: {
           <Fact name="Connection" value={live === "open" ? "live" : live === "connecting" ? "connecting…" : "offline"} />
           <Fact name="Last answer" value={fleet.at ? new Date(fleet.at).toLocaleTimeString() : "never"} />
           <Fact name="This phone is called" value={host.label} />
+          {ago ? <Fact name="Paired" value={ago === "0m" ? "just now" : `${ago} ago`} /> : null}
         </View>
+        {/* Copied rather than read out: the address is what gets typed into a
+            second phone or a browser at the desk, and a typo in a port is a
+            pairing that fails for a reason nobody can see. */}
+        <Btn
+          label="Copy the address"
+          onPress={() => {
+            void Clipboard.setStringAsync(host.origin);
+            void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          }}
+        />
         <View style={{ gap: SPACE.xs, padding: SPACE.md, borderRadius: RADIUS.lg, backgroundColor: C.bg3 }}>
           <Text style={{ color: C.text, fontSize: T.body, fontWeight: "600" }}>{scope.name}</Text>
           <Note>{scope.what}</Note>
