@@ -12,9 +12,11 @@
  *
  *  - two models under ONE session and ONE app, so a per-app session count that
  *    got summed across the model fold reads 2 where the truth is 1;
- *  - `gpt-5.6`, whose display label is "GPT-5" and whose rates are NOT the
- *    GPT-5 row's, so weighting a folded row by its label rather than by the raw
- *    ids that fed it produces a different number;
+ *  - `gpt-5.2-pro`, whose display label is "GPT-5.2 Pro" and whose rates are
+ *    NOT what priceFor returns for that label string (space vs hyphen → the
+ *    plain GPT-5.2 row, which still charges for cache reads), so weighting a
+ *    folded row by its label rather than by the raw ids produces a different
+ *    number;
  *  - a large cache read in every turn, which is the class the old figure
  *    dropped and the one that dominates a real session.
  *
@@ -39,7 +41,7 @@ const TURN = { input_tokens: 1_000, output_tokens: 500, cache_creation_tokens: 2
 const ROWS: [string, string, string][] = [
   ["eqtok-app-alpha", "eqtok-session-multi", "claude-opus-4.5"],
   ["eqtok-app-alpha", "eqtok-session-multi", "claude-haiku-4.5"],
-  ["eqtok-app-beta", "eqtok-session-gpt", "gpt-5.6"],
+  ["eqtok-app-beta", "eqtok-session-gpt", "gpt-5.2-pro"],
 ];
 
 const now = Date.now();
@@ -92,7 +94,7 @@ console.log(JSON.stringify({
     const d = db.getSession("eqtok-session-gpt");
     return d && {
       equiv_tokens: d.equiv_tokens, input_tokens: d.input_tokens, output_tokens: d.output_tokens,
-      expected: pricing.equivalentTokens(TURN, "gpt-5.6"),
+      expected: pricing.equivalentTokens(TURN, "gpt-5.2-pro"),
     };
   })(),
 }));

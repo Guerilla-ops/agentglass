@@ -7,6 +7,11 @@ import { Panel } from "./Panel.tsx";
 import { fmtUsd, fmtTokens, fmtEq, eqTitle, fmtAgo, modelLabelOf } from "../lib/format.ts";
 import { RunLanes, legDirs } from "./RunLane.tsx";
 import { runsOf, subscribeRuns, watchRuns } from "../lib/runStore.ts";
+import { branchesOf, subscribeBranches } from "../lib/repoBranches.ts";
+import {
+  SHARED_TREE_LABEL, SHARED_TREE_TOOLTIP,
+  branchForCwd, isSharedCwd, liveSharedCwds, workingTreeOf,
+} from "../lib/sharedTree.ts";
 
 // "now ago" reads wrong — fmtAgo already returns "now" for the freshest events.
 const ago = (ts: number) => {
@@ -168,7 +173,10 @@ function Spark({ data, color }: { data: number[]; color: string }) {
   );
 }
 
-function SessionCard({ a, selected, onSelect }: { a: AgentCard; selected: boolean; onSelect?: (a: AgentCard) => void }) {
+function SessionCard({ a, selected, onSelect, branch, shared }: {
+  a: AgentCard; selected: boolean; onSelect?: (a: AgentCard) => void;
+  branch: string | null; shared: boolean;
+}) {
   const st = STATUS[a.status];
   const model = modelLabelOf(a.model_name);
   return (
@@ -212,13 +220,25 @@ function SessionCard({ a, selected, onSelect }: { a: AgentCard; selected: boolea
               since that's what you paste into a resume. */}
           <span className="truncate text-[13px]" style={{ color: "var(--text)" }}
             title={a.title ? `${a.title}\n${a.key}` : a.key}>{a.title ?? a.key}</span>
-          {/* Cards are grouped by project, so several agents on `orbit` sit side
-              by side; this is the only thing that says which branch each one is
-              actually working. */}
+          {/* Worktree directory label (linked checkout) plus git branch when
+              known — "agent on branch Y in worktree Z". Shared-tree honesty
+              when ≥2 live sessions share this cwd. */}
           {a.worktree && (
             <span className="chip shrink-0" title={`Working in the ${a.worktree} worktree`}
               style={{ color: "var(--primary-hover)", background: "color-mix(in srgb, var(--primary) 14%, transparent)" }}>
               <BranchIcon size={ICON.xs} className="inline-block align-[-2px] mr-1" />{a.worktree}
+            </span>
+          )}
+          {branch && (
+            <span className="chip shrink-0" title={`Checked out on ${branch}`}
+              style={{ color: "var(--text2)", background: "color-mix(in srgb, var(--border) 35%, transparent)" }}>
+              {branch}
+            </span>
+          )}
+          {shared && (
+            <span className="chip shrink-0" title={SHARED_TREE_TOOLTIP}
+              style={{ color: "var(--warning)", background: "color-mix(in srgb, var(--warning) 14%, transparent)" }}>
+              {SHARED_TREE_LABEL}
             </span>
           )}
         </div>
@@ -292,6 +312,13 @@ export function Fleet({ agents, activeApp, onSelect }: { agents: AgentCard[]; ac
   const runs = runsOf("").runs;
   const claimed = useMemo(() => legDirs(runs), [runs]);
 
+  // Git branch per checkout — joined from the cheap repos list, not a poll of
+  // every session. Shared-cwd set is computed once for the whole fleet.
+  const [, bumpBranches] = useState(0);
+  useEffect(() => subscribeBranches(() => bumpBranches((n) => n + 1)), []);
+  const branches = branchesOf();
+  const sharedCwds = useMemo(() => liveSharedCwds(agents), [agents]);
+
   // Group sessions by project (source_app); order groups by most-recent activity.
   const groups = useMemo(() => {
     const by = new Map<string, AgentCard[]>();
@@ -351,7 +378,13 @@ export function Fleet({ agents, activeApp, onSelect }: { agents: AgentCard[]; ac
           runs={runs}
           cards={agents}
           renderCard={(a) => (
-            <SessionCard key={a.key} a={a} selected={!!activeApp && a.source_app === activeApp} onSelect={onSelect} />
+            <SessionCard
+              key={a.key} a={a}
+              selected={!!activeApp && a.source_app === activeApp}
+              onSelect={onSelect}
+              branch={branchForCwd(workingTreeOf(a), branches)}
+              shared={isSharedCwd(workingTreeOf(a), sharedCwds)}
+            />
           )}
         />
         {/* An adopted leg can have no session card at all — that is the normal
@@ -380,7 +413,13 @@ export function Fleet({ agents, activeApp, onSelect }: { agents: AgentCard[]; ac
                 {!collapsed && (
                   <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="space-y-2 overflow-hidden">
                     {list.map((a) => (
-                      <SessionCard key={a.key} a={a} selected={!!activeApp && a.source_app === activeApp} onSelect={onSelect} />
+                      <SessionCard
+                        key={a.key} a={a}
+                        selected={!!activeApp && a.source_app === activeApp}
+                        onSelect={onSelect}
+                        branch={branchForCwd(workingTreeOf(a), branches)}
+                        shared={isSharedCwd(workingTreeOf(a), sharedCwds)}
+                      />
                     ))}
                   </motion.div>
                 )}

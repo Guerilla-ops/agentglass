@@ -198,7 +198,7 @@ function TerminalRefused({ scope }: { scope: DeviceScope }): React.ReactNode {
               {gates.length ? `Waiting on you · ${gates.length}` : "Nothing is waiting on you"}
             </Text>
             {gates.map((gate) => (
-              <GateCard key={gate.id} gate={gate} host={host} colors={C} now={Date.now()} onDone={refresh} />
+              <GateCard key={gate.id} gate={gate} host={host} colors={C} onDone={refresh} />
             ))}
           </View>
         ) : null}
@@ -1708,7 +1708,6 @@ function TerminalPane(): React.ReactNode {
                 gate={gate}
                 host={host}
                 colors={paneColours}
-                now={Date.now()}
                 onDone={refresh}
                 onOpen={there && there.paneId !== active
                   ? () => { setSession(there.session); setActive(there.paneId); setWhy(null); }

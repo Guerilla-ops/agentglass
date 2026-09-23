@@ -4078,11 +4078,29 @@ export function ftsQuery(q: string): string {
   return terms.join(" ");
 }
 
-export function searchEvents(q: string, limit = 60): import("../../shared/types.ts").SearchHit[] {
+/** Full-text search over events, always project-scoped like the rest of the
+ *  cockpit. Optional `since` (epoch ms) and `provider` mirror /stats so the
+ *  Search UI can honour the header window and provider chip instead of scanning
+ *  all retained history. The FTS rewrite (`ftsQuery`) is unchanged. */
+export function searchEvents(
+  q: string,
+  limit = 60,
+  opts?: { since?: number; provider?: string },
+): import("../../shared/types.ts").SearchHit[] {
   const match = ftsQuery(q);
   if (!match) return [];
   const s = scopeClause();
+  // Joined as `e` — qualify every column that also exists on events_fts or is
+  // ambiguous once the join is in play.
   const scoped = s.clause.replace(/\b(project_path|cwd_path)\b/g, "e.$1");
+  const prov = providerScope(opts?.provider);
+  const provClause = prov.clause.replace(/\bprovider\b/g, "e.provider");
+  const since = opts?.since;
+  const sinceClause =
+    since != null && Number.isFinite(since) ? " AND e.timestamp >= ?" : "";
+  const args: any[] = [match];
+  if (sinceClause) args.push(since);
+  args.push(...prov.args, ...s.args, limit);
   try {
     return db
       .query<any, any[]>(
@@ -4090,9 +4108,9 @@ export function searchEvents(q: string, limit = 60): import("../../shared/types.
                 e.cost_usd, e.duration_ms,
                 snippet(events_fts, 0, char(1), char(2), ' … ', 14) AS snippet
          FROM events_fts f JOIN events e ON e.id = f.rowid
-         WHERE events_fts MATCH ?${scoped} ORDER BY rank LIMIT ?`
+         WHERE events_fts MATCH ?${sinceClause}${provClause}${scoped} ORDER BY rank LIMIT ?`
       )
-      .all(match, ...s.args, limit);
+      .all(...args);
   } catch {
     return [];
   }

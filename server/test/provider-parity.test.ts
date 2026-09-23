@@ -88,7 +88,11 @@ describe("modelLabel agrees between the server and the web copy", () => {
     ...MODELS,
     // The families where a rate row deliberately covers several models — the
     // exact shape that used to collapse them all onto one name.
-    "gpt-5", "gpt-5-mini", "gpt-5-nano", "gpt-4.5",
+    "gpt-5", "gpt-5-mini", "gpt-5-nano", "gpt-5-pro", "gpt-4.5",
+    "gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano", "gpt-5.4-pro",
+    "gpt-5.5", "gpt-5.5-pro",
+    "gpt-5.6", "gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol",
+    "gpt-5.1", "gpt-5.1-codex-mini", "gpt-5.2", "gpt-5.2-pro", "gpt-5.3",
     "gpt-4.1-mini", "gpt-4.1-nano", "gpt-4-turbo",
     "claude-opus-4-1", "claude-opus-4-5", "claude-3-5-sonnet-20241022",
     "mythos-1", "k3[512k]",
@@ -108,6 +112,38 @@ describe("modelLabel agrees between the server and the web copy", () => {
   test("a GPT-5 id is not called GPT-4.1", () => {
     expect(serverModelLabel("gpt-5")).toBe("GPT-5");
     expect(serverModelLabel("gpt-5-mini")).toBe("GPT-5 mini");
+  });
+
+  // #248 F21 residual: distinct PRICE_TABLE rate tiers must not share a
+  // display label, or by_model folds them into one donut slice.
+  test("OpenAI 5.x rate tiers keep distinct display labels", async () => {
+    const { priceFor } = await import("../src/pricing.ts");
+    const IDS = [
+      "gpt-5", "gpt-5-mini", "gpt-5-nano", "gpt-5-pro",
+      "gpt-5.1", "gpt-5.1-codex-mini",
+      "gpt-5.2", "gpt-5.2-pro", "gpt-5.3",
+      "gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano", "gpt-5.4-pro",
+      "gpt-5.5", "gpt-5.5-pro",
+      "gpt-5.6", "gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol",
+    ];
+    // Sanity: none of these still collapses to plain "GPT-5" except gpt-5 itself
+    // (and aliases that truly share its rate, e.g. gpt-5-codex — not in this list).
+    for (const id of IDS) {
+      if (id === "gpt-5") continue;
+      expect(serverModelLabel(id), `${id} still displays as GPT-5`).not.toBe("GPT-5");
+      expect(webModelLabelOf(id)).toBe(serverModelLabel(id));
+    }
+    // Pairwise: different rate rows ⇒ different display labels.
+    for (let i = 0; i < IDS.length; i++) {
+      for (let j = i + 1; j < IDS.length; j++) {
+        const a = IDS[i]!, b = IDS[j]!;
+        if (priceFor(a) === priceFor(b)) continue;
+        expect(
+          serverModelLabel(a),
+          `${a} (${serverModelLabel(a)}) and ${b} (${serverModelLabel(b)}) share a label across rate tiers`,
+        ).not.toBe(serverModelLabel(b));
+      }
+    }
   });
 
   // A price row may still bucket ids together — that is its job. What it may

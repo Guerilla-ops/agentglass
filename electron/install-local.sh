@@ -231,6 +231,11 @@ if [ -f "$APP/resources/bin/agentglass-browser" ]; then
     ln -sf "$APP/resources/bin/agentglass-browser-mcp" "$BIN/agentglass-browser-mcp"
   fi
 fi
+# The cockpit as a read-only MCP server: what an agent's own session has cost.
+if [ -f "$APP/resources/bin/agentglass-cockpit-mcp" ]; then
+  chmod +x "$APP/resources/bin/agentglass-cockpit-mcp" 2>/dev/null || true
+  ln -sf "$APP/resources/bin/agentglass-cockpit-mcp" "$BIN/agentglass-cockpit-mcp"
+fi
 # The named-agent CLI: a script's launcher and liveness for unattended agents
 # on the engine. Same home as the browser CLI, for the same reason.
 if [ -f "$APP/resources/bin/agentglass-agent" ]; then

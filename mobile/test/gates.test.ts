@@ -53,3 +53,25 @@ describe("order and age", () => {
     expect(waited(t, t + 2 * 86_400_000)).toBe("2d");
   });
 });
+
+/*
+ * "waited 3m" froze at the minute the card was drawn: the terminal passed
+ * `now={Date.now()}` and only re-rendered when something else changed. The
+ * card keeps its own minute clock, so only that card repaints as time passes,
+ * not the whole terminal.
+ */
+const CARD = await Bun.file(new URL("../src/terminal/GateCard.tsx", import.meta.url)).text();
+const TERMINAL = await Bun.file(new URL("../app/(tabs)/terminal.tsx", import.meta.url)).text();
+
+describe("the waited clock", () => {
+  test("lives in the card and ticks once a minute", () => {
+    expect(CARD).toContain("const now = useMinute();");
+    expect(CARD).toContain("setInterval(() => setNow(Date.now()), 60_000)");
+  });
+
+  test("is not handed down by the terminal", () => {
+    const tags = TERMINAL.match(/<GateCard[\s\S]*?\/>/g) ?? [];
+    expect(tags.length).toBeGreaterThan(0);
+    for (const t of tags) expect(t).not.toContain("now=");
+  });
+});

@@ -32,7 +32,7 @@ type Row = Record<string, any>;
 let out: Row;
 let TURN: Row, RAW: number;
 
-const MODELS = ["claude-opus-4.5", "claude-haiku-4.5", "gpt-5.6"];
+const MODELS = ["claude-opus-4.5", "claude-haiku-4.5", "gpt-5.2-pro"];
 /** input + output for one turn — what every pane used to show. */
 const IN_OUT = 1_500;
 
@@ -77,18 +77,19 @@ describe("every fold gets the same, right number", () => {
 
   test("the per-model legend, weighted by the raw ids rather than by the label", () => {
     /*
-     * `gpt-5.6` is in the fixture for this test alone. Its display label is
-     * "GPT-5" and the GPT-5 price row is NOT its rate — cache writes are free
-     * there and cost 1.25x input on 5.6 — so a fold that weighted itself by the
-     * name it shows lands 1,500 equivalents short and still adds up perfectly
-     * against every other fold. Only an exact expectation catches that.
+     * `gpt-5.2-pro` is in the fixture for this test alone. Its display label is
+     * "GPT-5.2 Pro", and priceFor on that label string hits the plain GPT-5.2
+     * row (space vs hyphen) — free-cache-read vs charged — so a fold that
+     * weighted itself by the name it shows lands a different equivalent count
+     * and still adds up perfectly against every other fold. Only an exact
+     * expectation catches that.
      */
     const got = Object.fromEntries(out.by_model.map((m: Row) => [m.model_name, m.equiv_tokens]));
     expect(got).toEqual(out.expected_by_label);
     // Belt and braces on the fixture itself: if a table change made those two
     // price the same, this test would go on passing while proving nothing.
-    expect(equivalentTokens(TURN, "gpt-5.6"), "the fixture model no longer distinguishes label from rate")
-      .not.toBe(equivalentTokens(TURN, modelLabel("gpt-5.6")));
+    expect(equivalentTokens(TURN, "gpt-5.2-pro"), "the fixture model no longer distinguishes label from rate")
+      .not.toBe(equivalentTokens(TURN, modelLabel("gpt-5.2-pro")));
   });
 
   test("the per-app table, which had to be regrouped to be weightable at all", () => {
