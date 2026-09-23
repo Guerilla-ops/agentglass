@@ -3,7 +3,7 @@
  *
  * One context, holding three things: which computer this phone is paired to,
  * whether the live socket is up, and the last answer from each of the handful
- * of endpoints the queue is built from.
+ * of endpoints the terminal and the tab bar read.
  *
  * ── why the socket does not carry the data ────────────────────────────────
  * `/stream` says *that* something moved, in enough detail to know what kind.
@@ -26,7 +26,7 @@ import {
 } from "react";
 import { AppState, type AppStateStatus } from "react-native";
 import type {
-  AlertNote, DockerContainer, DockerOverview, GitRepoRef, PendingGate, PrSummary, SessionRollup,
+  AlertNote, GitRepoRef, PendingGate, PrSummary,
 } from "../../../shared/types.ts";
 import { dedupePrs, mainCheckouts } from "../model/prRows.ts";
 import { ask, REVOKED } from "../lib/api.ts";
@@ -56,11 +56,9 @@ export interface PrRow {
 
 export interface Fleet {
   gates: PendingGate[];
-  sessions: SessionRollup[];
-  containers: DockerContainer[];
   /** Filled by a SECOND pass — see `loadPrs`. Empty means "not asked yet",
-   *  which is why the queue draws no pull-request cards rather than claiming
-   *  there are none. */
+   *  which is why the badge draws nothing rather than claiming there are
+   *  none. */
   prs: PrRow[];
   /** The logins this viewer answers to, for "is this mine". */
   me: string;
@@ -84,7 +82,7 @@ interface Ctx {
   forget: () => Promise<void>;
 }
 
-const EMPTY: Fleet = { gates: [], sessions: [], containers: [], prs: [], me: "", at: 0, error: null };
+const EMPTY: Fleet = { gates: [], prs: [], me: "", at: 0, error: null };
 
 const HostContext = createContext<Ctx | null>(null);
 
@@ -137,61 +135,55 @@ export function HostProvider({ children }: { children: ReactNode }): ReactNode {
   const load = useCallback(async (which: Host): Promise<void> => {
     const mine = ++generation.current;
     /*
-     * The three shapes, and they are not the same shape.
+     * The gates, and only the gates.
      *
-     * `/gate/pending` and `/docker/overview` answer an OBJECT with the list
-     * inside it; `/sessions` answers the ARRAY. That is not a wart worth
-     * fixing here — the dashboard has relied on all three for a long time —
-     * but it is worth writing down, because assuming the wrapper on all three
-     * is exactly what shipped a red screen: `buildQueue` got `undefined` for
-     * its sessions and threw "Cannot convert undefined value to object" out of
-     * a `for…of`, which takes the whole app down rather than one card.
+     * This used to read `/sessions` and `/docker/overview` as well, for the
+     * Now screen's queue. Now is gone and nothing else draws either, so the
+     * phone stopped asking: two requests every twenty seconds for lists no
+     * screen shows is radio spent on nothing.
      *
-     * `mobile/test/fleet-shapes.test.ts` holds all three against a real server
-     * so this cannot drift back.
+     * The lesson of those three stays, because it is about the server and not
+     * the screen: they are not the same shape. `/gate/pending` and
+     * `/docker/overview` answer an OBJECT with the list inside it; `/sessions`
+     * answers the ARRAY. Assuming the wrapper on all three is exactly what
+     * shipped a red screen: the queue got `undefined` for its sessions and
+     * threw "Cannot convert undefined value to object" out of a `for…of`,
+     * which takes the whole app down rather than one card.
+     * `mobile/test/fleet-shapes.test.ts` still holds all three against a real
+     * server, for whichever screen reads them next.
      */
-    const [gates, sessions, docker] = await Promise.all([
-      ask<{ gates: PendingGate[] }>(which, "/gate/pending"),
-      ask<SessionRollup[]>(which, "/sessions?limit=100"),
-      ask<DockerOverview>(which, "/docker/overview"),
-    ]);
+    const gates = await ask<{ gates: PendingGate[] }>(which, "/gate/pending");
     if (mine !== generation.current) return;
 
     // A revoked credential is the one failure that is not worth retrying: the
     // person at the computer took this phone off the list, and every request
     // from here on is a 401. Drop it and land on the pairing screen.
-    if ([gates, sessions, docker].some((r) => !r.ok && r.error === REVOKED)) {
+    if (!gates.ok && gates.error === REVOKED) {
       await forgetHost();
       setHost(null);
       setFleet(EMPTY);
       return;
     }
 
-    // Partial success is kept. Docker being unavailable — no daemon, or a
-    // device scoped to reading sessions only — must not blank out the gates,
-    // which are the thing somebody is actually waiting on.
-    const failed = [gates, sessions, docker].find((r) => !r.ok);
     /*
-     * Every list is checked for being a list, even though the types above say
-     * it is. The types describe what the server promises; this runs against
+     * The list is checked for being a list, even though the type above says
+     * it is. The type describes what the server promises; this runs against
      * whatever answered, which may be an older build, a proxy, or a route that
-     * changed shape — and the consumer is `buildQueue`, which iterates all
-     * three. One `undefined` there is a render error over the whole app, not a
-     * missing card, so the cheap guard buys the difference between "docker is
-     * not saying anything" and a red screen.
+     * changed shape — and the terminal and the tab bar both iterate it. One
+     * `undefined` there is a render error over the whole app, not a missing
+     * card, so the cheap guard buys the difference between "no gates" and a
+     * red screen.
      */
     const list = <T,>(value: unknown): T[] => (Array.isArray(value) ? (value as T[]) : []);
     setFleet((prev) => ({
       gates: gates.ok ? list<PendingGate>(gates.value.gates) : [],
-      sessions: sessions.ok ? list<SessionRollup>(sessions.value) : [],
-      containers: docker.ok ? list<DockerContainer>(docker.value.containers) : [],
       // Carried, not cleared. The pull-request pass runs on a slower clock, and
-      // blanking its answer on every fast refresh would make those cards flash
-      // in and out of the queue every twenty seconds.
+      // blanking its answer on every fast refresh would make the badge flash
+      // on and off every twenty seconds.
       prs: prev.prs,
       me: prev.me,
       at: Date.now(),
-      error: failed && !failed.ok ? failed.error : null,
+      error: gates.ok ? null : gates.error,
     }));
   }, []);
 
