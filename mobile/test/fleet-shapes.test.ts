@@ -9,16 +9,14 @@
  *
  * The lesson is narrow and worth encoding: a TypeScript annotation on a
  * `fetch` is a claim about the server, checked by nobody. So this boots the
- * real one and reads the three routes the Now screen depends on, then runs the
- * dashboard's own `buildQueue` over the result. An empty machine is enough —
- * the mistake was about the WRAPPER, and `[]` and `{sessions: []}` differ just
- * as clearly when there is nothing in them.
+ * real one and reads the three routes the fleet depends on. An empty machine
+ * is enough — the mistake was about the WRAPPER, and `[]` and `{sessions: []}`
+ * differ just as clearly when there is nothing in them.
  */
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildQueue } from "../src/model/nowQueue.ts";
 
 const PORT = 4921;
 const ORIGIN = `http://127.0.0.1:${PORT}`;
@@ -96,7 +94,7 @@ afterAll(async () => {
  */
 const SLOW = 30_000;
 
-describe("what the Now screen reads", () => {
+describe("what the fleet reads", () => {
   test("gates come wrapped", async () => {
     const body = await get<{ gates: unknown }>("/gate/pending");
     expect(Array.isArray(body.gates)).toBe(true);
@@ -114,29 +112,6 @@ describe("what the Now screen reads", () => {
     const body = await get<{ containers: unknown; available: unknown }>("/docker/overview");
     expect(Array.isArray(body.containers)).toBe(true);
     expect(typeof body.available).toBe("boolean");
-  }, SLOW);
-
-  test("and the queue builds from all three without throwing", async () => {
-    /*
-     * The end of the path, which is what actually broke. `buildQueue` is the
-     * dashboard's, iterating every list it is handed — so feeding it what the
-     * server really said is the check that a type annotation cannot make.
-     */
-    const [gates, sessions, docker] = await Promise.all([
-      get<{ gates: never[] }>("/gate/pending"),
-      get<never[]>("/sessions?limit=100"),
-      get<{ containers: never[] }>("/docker/overview"),
-    ]);
-
-    const queue = buildQueue({
-      gates: gates.gates,
-      sessions,
-      prs: [],
-      containers: docker.containers,
-      me: "",
-      now: Date.now(),
-    });
-    expect(Array.isArray(queue)).toBe(true);
   }, SLOW);
 
   test("a theme is null before anybody picks one, rather than a guess", async () => {

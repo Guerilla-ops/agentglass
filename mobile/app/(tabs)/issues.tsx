@@ -111,13 +111,14 @@ export default function IssuesScreen(): React.ReactNode {
     [repos, pick],
   );
 
-  const load = useCallback(async (): Promise<void> => {
+  const load = useCallback(async (alive: () => boolean = () => true): Promise<void> => {
     if (!host || !shown.length) return;
     const query = filter === "mine" ? "&assignee=%40me&state=open" : filter === "all" ? "&state=all" : "&state=open";
     const answers = await Promise.all(shown.map(async (repo) => ({
       repo,
       answer: await ask<IssuesReport>(host, `/issues/list?root=${encodeURIComponent(repo.root)}${query}`),
     })));
+    if (!alive()) return;
     const good = answers.filter((a) => a.answer.ok && a.answer.value.ok);
     // Said only when NOTHING answered: one repository without a GitHub remote
     // among eight is not a reason to hide the other seven.
@@ -135,7 +136,14 @@ export default function IssuesScreen(): React.ReactNode {
     })));
   }, [host, shown, filter]);
 
-  useEffect(() => { setGroups(null); void load(); }, [load]);
+  // Same gone flag the pull-request counts effect uses: a filter or chip change
+  // starts a new fan-out, and the previous one's setGroups must not land here.
+  useEffect(() => {
+    let gone = false;
+    setGroups(null);
+    void load(() => !gone);
+    return () => { gone = true; };
+  }, [load]);
 
   const onRefresh = useCallback((): void => {
     setPulling(true);

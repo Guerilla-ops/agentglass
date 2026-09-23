@@ -97,7 +97,7 @@ export default function TabsLayout(): React.ReactNode {
       <Tabs.Screen name="prs" options={{ title: "Pull requests", ...destination }} />
       <Tabs.Screen name="issues" options={{ title: "Issues", ...destination }} />
       <Tabs.Screen name="tasks" options={{ title: "Cards", ...destination }} />
-      <Tabs.Screen name="repos" options={{ title: "Source control", headerLeft: () => back }} />
+      <Tabs.Screen name="repos" options={{ title: "Source control", headerLeft: () => back, ...destination }} />
       <Tabs.Screen name="settings" options={{ title: "Settings", headerLeft: () => back }} />
     </Tabs>
   );

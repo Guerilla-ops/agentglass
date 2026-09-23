@@ -6,7 +6,7 @@
  * branch drawn under the name of this one.
  */
 import { describe, expect, test } from "bun:test";
-import { checkoutFor } from "../src/model/checkout.ts";
+import { checkoutFor, paneFor } from "../src/model/checkout.ts";
 
 const roots = ["/work/orbit", "/work/orbit-wt/feat-search", "/work/lantern"];
 const repos = await Bun.file(new URL("../app/(tabs)/repos.tsx", import.meta.url)).text();
@@ -32,5 +32,26 @@ describe("the screens, read", () => {
   test("Source control reads it rather than taking the first checkout", () => {
     expect(repos).toContain("useLocalSearchParams<{ root?: string }>()");
     expect(repos).toContain("checkoutFor(asked, roots)");
+  });
+});
+
+describe("paneFor", () => {
+  const tabs = [
+    { label: "1 orbit", where: "/work/orbit" },
+    { label: "2 feat", where: "/work/orbit-wt/feat-search" },
+    { label: "3 feat · src", where: "/work/orbit-wt/feat-search/src" },
+  ];
+
+  test("the longest where among matches wins", () => {
+    // Same rule as checkoutFor: a shell that has cd'd deeper is the one.
+    expect(paneFor(tabs, "/work/orbit-wt/feat-search")?.where).toBe("/work/orbit-wt/feat-search/src");
+  });
+
+  test("an exact root still matches", () => {
+    expect(paneFor(tabs, "/work/orbit")?.where).toBe("/work/orbit");
+  });
+
+  test("a named window wins over the deepest directory", () => {
+    expect(paneFor(tabs, "/work/orbit-wt/feat-search", "feat")?.label).toBe("2 feat");
   });
 });

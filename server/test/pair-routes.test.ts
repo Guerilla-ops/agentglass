@@ -234,6 +234,14 @@ describe("what a paired phone can do", () => {
   test("the computer's name is not handed to a caller with no credential", async () => {
     const res = await fetch(base + "/health");
     expect(JSON.stringify(await res.json())).not.toContain(hostname());
+
+    // /pair/whoami is the route that would otherwise name the machine. Without
+    // a credential it must refuse, and the refusal itself must not leak it.
+    const who = await fetch(base + "/pair/whoami");
+    expect(who.status).toBe(401);
+    const body = await who.json();
+    expect(body).toEqual({ paired: false });
+    expect(JSON.stringify(body)).not.toContain(hostname());
   });
 });
 

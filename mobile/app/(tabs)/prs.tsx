@@ -173,12 +173,13 @@ export default function PrsScreen(): React.ReactNode {
     [repos, pick],
   );
 
-  const load = useCallback(async (): Promise<void> => {
+  const load = useCallback(async (alive: () => boolean = () => true): Promise<void> => {
     if (!host || !shown.length) return;
     const answers = await Promise.all(shown.map(async (repo) => ({
       repo,
       answer: await ask<PrList>(host, `/prs/list?root=${encodeURIComponent(repo.root)}&filter=${filter}&state=open`),
     })));
+    if (!alive()) return;
     const good = answers.filter((a) => a.answer.ok && a.answer.value.ok);
     // Said only when NOTHING answered: one repository without a GitHub remote
     // among eight is not a reason to hide the other seven.
@@ -200,7 +201,14 @@ export default function PrsScreen(): React.ReactNode {
     })));
   }, [host, shown, filter]);
 
-  useEffect(() => { setGroups(null); void load(); }, [load]);
+  // Same gone flag the counts effect uses: a filter or chip change starts a new
+  // fan-out, and the previous one's setGroups must not land on the new screen.
+  useEffect(() => {
+    let gone = false;
+    setGroups(null);
+    void load(() => !gone);
+    return () => { gone = true; };
+  }, [load]);
 
   // Counts follow what is shown and not the filter — they are the counts OF
   // the filters, so re-asking when one is tapped would be asking the same
