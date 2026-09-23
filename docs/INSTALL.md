@@ -383,11 +383,18 @@ rule. In `~/.config/agentglass/config.json`:
 }
 ```
 
-- **deny** — hard deny with a reason, no wait (surfaces only in history)
-- **allow** — auto-allow listed tools (skips the local permission prompt)
+- **deny** — hard deny with a reason, no wait (surfaces only in history). Denies
+  accumulate across every matching `root` — a more-specific allow-only row
+  cannot override an ancestor deny.
+- **allow** — agentglass does not need a human for listed tools; Claude Code's
+  own permissions still apply (the hook gets an empty reason, so it does not
+  force-skip the local permission prompt)
 - tool **not** on a non-empty allowlist — soft hold in "What needs you"
 - a deny-only list leaves unlisted tools on the normal human path
-- `root` scopes like a spend budget; longest match wins when several apply
+- `root` scopes like a spend budget; allow/hold use the longest matching root;
+  unknown cwd (no pane note) applies denials only and never auto-allows
+- `config.json` is cached in-process — editing `gateTools` needs an agentglass
+  restart before the new rules take effect
 
 The spend-threshold annotation (over-budget holds) is separate and already
 worked; this is the tool-list half of [#109](https://github.com/SirAllap/agentglass/issues/109).

@@ -12,9 +12,18 @@ import { paneForSession, paneAgentNote } from "./panewt.ts";
  *
  * v1 behaviour, deliberately small:
  *   - denylist hit  → hard deny with a reason (no wait)
- *   - allowlist hit → auto-allow with a reason (no wait; skips Claude's prompt)
+ *   - allowlist hit → auto-allow (no wait); history keeps the reason, the
+ *     HTTP body returns an empty reason so the hook takes allow_silently()
+ *     and Claude Code's own permissions still apply
  *   - allowlist set and tool not on it → soft hold (surfaces in What needs you)
  *   - neither list set for the matching scope → unchanged human gate
+ *
+ * Matching: every policy whose root covers the session cwd contributes its
+ * denylist (any hit → deny). Allow and soft-hold come only from the longest
+ * matching root — a more-specific allow-only row cannot escape an ancestor
+ * deny. Unknown cwd (`""`, no pane note) still applies denials from the
+ * global row, but never auto-allows or soft-holds: fall through to the human
+ * gate instead of guessing.
  *
  * Lives beside the gate rather than inside it for the same reason budgetHoldFor
  * does: reaching config from gate.ts would pull the database layer into every
@@ -30,13 +39,11 @@ export type GateToolsVerdict =
   | { kind: "deny"; reason: string }
   | { kind: "hold"; reason: string };
 
-/** Longest matching root wins — same instinct as #14's path match, without
- *  boiling the rest of that proposal. A blank root matches everything and loses
- *  to any more specific one that also covers the cwd. */
-function pickPolicy(cwd: string, policies: GateToolsPolicy[]): GateToolsPolicy | null {
+/** Longest matching root among policies that cover cwd. Blank root matches
+ *  everything and loses to any more specific one that also covers the cwd. */
+function mostSpecific(matching: GateToolsPolicy[]): GateToolsPolicy | null {
   let best: GateToolsPolicy | null = null;
-  for (const p of policies) {
-    if (!inScope(cwd, p.root)) continue;
+  for (const p of matching) {
     if (!best || p.root.length > best.root.length) best = p;
   }
   return best;
@@ -52,7 +59,8 @@ function listed(names: string[], tool: string): boolean {
 
 /**
  * What a configured rule says about this tool call, or null when no rule
- * applies (no config, no matching root, or a matching row with neither list).
+ * applies (no config, no matching root, or a matching row with neither list
+ * that fires — deny miss + empty allow, or unknown cwd with no deny hit).
  */
 export function evaluateGateTools(
   toolName: string,
@@ -60,25 +68,40 @@ export function evaluateGateTools(
   policies: GateToolsPolicy[] = readGateTools(),
 ): GateToolsVerdict | null {
   if (!toolName || !policies.length) return null;
-  const policy = pickPolicy(cwd, policies);
-  if (!policy) return null;
 
-  if (policy.deny.length && listed(policy.deny, toolName)) {
-    return {
-      kind: "deny",
-      reason:
-        `Denied by agentglass tool denylist (${toolName}). Do not retry the same call — it will be denied again. Use a different tool, or ask a person to change the denylist.`,
-    };
+  const matching = policies.filter((p) => inScope(cwd, p.root));
+  if (!matching.length) return null;
+
+  // Deny = union across every matching row. A more-specific allow-only policy
+  // must not erase an ancestor's hard stop.
+  for (const p of matching) {
+    if (p.deny.length && listed(p.deny, toolName)) {
+      return {
+        kind: "deny",
+        reason:
+          `Denied by agentglass tool denylist (${toolName}). Do not retry the same call — it will be denied again. Use a different tool, or ask a person to change the denylist.`,
+      };
+    }
   }
 
-  if (policy.allow.length) {
-    if (listed(policy.allow, toolName)) {
+  // Unknown cwd: denials still bind (global root:"" matched above), but never
+  // auto-allow or soft-hold — we cannot place the session, so the human gate
+  // decides. Project denylists still cannot bind without a cwd.
+  if (!cwd) return null;
+
+  const best = mostSpecific(matching);
+  if (!best) return null;
+
+  if (best.allow.length) {
+    if (listed(best.allow, toolName)) {
       return {
         kind: "allow",
+        // Stored on the history row via resolveByRule; the /gate route returns
+        // reason: "" to the hook so Claude Code's own permissions still apply.
         reason: `Allowed by agentglass tool allowlist (${toolName}).`,
       };
     }
-    const sample = policy.allow.slice(0, 8).join(", ") + (policy.allow.length > 8 ? ", …" : "");
+    const sample = best.allow.slice(0, 8).join(", ") + (best.allow.length > 8 ? ", …" : "");
     return {
       kind: "hold",
       reason:
@@ -86,8 +109,8 @@ export function evaluateGateTools(
     };
   }
 
-  // Deny-only policy and this tool is not on it: fall through to the normal
-  // human hold. The denylist is a hard stop, not an allowlist-by-absence.
+  // Deny-only (or no allow on the most-specific row) and this tool is not on
+  // any matching denylist: fall through to the normal human hold.
   return null;
 }
 

@@ -3216,7 +3216,12 @@ const server = Bun.serve<WsData>({
        */
       const out = outwardAction(gateReq.tool_name, ti);
       if (!out && rule?.kind === "allow") {
-        return json(resolveByRule(gateReq, { decision: "allow", reason: rule.reason }));
+        // History keeps the allowlist reason (resolution: "rule"); the hook
+        // body must carry an empty reason so gate_event falls through to
+        // allow_silently() and Claude Code's own permissions still apply.
+        // Human allow-with-reason is unchanged (decideGate / submitGate path).
+        resolveByRule(gateReq, { decision: "allow", reason: rule.reason });
+        return json({ decision: "allow", reason: "" });
       }
       const hold = out
         ? [outwardLine(out), out.text ? `“${out.text.replace(/\s+/g, " ").trim().slice(0, 240)}”` : ""].filter(Boolean).join(" · ")

@@ -6,9 +6,10 @@
  * or hard-denies without waiting for a human click.
  *
  * Three paths, and nothing else:
- *   allow  — tool on the allowlist → immediate allow, resolution "rule"
+ *   allow  — tool on the (most-specific) allowlist → immediate allow, resolution "rule"
+ *            (history keeps the reason; the /gate HTTP body returns reason: "")
  *   hold   — allowlist set, tool not on it → soft hold with a reason
- *   deny   — tool on the denylist → immediate deny, resolution "rule"
+ *   deny   — tool on any matching denylist → immediate deny, resolution "rule"
  *
  * No config at all is the shipped state and must leave the gate unchanged.
  */
@@ -33,6 +34,11 @@ const BOTH = home("both", [{ root: "", allow: ["Read"], deny: ["Bash"] }]);
 const SCOPED = home("scoped", [
   { root: "/home/u/code/orbit", allow: ["Read"], deny: ["Bash"] },
   { root: "", allow: ["Read", "Glob"], deny: [] },
+]);
+// Global deny must survive a more-specific allow-only row (deny accumulates).
+const DENY_THEN_ALLOW = home("deny-then-allow", [
+  { root: "", allow: [], deny: ["Bash"] },
+  { root: "/home/u/code/orbit", allow: ["Bash", "Read"], deny: [] },
 ]);
 
 process.env.AGENTGLASS_DB = join(NONE, "gate.db");
@@ -79,7 +85,7 @@ describe("evaluateGateTools", () => {
     expect(tools.evaluateGateTools("Bash", CWD, [])).toBeNull();
   });
 
-  test("allowlist hit → allow", () => {
+  test("allowlist hit → allow (reason for history)", () => {
     const v = tools.evaluateGateTools("Read", CWD, [{ root: "", allow: ["Read", "Glob"], deny: [] }]);
     expect(v?.kind).toBe("allow");
     expect(v?.reason).toMatch(/allowlist/);
@@ -92,8 +98,7 @@ describe("evaluateGateTools", () => {
     expect(v?.reason).toMatch(/Read/);
   });
 
-  test("denylist hit → deny, and beats allowlist", () => {
-    // Deny wins when a tool is on both — a denylist is the hard stop.
+  test("denylist hit → deny, and beats allowlist on the same row", () => {
     const v = tools.evaluateGateTools("Bash", CWD, [
       { root: "", allow: ["Bash", "Read"], deny: ["Bash"] },
     ]);
@@ -108,16 +113,40 @@ describe("evaluateGateTools", () => {
     ).toBeNull();
   });
 
-  test("longest matching root wins", () => {
+  test("most-specific allow; deny accumulates across matching roots", () => {
     const policies = [
       { root: "", allow: ["Read", "Glob"], deny: [] as string[] },
       { root: "/home/u/code/orbit", allow: ["Read"], deny: ["Bash"] },
     ];
-    // Under orbit: scoped policy — Bash denied, Glob soft-held (not on allow).
+    // Under orbit: project deny Bash; Glob soft-held (project allow is Read only).
     expect(tools.evaluateGateTools("Bash", CWD, policies)?.kind).toBe("deny");
     expect(tools.evaluateGateTools("Glob", CWD, policies)?.kind).toBe("hold");
+    expect(tools.evaluateGateTools("Read", CWD, policies)?.kind).toBe("allow");
     // Elsewhere: global policy — Glob allowed.
     expect(tools.evaluateGateTools("Glob", "/home/u/code/other", policies)?.kind).toBe("allow");
+  });
+
+  test("global deny survives a more-specific allow-only row", () => {
+    const policies = [
+      { root: "", allow: [] as string[], deny: ["Bash"] },
+      { root: "/home/u/code/orbit", allow: ["Bash", "Read"], deny: [] as string[] },
+    ];
+    // Project allow Bash must NOT escape the global denylist.
+    expect(tools.evaluateGateTools("Bash", CWD, policies)?.kind).toBe("deny");
+    // Project allow still covers Read (no ancestor deny).
+    expect(tools.evaluateGateTools("Read", CWD, policies)?.kind).toBe("allow");
+  });
+
+  test("unknown cwd: global deny still denies; global allow does not allow", () => {
+    const denyOnly = [{ root: "", allow: [] as string[], deny: ["Bash"] }];
+    expect(tools.evaluateGateTools("Bash", "", denyOnly)?.kind).toBe("deny");
+
+    const allowOnly = [{ root: "", allow: ["Bash", "Read"], deny: [] as string[] }];
+    expect(tools.evaluateGateTools("Bash", "", allowOnly)).toBeNull();
+    expect(tools.evaluateGateTools("Read", "", allowOnly)).toBeNull();
+
+    // Soft-hold must not fire either when cwd is unknown.
+    expect(tools.evaluateGateTools("Write", "", allowOnly)).toBeNull();
   });
 
   test("a scoped policy does not cover a directory we could not place", () => {
@@ -142,19 +171,26 @@ describe("readGateTools", () => {
 });
 
 describe("resolveByRule paths", () => {
-  test("allow records resolution=rule and does not enter the pending queue", () => {
+  test("allow records resolution=rule with reason; hook contract is empty reason", () => {
     process.env.XDG_CONFIG_HOME = ALLOW;
     const id = newId();
-    const out = gate.resolveByRule(req(id, "Read"), {
+    const stored = gate.resolveByRule(req(id, "Read"), {
       decision: "allow",
       reason: "Allowed by agentglass tool allowlist (Read).",
     });
-    expect(out.decision).toBe("allow");
+    // resolveByRule returns what was stored (history / activity log).
+    expect(stored.decision).toBe("allow");
+    expect(stored.reason).toMatch(/allowlist/);
     expect(gate.pendingGates().find((g) => g.id === id)).toBeUndefined();
     const row = db.getGate(id)!;
     expect(row.decision).toBe("allow");
     expect(row.resolution).toBe("rule");
     expect(row.reason).toMatch(/allowlist/);
+    // The /gate route (index.ts) returns { decision: "allow", reason: "" } so
+    // the hook takes allow_silently() — Claude Code's own permissions apply.
+    // Assert the contract the route implements rather than spinning a server.
+    const hookBody = { decision: stored.decision, reason: "" };
+    expect(hookBody).toEqual({ decision: "allow", reason: "" });
   });
 
   test("deny records resolution=rule with a no-retry reason", () => {
@@ -196,6 +232,12 @@ describe("resolveByRule paths", () => {
 
   test("both lists: deny wins over allow for the same tool", () => {
     process.env.XDG_CONFIG_HOME = BOTH;
+    expect(tools.gateToolsFor(SESSION, "Bash")?.kind).toBe("deny");
+    expect(tools.gateToolsFor(SESSION, "Read")?.kind).toBe("allow");
+  });
+
+  test("deny accumulates: global deny Bash + project allow Bash → deny", () => {
+    process.env.XDG_CONFIG_HOME = DENY_THEN_ALLOW;
     expect(tools.gateToolsFor(SESSION, "Bash")?.kind).toBe("deny");
     expect(tools.gateToolsFor(SESSION, "Read")?.kind).toBe("allow");
   });

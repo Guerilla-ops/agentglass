@@ -3682,8 +3682,6 @@ export interface AgentProbe extends KnownAgent {
   seenAt: number | null;
 }
 
-/** How often a budget resets. Calendar periods, not trailing windows — the
- *  reset is what makes a number feel like a budget rather than an average. */
 /**
  * A tool allow/deny rule for the gate (#109).
  *
@@ -3692,9 +3690,12 @@ export interface AgentProbe extends KnownAgent {
  * holds anything else (surfaces in What needs you). Empty lists mean "no rule
  * of that kind". `root` scopes like a budget: empty is the whole machine.
  *
+ * Deny accumulates across every matching root; allow/hold come only from the
+ * longest matching root. Unknown cwd applies denials only (no auto-allow).
+ *
  * Deliberately a flat array rather than the per-root `policies` map proposed
- * in #14: same longest-root matching, room to grow into that shape later,
- * without boiling the broader governance work.
+ * in #14: same longest-root matching for allow, room to grow into that shape
+ * later, without boiling the broader governance work.
  */
 export interface GateToolsPolicy {
   /** Project root this applies to. Empty means the whole machine. */
@@ -3705,6 +3706,8 @@ export interface GateToolsPolicy {
   deny: string[];
 }
 
+/** How often a budget resets. Calendar periods, not trailing windows — the
+ *  reset is what makes a number feel like a budget rather than an average. */
 export type BudgetPeriod = "day" | "week" | "month";
 
 /**

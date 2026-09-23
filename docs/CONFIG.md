@@ -181,8 +181,11 @@ cannot be configured by `export` at all.
 
 `gateTools` is file-only (no env var): an array of `{ root, allow, deny }`
 rules the PreToolUse gate evaluates before asking a human — denylist hard-
-denies, allowlist auto-allows, anything else on a non-empty allowlist soft-
-holds. See [INSTALL.md](INSTALL.md#tool-allowlist--denylist-rule-based-gate).
+denies (union across matching roots), allowlist auto-allows from the longest
+matching root only (Claude Code's own permissions still apply), anything else
+on a non-empty allowlist soft-holds. `config.json` is cached in-process, so
+editing `gateTools` needs an agentglass restart. See
+[INSTALL.md](INSTALL.md#tool-allowlist--denylist-rule-based-gate).
 `budgets` is the spend side of the same idea (annotates a hold when over).
 
 > **Pricing is a user-editable default.** Numbers in `pricing.ts` are per 1M

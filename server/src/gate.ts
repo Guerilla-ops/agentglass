@@ -269,6 +269,13 @@ export function resolveByRule(
   return out;
 }
 
+/**
+ * Re-attach to a request whose connection dropped (a server restart, a proxy
+ * hanging up). Returns the recorded outcome if it has already been decided, a
+ * promise that resolves when it is if it's still pending, or null when the id
+ * is unknown — which the hook must treat as "no answer" rather than as a
+ * decision.
+ */
 export function awaitGate(id: string): Promise<GateOutcome> | GateOutcome | null {
   if (!validGateId(id)) return null;
   const w = waiters.get(id);

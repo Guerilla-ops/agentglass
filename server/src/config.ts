@@ -240,6 +240,21 @@ export function readBudgets(): Budget[] {
  *
  * Every row is checked on read, like the rest of this hand-editable file.
  */
+export function hiddenProjects(): string[] {
+  const raw = config().hiddenProjects;
+  if (raw === undefined) return [];
+  if (!Array.isArray(raw)) {
+    console.error(`[config] ignoring "hiddenProjects" in ${configPath()}: expected an array`);
+    return [];
+  }
+  const out: string[] = [];
+  for (const p of raw) {
+    if (typeof p !== "string" || !p.trim()) continue;
+    out.push(resolve(expand(p.trim())));
+  }
+  return out;
+}
+
 /**
  * Tool allow/deny rules on disk, with anything unusable dropped.
  *
@@ -286,21 +301,6 @@ export function readGateTools(): GateToolsPolicy[] {
       allow,
       deny,
     });
-  }
-  return out;
-}
-
-export function hiddenProjects(): string[] {
-  const raw = config().hiddenProjects;
-  if (raw === undefined) return [];
-  if (!Array.isArray(raw)) {
-    console.error(`[config] ignoring "hiddenProjects" in ${configPath()}: expected an array`);
-    return [];
-  }
-  const out: string[] = [];
-  for (const p of raw) {
-    if (typeof p !== "string" || !p.trim()) continue;
-    out.push(resolve(expand(p.trim())));
   }
   return out;
 }
