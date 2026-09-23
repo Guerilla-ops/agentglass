@@ -141,6 +141,14 @@ describe("buildPrompt", () => {
     expect(prompt).toContain("[stale: line may have moved since capture]");
   });
 
+  it("fences a snippet that holds a fence of its own without closing early", () => {
+    // A README or a template literal under review carries ``` itself; a
+    // three-backtick fence around it would end at the snippet's first line.
+    const snippet = "```ts\nconst a = 1;\n```";
+    const prompt = buildPrompt({ intro: "", outro: "", comments: [comment({ snippet })] });
+    expect(prompt).toContain(`\`\`\`\`\n${snippet}\n\`\`\`\``);
+  });
+
   it("names a chat tab from the first file", () => {
     expect(reviewChatTitle({ intro: "", outro: "", comments: [] })).toBe("Diff review");
     expect(reviewChatTitle({ intro: "", outro: "", comments: [comment()] })).toBe("Diff review · foo.ts");

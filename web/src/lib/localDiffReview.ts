@@ -233,7 +233,9 @@ export function buildPrompt(review: LocalDiffReview): string {
       : c.line;
     const where = from === to ? `L${from}` : `L${from}–L${to}`;
     const head = `## ${c.path}:${where} (${c.side})`;
-    const fence = "```";
+    // Longer than any backtick run in the snippet, or a snippet that itself
+    // holds a fence (a Markdown file, a template literal) closes this one early.
+    const fence = "`".repeat(Math.max(3, ...(c.snippet.match(/`+/g) ?? []).map((r) => r.length + 1)));
     const block = [
       head,
       fence,
