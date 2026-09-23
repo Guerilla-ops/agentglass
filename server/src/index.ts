@@ -171,7 +171,7 @@ import type { Budget } from "../../shared/types.ts";
 import { hookStatus, applyHooks, applyGate, hooksDir, hookPython } from "./hooksetup.ts";
 import { probeAgents, ROSTER } from "./agentprobe.ts";
 import { join as joinPath, basename } from "node:path";
-import { tmpdir } from "node:os";
+import { hostname, tmpdir } from "node:os";
 import { privateHost, resolvePeer, originOf, guardedFetch, hostsOnly } from "./net.ts";
 import { resolveToken, tokenOk, isIntake, isAuthExempt, callerFor, allowed, scopeNeeded, pluginOfRequest, answersFromADevice, understudyRequiresToken, UNDERSTUDY_NO_TOKEN_ERROR, mintUnderstudyToken, revokeUnderstudyToken, type Caller, type Origin } from "./auth.ts";
 import {
@@ -4595,9 +4595,14 @@ const server = Bun.serve<WsData>({
     }
 
     /** What this device is, as this server sees it. The phone's Settings shows
-     *  it, and a 401 here is how it learns it has been forgotten. */
+     *  it, and a 401 here is how it learns it has been forgotten.
+     *
+     *  `computer` is this machine's name. Without it the phone had only the
+     *  label the desk gave the PHONE ("My phone"), and drew that where it meant
+     *  the computer. It is here and not on `/health` because `/health` answers
+     *  anyone on the network, and a hostname is often somebody's name. */
     if (pathname === "/pair/whoami") {
-      if (!AUTH_TOKEN) return json({ paired: false, scope: "full", machine: true });
+      if (!AUTH_TOKEN) return json({ paired: false, scope: "full", machine: true, computer: hostname() });
       const caller = callerFor(req, url, AUTH_TOKEN);
       if (!caller) return json({ paired: false }, 401);
       return json({
@@ -4606,6 +4611,7 @@ const server = Bun.serve<WsData>({
         scope: caller.scope,
         label: caller.device?.label ?? null,
         id: caller.device?.id ?? null,
+        computer: hostname(),
       });
     }
 

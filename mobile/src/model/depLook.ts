@@ -39,3 +39,36 @@ export const DEP_LOOK: Record<DepStatus, { word: string; tone: DepTone }> = {
  */
 export const depNeedsAttention = (status: DepStatus): boolean =>
   status === "attention" || status === "missing";
+
+/**
+ * The one line at the top of Troubleshooting: how many tools were found, and
+ * whether what is missing matters.
+ *
+ * The screen was a list of twenty rows with a dot each, and the answer to the
+ * question somebody arrives with — is anything I need missing — had to be
+ * counted off it. A required tool missing is red and said first; an optional
+ * one is amber and said as optional; "not used here" is neither, and counts as
+ * neither found nor missing.
+ */
+export function depSummary(deps: { status: DepStatus; required: boolean }[]): {
+  tone: "good" | "warn" | "bad";
+  title: string;
+  sub: string;
+} {
+  const relevant = deps.filter((d) => d.status !== "unsupported");
+  const found = relevant.filter((d) => d.status === "ok").length;
+  const required = relevant.filter((d) => d.required && depNeedsAttention(d.status)).length;
+  const optional = relevant.filter((d) => !d.required && depNeedsAttention(d.status)).length;
+  const title = `${found} of ${relevant.length} tools found`;
+  if (required) {
+    return { tone: "bad", title, sub: `${required} required ${required === 1 ? "tool is" : "tools are"} missing or need a look.` };
+  }
+  if (optional) {
+    return {
+      tone: "warn",
+      title,
+      sub: `Everything required is there. ${optional === 1 ? "One optional tool is" : `${optional} optional tools are`} missing.`,
+    };
+  }
+  return { tone: "good", title, sub: "Everything this app shells out to is installed." };
+}

@@ -1,98 +1,149 @@
 /*
- * The bar: four destinations and a star.
+ * The bar: four destinations, the terminal first.
  *
- * Written by hand rather than configured, for one reason — the terminal is
- * raised, and react-navigation's own bar lays every item out inside its bounds.
- * Everything else here is that bar's behaviour reproduced deliberately: the
- * tabPress event a listener can prevent, the active/inactive tint, the labels
- * left free to scale, the bottom inset paid once.
+ * Written by hand rather than configured, because the stock bar pads each item
+ * and centres a label under an icon, and this one draws the active destination
+ * as a filled indicator behind its icon — the Material 3 shape, and the one
+ * Android people already read as "you are here". Everything else is the stock
+ * bar's behaviour reproduced deliberately: the tabPress event a listener can
+ * prevent, the labels left free to scale, the bottom inset paid once.
  *
- * ── the geometry, and what it costs ───────────────────────────────────────
- * The star's circle is 50 points and rises 16 above the bar's top edge, so this
- * component is 16 taller than the bar it draws. A tab bar is a flex sibling of
- * the scenes (see BottomTabView), so those 16 points come off the height of
- * every screen in the app — a line of text, spent on the one control the whole
- * companion exists for. It is not free and it is not hidden.
+ * ── it was retired, and why it came back ─────────────────────────────────
+ * For a while there was no bar: the Inbox was where the app arrived and every
+ * other screen was a place it sent you, with a way back in each header. That
+ * made every move between two destinations two moves, through a screen nobody
+ * came for. The four are peers, and a bar is 64 points plus the gesture inset
+ * well spent on peers — and handed back while typing, below.
  *
- * Nothing overflows its parent, which on Android is not a stylistic
- * preference: the circle is NOT a child of the row of items — it is its own
- * absolutely-positioned overlay in a container tall enough to hold it, with
- * `box-none` so only the circle itself catches a touch. A child drawn outside
- * its parent's bounds is clipped on Android often enough that the layout should
- * not depend on it.
+ * ── the keyboard ─────────────────────────────────────────────────────────
+ * The bar is a flex sibling of the scene, so a window that resizes carries it
+ * up to sit mid-screen over the list (API 34, photographed) and a window that
+ * does not leaves it buried under the keys (API 36, photographed). React
+ * Navigation's own answer, `tabBarHideOnKeyboard`, is read inside ITS bar and
+ * this app draws its own, so the option is a no-op here and the rule has to be
+ * in this file. While a keyboard is up the bar is not drawn at all.
  *
- * ── the labels ───────────────────────────────────────────────────────────
- * Left to scale with the phone's text-size setting, at the same 10 points the
- * stock bar uses, and after the move to five there is room for it: 62dp of slot
- * on a 360dp phone against 28.36dp for "Issues", the widest word left. See
- * src/nav/bar.ts for where those numbers come from and test/nav.test.ts for the
- * lock that keeps a longer one out.
+ * ── the two numbers, and the two it does not carry ────────────────────────
+ * Terminal counts the gates held on you and PRs counts the reviews requested
+ * of you. Both are lists the store already holds for every screen, so the
+ * numbers cost nothing to keep current and cannot go stale on one screen while
+ * another is right.
+ *
+ * Issues and cards carry none. Each would be another request on a component
+ * that is mounted on every screen, and a number built from what happens to be
+ * loaded would UNDERCOUNT silently, by exactly the rows it could not see — and
+ * the one thing a badge cannot afford is to be a number nobody believes.
  */
-/** The bar's own height, above the gesture inset. */
-/** How far the star's circle rises over the bar's top edge. */
-/** The ring that marks the star as the screen you are on. A ring AROUND the
- *  circle with the surface showing through the gap, not a border on it: the
- *  circle IS the accent, so a border drawn in the accent is invisible and one
- *  drawn in anything else is a second colour. The same trick, for the same
- *  reason, as the accent picker's swatches in settings.tsx. */
-/** The label, at the size every number in bar.ts is computed against.
- *
- *  Ten, which is under theme.ts's floor of twelve and is the one place in the
- *  app that goes there. It is the stock bar's own size, it is what the width
- *  arithmetic is written against, and it scales with the phone's setting like
- *  everything else — a label that ignored somebody's accessibility setting to
- *  stay inside its slot would be the worse trade. */
-
-/** Only the five the bar draws — the compiler is what keeps this in step with
- *  BAR, so a destination added there without a mark does not build. */
-
-/*
- * There is no badge on the bar, and its absence is a decision.
- *
- * There was one, and it counted `waitingItems` — the queue's agent rule, which
- * calls a session waiting when it has been quiet between four minutes and
- * twelve hours. The Inbox does not show agents at all now, so that number
- * would have been counting something no screen in the app displays.
- *
- * The obvious replacement is the Inbox's own `needs` count, and it is not free.
- * Pull requests are already on the device (the store fetches them), but issues
- * and cards are two more requests, and putting them in a component that mounts
- * on every screen means making them on every screen. A badge built from the
- * pull requests alone would be cheap and would UNDERCOUNT — silently, by
- * exactly the rows it could not see — and the one thing this app cannot afford
- * is a number nobody believes.
- *
- * So: no badge, until the Inbox's data lives somewhere the bar can read for
- * nothing. The Inbox is the first tab and its three tiles are the count.
- */
-
+import { useEffect } from "react";
+import { Pressable, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { BottomTabBarProps } from "expo-router/build/react-navigation/bottom-tabs";
+import { useAgentglass } from "../state/host-context.tsx";
+import { useKeyboardShown } from "../state/use-keyboard.ts";
+import { useTracksWork } from "../state/use-tracks-work.ts";
+import { C, RADIUS, SPACE, T, ink, tint } from "../theme.ts";
+import { BAR, taskDestinations, type TabRoute } from "./bar.ts";
+import { rememberTab } from "./last.ts";
+import { useTerminalPalette } from "./barPalette.ts";
+import { IssuesIcon, PrsIcon, TasksIcon, TerminalIcon, type IconProps } from "./icons.tsx";
 
-export function TabBar(_props: BottomTabBarProps): React.ReactNode {
-  /*
-   * Retired, and not deleted.
-   *
-   * The bar was five destinations a thumb-reach away and it cost 56 points plus
-   * the home indicator on every screen — about 90. What made that a fair trade
-   * was that the five were PEERS somebody moved between constantly. They are
-   * not. The Inbox is where you arrive; the other four are places it sends you.
-   * Once it grew a heading, a count, a machine row and a list of destinations,
-   * the bar became a second and worse copy of navigation the page already had —
-   * and 90 points is four rows of a build log on the one screen people sit on.
-   *
-   * Every screen carries the way back in its own header instead, which is what
-   * `back` in app/(tabs)/_layout.tsx is: in a tab navigator it lands on the
-   * first route, and the first route is the Inbox — the only place any of them
-   * is opened from now, so it is also the right answer.
-   *
-   * The component stays because "no bar" is a claim about this app's shape
-   * today, not a fact about phones. What made it work is in the comment above:
-   * the 50-point circle rising 16 above the edge, the overlay that is not a
-   * child of the row because Android will not draw one outside its parent, the
-   * width arithmetic that caps the count at five. `BAR` in src/nav/bar.ts is
-   * still the list — the Inbox draws its own destinations from it — and the
-   * icons are still used. If the five ever become peers again, none of that has
-   * to be worked out twice.
-   */
-  return null;
+/** Only the four the bar draws — the compiler is what keeps this in step with
+ *  BAR, so a destination added there without a mark does not build. */
+const ICON: Record<"terminal" | "prs" | "issues" | "tasks", (p: IconProps) => React.ReactNode> = {
+  terminal: TerminalIcon,
+  prs: PrsIcon,
+  issues: IssuesIcon,
+  tasks: TasksIcon,
+};
+
+/** The bar's own height above the gesture inset: a 32-point indicator, its
+ *  label, and the breathing room Material gives both. */
+export const BAR_HEIGHT = 64;
+
+export function TabBar({ state, navigation }: BottomTabBarProps): React.ReactNode {
+  const insets = useSafeAreaInsets();
+  const typing = useKeyboardShown();
+  const { host, fleet } = useAgentglass();
+  const offered = taskDestinations(BAR, useTracksWork(host));
+  const here = state.routes[state.index]?.name as TabRoute | undefined;
+  /* Under the terminal the bar is the last strip of the pane's surface — see
+     barPalette.ts. Everywhere else, the phone's. */
+  const desk = useTerminalPalette();
+  const K = here === "terminal" && desk ? desk : C;
+
+  useEffect(() => {
+    if (here && BAR.some((d) => d.route === here)) rememberTab(here);
+  }, [here]);
+
+  if (typing) return null;
+
+  const counts: Partial<Record<TabRoute, number>> = {
+    terminal: fleet.gates.length,
+    prs: new Set(
+      fleet.prs
+        .filter((r) => r.scope === "review" && r.pr.author !== fleet.me)
+        .map((r) => `${r.repo}#${r.pr.number}`),
+    ).size,
+  };
+
+  return (
+    <View
+      accessibilityRole="tablist"
+      style={{
+        flexDirection: "row",
+        backgroundColor: K.bg2,
+        borderTopWidth: 1,
+        borderTopColor: K.border,
+        paddingBottom: insets.bottom,
+      }}
+    >
+      {offered.map((dest) => {
+        const route = state.routes.find((r) => r.name === dest.route);
+        if (!route) return null;
+        const on = here === dest.route;
+        const Icon = ICON[dest.route as keyof typeof ICON];
+        const n = counts[dest.route] ?? 0;
+        const onPress = (): void => {
+          const event = navigation.emit({ type: "tabPress", target: route.key, canPreventDefault: true });
+          if (!on && !event.defaultPrevented) navigation.navigate(route.name, route.params);
+        };
+        return (
+          <Pressable
+            key={dest.route}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: on }}
+            accessibilityLabel={n > 0 ? `${dest.label}, ${n} waiting on you` : dest.label}
+            onPress={onPress}
+            style={({ pressed }) => ({
+              flex: 1, height: BAR_HEIGHT, alignItems: "center", justifyContent: "center", gap: SPACE.xs,
+              transform: [{ scale: pressed ? 0.97 : 1 }],
+            })}
+          >
+            <View style={{
+              width: 56, height: 32, borderRadius: RADIUS.lg, alignItems: "center", justifyContent: "center",
+              backgroundColor: on ? tint(K.primary, 0.22) : "transparent",
+            }}>
+              {Icon ? <Icon color={on ? K.text : K.text3} size={22} /> : null}
+              {n > 0 ? (
+                <View style={{
+                  position: "absolute", top: 0, left: 32, minWidth: 16, height: 16, borderRadius: 8,
+                  paddingHorizontal: 4, alignItems: "center", justifyContent: "center",
+                  backgroundColor: dest.route === "terminal" ? K.warning : K.primary,
+                }}>
+                  <Text style={{
+                    color: ink(dest.route === "terminal" ? K.warning : K.primary),
+                    fontSize: T.eyebrow, fontWeight: "700", lineHeight: 14,
+                  }}>{n > 99 ? "99+" : n}</Text>
+                </View>
+              ) : null}
+            </View>
+            <Text style={{
+              color: on ? K.text : K.text3, fontSize: T.small, lineHeight: 16,
+              fontWeight: on ? "600" : "500",
+            }}>{dest.label}</Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
 }

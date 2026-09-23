@@ -23,7 +23,7 @@
 import { memo, useState } from "react";
 import { Image, Linking, ScrollView, Text, View } from "react-native";
 import type { Host } from "../lib/host.ts";
-import { C, MONO, RADIUS, SPACE, T } from "../theme.ts";
+import { C, MONO, RADIUS, SPACE, T, ink } from "../theme.ts";
 import { inlineText, parseMarkdown, type Block, type Inline, type ListItem } from "./parse.ts";
 
 /** GitHub's own attachment addresses, which need the sidecar's token. Anything
@@ -118,7 +118,14 @@ function Items({ list, host }: { list: Extract<Block, { t: "list" }>; host: Host
                 borderWidth: item.checked ? 0 : 1.5,
                 borderColor: C.border2,
               }}>
-                {item.checked ? <Text style={{ color: C.bg, fontSize: 11, fontWeight: "900", lineHeight: 13 }}>✓</Text> : null}
+                {/* Two rules, not "✓": Android's font has no dependable check
+                    mark — see src/nav/icons.tsx. */}
+                {item.checked ? (
+                  <View style={{
+                    width: 8, height: 4.5, borderLeftWidth: 2, borderBottomWidth: 2, borderColor: ink(C.primary),
+                    transform: [{ rotate: "-45deg" }], marginTop: -2,
+                  }} />
+                ) : null}
               </View>
             )}
             <Text style={{ flex: 1, color: C.text2, fontSize: T.body, lineHeight: 21 }}>

@@ -1,47 +1,68 @@
 /*
- * The computer, and what this phone is allowed to do to it.
+ * Settings: the computer, and the preferences of this phone.
  *
- * Deliberately short. The scope is not editable here and never will be: it was
- * chosen at the computer by somebody looking at the request, and a phone that
- * could widen its own grant would make that choice decorative.
+ * ── what is here, and what left ──────────────────────────────────────────
+ * Five groups — Computer, Notifications, Appearance, Terminal, Help — and
+ * nothing that is not a setting. The screen used to be three things at once: a
+ * settings page, a plan-usage card and a menu of other screens ("Elsewhere":
+ * the queue, the working tree). The plan is the chip on every header now, the
+ * queue is answered in the terminal, and Source control opens from the
+ * terminal it belongs to. What stayed is what somebody comes here to change.
+ *
+ * The scope is not editable here and never will be: it was chosen at the
+ * computer by somebody looking at the request, and a phone that could widen its
+ * own grant would make that choice decorative. It is said, in the computer's
+ * sheet, with what would change it.
+ *
+ * The terminal's width and keyboard help moved here from the key bar's screen:
+ * they are preferences, and the key bar screen is about the keys.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, AppState, Linking, Pressable, ScrollView, Text, View } from "react-native";
 import { useRouter } from "expo-router";
+import Constants from "expo-constants";
+import * as Clipboard from "expo-clipboard";
+import * as Haptics from "expo-haptics";
+import { since } from "../../src/lib/dates.ts";
 import { useAgentglass } from "../../src/state/host-context.tsx";
-import { useUsage } from "../../src/state/use-usage.ts";
-import {
-  ageLabel, planState, quotaTone, remainingOf, resetLabel, tightestWindow,
-} from "../../src/model/quota.ts";
+import { useComputer } from "../../src/state/use-computer.ts";
 import {
   alertsDeliverable, askForAlerts, notificationsSupported, raise,
   type Blocked, type Delivery,
 } from "../../src/notifications/notify.ts";
-import { Btn, Card, Label, Note, Section, TAP } from "../../src/ui.tsx";
+import { Btn, Group, GroupTitle, Note, Row, Sheet, Switch, TAP } from "../../src/ui.tsx";
+import { Glyph, type GlyphName } from "../../src/nav/glyphs.tsx";
+import { KeyboardIcon } from "../../src/nav/icons.tsx";
 import {
-  ChevronIcon, NowIcon, ReposIcon, SettingsIcon, TerminalIcon, type IconProps,
-} from "../../src/nav/icons.tsx";
-import {
-  ACCENTS, C, MONO, RADIUS, SPACE, T, currentLook, ink, setLook, toneColor,
-  type AccentId, type ThemeMode,
+  ACCENTS, C, MONO, RADIUS, SPACE, T, currentLook, ink, setLook, tint, type ThemeMode,
 } from "../../src/theme.ts";
 import { usePaletteTick } from "../../src/state/use-palette.ts";
-import { accentFor } from "../../../shared/palettes.ts";
-import type { DeviceScope, QuotaWindow } from "../../../shared/types.ts";
+import { phonePalette } from "../../../shared/palettes.ts";
+import type { DeviceScope } from "../../../shared/types.ts";
+import { ACCESSORY_KEYS } from "../../src/terminal/keys.ts";
+import { rows as keyRows } from "../../src/terminal/keyLayout.ts";
+import { bytesFor } from "../../src/terminal/customKeys.ts";
+import {
+  COLUMNS, customKeys, keyLayout, onTermPrefs, setTermAssist, setTermColumns, termAssist, termColumns,
+} from "../../src/terminal/termPrefs.ts";
 
 /** The same three words the Remote pane uses, so the phone and the computer
- *  describe one grant the same way. */
-const SCOPE: Record<DeviceScope, { name: string; what: string }> = {
+ *  describe one grant the same way. `chip` is the short form the computer's
+ *  row carries. */
+const SCOPE: Record<DeviceScope, { name: string; chip: string; what: string }> = {
   read: {
     name: "Look only",
+    chip: "Looks only",
     what: "Sessions, costs, changes and pull requests. This phone approves nothing.",
   },
   answer: {
     name: "Answer things",
+    chip: "Answers",
     what: "The above, plus approving a held gate and replying to a running session.",
   },
   full: {
     name: "Everything",
+    chip: "Full access",
     what: "The terminal, git write, Docker and merging. A grant for a laptop you trust.",
   },
 };
@@ -67,9 +88,11 @@ const WHY: Record<Blocked, string> = {
     "Android refused the last notification. Nothing was drawn.",
 };
 
-function Row({ name, value }: { name: string; value: string }): React.ReactNode {
+const Lead = ({ name }: { name: GlyphName }): React.ReactNode => <Glyph name={name} color={C.text2} size={20} />;
+
+function Fact({ name, value }: { name: string; value: string }): React.ReactNode {
   return (
-    <View style={{ flexDirection: "row", justifyContent: "space-between", gap: SPACE.md }}>
+    <View style={{ flexDirection: "row", justifyContent: "space-between", gap: SPACE.md, paddingVertical: 6 }}>
       <Text style={{ color: C.text3, fontSize: T.small }}>{name}</Text>
       <Text style={{ color: C.text2, fontSize: T.small, fontFamily: MONO, flexShrink: 1, textAlign: "right" }}>
         {value}
@@ -78,281 +101,149 @@ function Row({ name, value }: { name: string; value: string }): React.ReactNode 
   );
 }
 
-/** One window, as a bar of what is LEFT of it.
- *
- *  Left, not used, and the direction is the point: the question anybody has in
- *  front of this number is "can I start a long one", and a bar that fills up as
- *  you work answers the opposite one. A window with nothing left draws no bar at
- *  all, because the single thing this must never do is overstate what is there. */
-function Meter({ label, window: w, now }: {
+/** A few options in a pill, at the end of a row. The full-width `Segmented`
+ *  is for switching what a screen shows; this is a value on a settings row,
+ *  and it sits where a switch would. */
+function Pick<V extends string>({ value, options, onChange, label }: {
+  value: V;
+  options: { id: V; name: string }[];
+  onChange: (v: V) => void;
   label: string;
-  window: QuotaWindow;
-  now: number;
 }): React.ReactNode {
-  const left = remainingOf(w);
-  const tint = toneColor(quotaTone(w.usedPercent));
-  const resets = resetLabel(w.resetsAt, now);
   return (
     <View
-      accessibilityRole="text"
-      accessibilityLabel={`${label}: ${left}% left${resets ? `, resets ${resets}` : ""}`}
-      style={{ flexDirection: "row", alignItems: "center", gap: SPACE.sm }}
+      accessibilityRole="radiogroup"
+      accessibilityLabel={label}
+      style={{ flexDirection: "row", padding: 3, borderRadius: RADIUS.pill, backgroundColor: C.bg3 }}
     >
-      <Text style={{ color: C.text4, fontSize: T.eyebrow, width: 62 }} numberOfLines={1}>{label}</Text>
-      <View style={{ flex: 1, height: 6, borderRadius: 3, backgroundColor: C.bg, overflow: "hidden" }}>
-        {left > 0 ? (
-          <View style={{ width: `${left}%`, height: "100%", borderRadius: 3, backgroundColor: tint }} />
-        ) : null}
-      </View>
-      <Text style={{
-        color: tint, fontSize: T.small, fontWeight: "600", width: 42, textAlign: "right",
-      }}>{left}%</Text>
+      {options.map((o) => {
+        const on = o.id === value;
+        return (
+          <Pressable
+            key={o.id}
+            accessibilityRole="radio"
+            accessibilityState={{ checked: on }}
+            onPress={() => onChange(o.id)}
+            hitSlop={{ top: 4, bottom: 4 }}
+            style={({ pressed }) => ({
+              minHeight: 36, paddingHorizontal: SPACE.md, borderRadius: RADIUS.pill,
+              alignItems: "center", justifyContent: "center",
+              backgroundColor: on ? C.primary : "transparent",
+              transform: [{ scale: pressed ? 0.97 : 1 }],
+            })}
+          >
+            <Text style={{
+              color: on ? ink(C.primary) : C.text2, fontSize: 13, fontWeight: on ? "600" : "500",
+            }}>{o.name}</Text>
+          </Pressable>
+        );
+      })}
     </View>
   );
 }
 
 /**
- * What is left of the plan.
+ * The accents, in one row.
  *
- * ── why it is here and not on the Inbox ──────────────────────────────────
- * Because it is about AGENTS, and the Inbox is now only about pull requests,
- * issues and cards. It is also not news: a five-hour window moves in percents
- * per hour, so it has no business on a screen whose whole job is "what changed
- * since you last looked". It is a thing you go and check before starting
- * something long, which is what this screen is for.
- *
- * ── the headline ─────────────────────────────────────────────────────────
- * The window closest to running out, across every provider, stated once at full
- * size rather than left for the eye to find among the bars. That is what
- * actually stops a long turn — the tightest window, not the average of them.
- *
- * ── four states, and none of them collapsed ──────────────────────────────
- * The expensive one is "could not reach the computer", which must never be
- * drawn as an empty bar: a phone off the network would otherwise report the
- * plan as spent, and that is the one error that would change what you do.
- * `planState` in model/quota.ts is what keeps the four apart.
- *
- * Its own component, holding its own hook, so the five-minute poll and the
- * minute tick repaint this card and not the seven cards around it.
+ * Seven across, and that is the constraint the swatch size comes from: 44 is
+ * the floor for a tap target and seven of them are 308 against the 329 a card
+ * had inside its padding on the emulator's 393dp screen. A gap between them
+ * does not fit — measured, an 8 put the seventh on a line of its own — so the
+ * leftover is spread instead.
  */
-function PlanCard(): React.ReactNode {
-  const { rows, loaded, error, reload } = useUsage();
-  /* A minute, because every label under this is minute-granular: "in 1h 44m"
-     and "12m old" are both wrong the moment the clock they were computed
-     against is. The usage poll is five minutes apart and cannot carry this —
-     it moves the numbers, not the reading of them. */
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 60_000);
-    return () => clearInterval(timer);
-  }, []);
-
-  const state = planState(loaded, rows);
-  // Nothing is more honest than nothing, for one poll.
-  if (state === "loading") return null;
-  const top = tightestWindow(rows);
-  /* Only worth naming the provider on each bar when more than one is
-     reporting. On a machine with Claude alone, "Claude 5h" on every row is one
-     word of signal and one of furniture. */
-  const providers = (rows ?? []).filter((r) => r.available).length;
-
-  return (
-    <Card>
-      <View style={{ flexDirection: "row", alignItems: "center" }}>
-        <Label text="Plan left" />
-        <View style={{ flex: 1 }} />
-        {/* The age belongs beside the number it qualifies. The computer holds
-            an Anthropic reading for fifteen minutes and keeps serving the last
-            good one for up to a day while that endpoint rate-limits, so a stale
-            percentage looks exactly like a live one unless it says so. */}
-        {top ? (
-          <Text style={{ color: C.text4, fontSize: T.eyebrow }}>{ageLabel(top.observedAt, now)}</Text>
-        ) : null}
-      </View>
-
-      {state === "unreachable" ? (
-        <Note tone="bad">{error ?? "The computer did not answer about the plan."}</Note>
-      ) : null}
-      {state === "empty" ? (
-        <Note>No agent on this computer reports a plan quota.</Note>
-      ) : null}
-
-      {top ? (
-        <View style={{ flexDirection: "row", alignItems: "baseline", gap: SPACE.sm }}>
-          <Text style={{
-            color: toneColor(quotaTone(top.window.usedPercent)),
-            fontSize: 30, fontWeight: "700", lineHeight: 36,
-          }}>{remainingOf(top.window)}%</Text>
-          <View style={{ flex: 1, gap: 2 }}>
-            <Text style={{ color: C.text2, fontSize: T.small }} numberOfLines={1}>
-              left of {top.provider} · {top.window.label}
-            </Text>
-            {top.window.resetsAt ? (
-              <Text style={{ color: C.text4, fontSize: T.eyebrow }} numberOfLines={1}>
-                resets {resetLabel(top.window.resetsAt, now)}
-              </Text>
-            ) : null}
-          </View>
-        </View>
-      ) : null}
-
-      {(rows ?? []).filter((r) => r.available).map((row) => (
-        row.windows.map((w) => (
-          <Meter
-            key={`${row.provider}:${w.label}`}
-            label={providers > 1 ? `${row.label} ${w.label}` : w.label}
-            window={w}
-            now={now}
-          />
-        ))
-      ))}
-
-      {/* Only on the failure. The poll comes back by itself every five minutes
-          and again on the way into the app, so a button here is for the one
-          case where waiting five minutes to find out whether the wifi came
-          back is the wrong offer. */}
-      {state === "unreachable" ? <Btn label="Ask again" onPress={reload} /> : null}
-    </Card>
-  );
-}
-
-/**
- * A row that goes somewhere, as against `Row`, which only says a number.
- *
- * It carries the destination's own mark. Now and Repos were tabs until the bar
- * became pull requests, issues and cards; their icons were drawn for that bar
- * and the arguments over them — a ring that is not a bell, a folder that shares
- * its silhouette with nothing — are written in src/nav/icons.tsx. The screens
- * did not stop existing when the bar stopped offering them, and a destination
- * that keeps its mark is one you recognise on the way back to it.
- *
- * A chevron rather than a button, because these two are not actions: nothing
- * here happens when you press it except arriving somewhere, which is what a row
- * with an arrow on the end has always meant.
- */
-function Go({ mark: Mark, name, value, onPress }: {
-  mark: (props: IconProps) => React.ReactNode;
-  name: string;
-  value?: string;
-  onPress: () => void;
-}): React.ReactNode {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      onPress={onPress}
-      style={({ pressed }) => ({
-        flexDirection: "row", alignItems: "center", gap: SPACE.md,
-        minHeight: TAP, opacity: pressed ? 0.6 : 1,
-      })}
-    >
-      <Mark color={C.text3} size={19} />
-      <Text style={{ color: C.text, fontSize: T.body, flex: 1 }}>{name}</Text>
-      {value ? (
-        <Text style={{ color: C.text3, fontSize: T.small, fontFamily: MONO }}>{value}</Text>
-      ) : null}
-      <ChevronIcon color={C.text4} size={17} />
-    </Pressable>
-  );
-}
-
-/** Dark / Light / System, and the row of accents under it. Split out for
- *  reading, not for state: the palette it draws with is a module singleton and
- *  the screen below is what subscribes to it. */
-function Look(): React.ReactNode {
+function Swatches(): React.ReactNode {
   const look = currentLook();
-
-  const MODES: { id: ThemeMode; name: string }[] = [
-    { id: "dark", name: "Dark" },
-    { id: "light", name: "Light" },
-    { id: "system", name: "System" },
-  ];
-
   return (
-    <Section label="Look">
-      <View style={{ flexDirection: "row", gap: SPACE.sm }}>
-        {MODES.map((m) => {
-          const on = look.mode === m.id;
-          return (
-            <Pressable
-              key={m.id}
-              accessibilityRole="button"
-              accessibilityState={{ selected: on }}
-              onPress={() => setLook({ mode: m.id })}
-              style={{
-                flex: 1, minHeight: TAP, alignItems: "center", justifyContent: "center",
-                borderRadius: RADIUS.md, borderWidth: 1,
-                borderColor: on ? C.primary : C.border,
-                backgroundColor: on ? C.primary : C.bg3,
-              }}
-            >
-              <Text style={{
-                color: on ? ink(C.primary) : C.text2,
-                fontSize: T.body,
-                fontWeight: on ? "700" : "500",
-              }}>{m.name}</Text>
-            </Pressable>
-          );
-        })}
-      </View>
-      <Note>
-        {look.mode === "system"
-          // Named rather than left to be worked out: "System" on a phone whose
-          // OS theme is on a schedule means this screen changes at sunset.
-          ? `Following the phone, which is ${look.polarity} right now.`
-          : "Whatever the phone itself is set to is ignored."}
-      </Note>
-
-      {/* Seven across, in one row, and that is the constraint the swatch size
-          comes from: 44 is the floor for a tap target and seven of them are
-          308 against the 329 this card has inside its padding on the emulator's
-          393dp screen. A gap between them does not fit — measured, an 8 put the
-          seventh on a line of its own — so the leftover 21 is spread instead. */}
-      <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-        {ACCENTS.map((a) => {
-          const on = look.accent === a.id;
-          const face = accentFor(look.polarity, a.id).primary;
-          return (
-            <Pressable
-              key={a.id}
-              accessibilityRole="button"
-              accessibilityLabel={a.name}
-              accessibilityState={{ selected: on }}
-              onPress={() => setLook({ accent: a.id })}
-              // The swatch is 30 in a 44 box: 44 is the floor for anything you
-              // tap (see TAP) and seven 44-wide circles do not fit across a
-              // phone, so the target keeps the size and the paint does not.
-              style={{ width: TAP, height: TAP, alignItems: "center", justifyContent: "center" }}
-            >
-              {/* Selected is a ring AROUND the swatch with card background
-                  showing through the gap, not a border on it. A border has to
-                  be a colour, and there is no colour that works for all seven:
-                  drawn in the text colour it disappeared on neutral — measured
-                  on the emulator, neutral IS the text colour — and drawn in the
-                  accent it is a violet ring on violet. A gap is visible against
-                  every one of them because it is the card. */}
+    <View style={{
+      flexDirection: "row", justifyContent: "space-between", paddingHorizontal: SPACE.md, paddingBottom: SPACE.md,
+    }}>
+      {ACCENTS.map((a) => {
+        const on = look.accent === a.id;
+        // What will actually be painted, which on the phone is the accent
+        // walked to a shade that reads — see phonePalette.
+        const face = phonePalette(look.polarity, a.id).primary;
+        return (
+          <Pressable
+            key={a.id}
+            accessibilityRole="radio"
+            accessibilityLabel={a.name}
+            accessibilityState={{ checked: on }}
+            onPress={() => setLook({ accent: a.id })}
+            style={{ width: TAP, height: TAP, alignItems: "center", justifyContent: "center" }}
+          >
+            {/* Selected is a ring AROUND the swatch with the card showing
+                through the gap, not a border on it. A border has to be a
+                colour, and there is no colour that works for all seven: drawn
+                in the text colour it disappeared on neutral — measured on the
+                emulator, neutral IS the text colour — and drawn in the accent
+                it is a violet ring on violet. A gap is visible against every
+                one of them because it is the card. */}
+            <View style={{
+              width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center",
+              borderWidth: 2, borderColor: on ? face : "transparent",
+            }}>
               <View style={{
-                width: 42, height: 42, borderRadius: 21,
-                alignItems: "center", justifyContent: "center",
-                borderWidth: 2, borderColor: on ? face : "transparent",
-              }}>
-                <View style={{
-                  width: 30, height: 30, borderRadius: 15,
-                  backgroundColor: face,
-                  // A hairline on every swatch, for the two that are nearly the
-                  // card they sit on: neutral is #e6edf3 on #161b22 and #1f2328
-                  // on #f6f8fa, and without it the light one has no edge.
-                  borderWidth: 1, borderColor: C.border2,
-                }} />
-              </View>
-            </Pressable>
-          );
-        })}
+                width: 30, height: 30, borderRadius: 15, backgroundColor: face,
+                // A hairline on every swatch, for the two that are nearly the
+                // card they sit on.
+                borderWidth: 1, borderColor: C.border2,
+              }} />
+            </View>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+/** The computer: what it is called, where it is, and what this phone may do
+ *  to it. A sheet, because it is looked at and dismissed. */
+function ComputerSheet({ open, onClose, onForget }: {
+  open: boolean;
+  onClose: () => void;
+  onForget: () => void;
+}): React.ReactNode {
+  const { host, live, fleet } = useAgentglass();
+  const computer = useComputer(host);
+  const router = useRouter();
+  if (!host) return null;
+  const scope = SCOPE[host.scope];
+  /* How long ago this pairing was made. Worth a row because the sheet is where
+     somebody asks "is this the phone I paired last week, or the one from the
+     spring", and the label alone does not say. */
+  const ago = since(host.pairedAt, Date.now());
+  return (
+    <Sheet open={open} onClose={onClose} title={computer}>
+      <View style={{ gap: SPACE.md, paddingBottom: SPACE.md }}>
+        <View>
+          <Fact name="Address" value={host.origin} />
+          <Fact name="Connection" value={live === "open" ? "live" : live === "connecting" ? "connecting…" : "offline"} />
+          <Fact name="Last answer" value={fleet.at ? new Date(fleet.at).toLocaleTimeString() : "never"} />
+          <Fact name="This phone is called" value={host.label} />
+          {ago ? <Fact name="Paired" value={ago === "0m" ? "just now" : `${ago} ago`} /> : null}
+        </View>
+        {/* Copied rather than read out: the address is what gets typed into a
+            second phone or a browser at the desk, and a typo in a port is a
+            pairing that fails for a reason nobody can see. */}
+        <Btn
+          label="Copy the address"
+          onPress={() => {
+            void Clipboard.setStringAsync(host.origin);
+            void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          }}
+        />
+        <View style={{ gap: SPACE.xs, padding: SPACE.md, borderRadius: RADIUS.lg, backgroundColor: C.bg3 }}>
+          <Text style={{ color: C.text, fontSize: T.body, fontWeight: "600" }}>{scope.name}</Text>
+          <Note>{scope.what}</Note>
+          <Note>
+            Chosen at the computer while somebody was looking at the request. To change it, forget this
+            phone there and pair again.
+          </Note>
+        </View>
+        <Btn label="Troubleshooting" onPress={() => { onClose(); router.push("/troubleshoot"); }} />
+        <Btn label="Forget this computer" tone="danger" onPress={() => { onClose(); onForget(); }} />
       </View>
-      <Note>
-        The accent paints what reads as live — the terminal's cursor, the tab you are on, a button
-        that does something. Neutral is the first one: no colour at all.
-      </Note>
-    </Section>
+    </Sheet>
   );
 }
 
@@ -365,12 +256,12 @@ export default function SettingsScreen(): React.ReactNode {
    * redraws both; subscribing there redraws only itself.
    */
   usePaletteTick();
-  const { host, live, fleet, forget } = useAgentglass();
+  const { host, live, forget } = useAgentglass();
+  const computer = useComputer(host);
   const router = useRouter();
-  /* Straight off the store: a pending gate is the fact, not an interpretation
-     of one. Same count the terminal's band draws. */
-  const held = fleet.gates.length;
   const [going, setGoing] = useState(false);
+  const [sheet, setSheet] = useState(false);
+  const look = currentLook();
   /*
    * Whether an alert can actually be DELIVERED — not whether permission was
    * once granted.
@@ -385,6 +276,19 @@ export default function SettingsScreen(): React.ReactNode {
    */
   const [alerts, setAlerts] = useState<Delivery | null>(null);
   const [asking, setAsking] = useState(false);
+
+  /* The terminal's preferences are module singletons shared with the pane;
+     these are the local mirrors that make this screen repaint. */
+  const [cols, setCols] = useState(termColumns);
+  const [assist, setAssist] = useState(termAssist);
+  const [keys, setKeys] = useState(() => ({ layout: keyLayout(), mine: customKeys() }));
+  useEffect(() => onTermPrefs(() => {
+    setCols(termColumns()); setAssist(termAssist()); setKeys({ layout: keyLayout(), mine: customKeys() });
+  }), []);
+  const onBar = useMemo(() => keyRows(keys.layout, [
+    ...ACCESSORY_KEYS,
+    ...keys.mine.map((k) => ({ id: k.id, label: k.label, bytes: bytesFor(k), spoken: k.label })),
+  ]).filter((r) => r.shown).length, [keys]);
 
   const refresh = useCallback((): void => { void alertsDeliverable().then(setAlerts); }, []);
 
@@ -429,93 +333,82 @@ export default function SettingsScreen(): React.ReactNode {
 
   if (!host) return null;
 
+  const supported = notificationsSupported();
+  const MODES: { id: ThemeMode; name: string }[] = [
+    { id: "system", name: "System" },
+    { id: "dark", name: "Dark" },
+    { id: "light", name: "Light" },
+  ];
+  const status = live === "open" ? "Connected" : live === "connecting" ? "Connecting…" : "Offline";
+
   return (
-    <ScrollView contentContainerStyle={{ padding: SPACE.lg, gap: SPACE.lg }}>
-      <Section label="Paired with">
-        <Text style={{ color: C.text, fontSize: T.title, fontWeight: "600" }}>{host.label}</Text>
-        <Row name="Address" value={host.origin} />
+    <ScrollView contentContainerStyle={{ padding: SPACE.lg, paddingTop: SPACE.xs, gap: SPACE.xs, paddingBottom: SPACE.xl }}>
+      <Group>
         <Row
-          name="Live"
-          value={live === "open" ? "connected" : live === "connecting" ? "connecting…" : "offline"}
+          title={computer}
+          sub={`${status} · ${host.origin.replace(/^https?:\/\//, "")}`}
+          lead={
+            <View style={{
+              width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center",
+              backgroundColor: tint(C.primary, 0.16),
+            }}>
+              <Glyph name="computer" color={C.primary} size={22} />
+            </View>
+          }
+          trail={
+            <View style={{
+              flexDirection: "row", alignItems: "center", gap: 4, height: 28, paddingHorizontal: 10,
+              borderRadius: 14, backgroundColor: tint(C.primary, 0.16),
+            }}>
+              <Glyph name="shield" color={C.primary} size={14} />
+              <Text style={{ color: C.primary, fontSize: T.small, fontWeight: "600" }}>{SCOPE[host.scope].chip}</Text>
+            </View>
+          }
+          chevron
+          onPress={() => setSheet(true)}
         />
+      </Group>
+
+      <GroupTitle text="Notifications" />
+      <Group inset={50}>
         <Row
-          name="Last answer"
-          value={fleet.at ? new Date(fleet.at).toLocaleTimeString() : "never"}
+          title="Agent alerts"
+          /* The reason, not a dead switch, when it cannot come on. Every one of
+             these used to be drawn as either "off" or — worse, when the
+             permission was granted and something else had failed — as ON. */
+          sub={alerts === null ? "Checking…"
+            : alerts.ok ? "When an agent waits on you, fails or stops"
+            : WHY[alerts.why]}
+          lead={<Lead name="bell" />}
+          checked={!!alerts?.ok}
+          trail={<Switch on={!!alerts?.ok} disabled={!supported} />}
+          disabled={asking || !supported}
+          onPress={() => {
+            // On is turned off where Android keeps it: a phone app cannot
+            // revoke its own permission, and a switch that flips back by itself
+            // is a switch that lies. Off asks the OS.
+            if (alerts?.ok) void Linking.openSettings();
+            else void turnOn();
+          }}
         />
-      </Section>
-
-      <Section
-        label="This phone may"
-        note="Chosen at the computer while somebody was looking at the request. To change it, forget this phone there and pair again."
-      >
-        <Text style={{ color: C.text, fontSize: T.body, fontWeight: "600" }}>
-          {SCOPE[host.scope].name}
-        </Text>
-        <Note>{SCOPE[host.scope].what}</Note>
-      </Section>
-
-      <Section
-        label="Alerts"
-        note="A gate holding, a tool that failed, a run that stopped — the same notes the computer would put on its own screen, raised here instead."
-      >
-        <Pressable
-          // Still tappable when it is on: the thing that turns it off is a
-          // switch in Android's settings, and the only way back was to
-          // reinstall. A tap re-asks the OS.
-          onPress={() => { if (!asking && notificationsSupported()) void turnOn(); }}
-          disabled={asking || !notificationsSupported()}
-          style={{ flexDirection: "row", alignItems: "center", gap: SPACE.md }}
-        >
-          <View style={{
-            width: 18, height: 18, borderRadius: 5,
-            borderWidth: 1, borderColor: alerts?.ok ? C.success : C.border2,
-            backgroundColor: alerts?.ok ? C.success : "transparent",
-          }} />
-          <Text style={{ color: C.text, fontSize: T.body, flex: 1 }}>
-            {/* "Not available" is kept as its own wording rather than folded
-                into the red note below: a build that cannot do this at all is
-                a fact about the build, and inviting somebody to tap a row that
-                can never come on is the wrong offer. Everything else IS an
-                offer — a tap re-asks the OS. */}
-            {alerts === null ? "Checking…"
-              : alerts.ok ? "This phone may buzz"
-              : alerts.why === "unsupported" ? "Not available in this build"
-              : "Let this phone buzz"}
-          </Text>
-        </Pressable>
-        {alerts && !alerts.ok ? (
-          <Note tone="bad">
-            {/* The reason, not a dead switch. Every one of these used to be
-                drawn as either "off" or — worse, when the permission was
-                granted and something else had failed — as ON. */}
-            {WHY[alerts.why]}
-          </Note>
-        ) : null}
         {alerts && !alerts.ok && alerts.why === "channel-off" ? (
           // The one this app cannot undo from script: an Android channel set to
           // no importance can only be raised in system settings.
-          <Btn label="Open Android's settings" onPress={() => { void Linking.openSettings(); }} />
+          <Row
+            title="Open Android's settings"
+            lead={<Lead name="external" />}
+            onPress={() => { void Linking.openSettings(); }}
+          />
         ) : null}
-        <Note>
-          {/* Said plainly rather than implied. A companion that claims to watch
-              a pocket it cannot reach is worse than one that says where it
-              stops. */}
-          They arrive over the live connection, so they reach you while the app is running and for
-          a while after the screen goes off — not for ever. Android eventually freezes it.
-        </Note>
         {alerts?.ok ? (
-          <Btn
-            label="Send a test alert"
+          <Row
+            title="Send a test notification"
+            lead={<Lead name="spark" />}
             onPress={() => {
               // Through the real path, with the app in the foreground — which
               // the policy would normally suppress, so this calls `raise`
-              // directly. Proving the permission and the channel work is the
-              // whole point of the button.
-              //
-              // And it SAYS what happened. A button that silently does nothing
-              // is the exact impression this feature cannot afford to give: it
-              // is the one thing somebody presses to decide whether to trust
-              // the phone with being told.
+              // directly. And it SAYS what happened: a button that silently does
+              // nothing is the exact impression this feature cannot afford.
               void raise({ title: "agentglass", body: "This is what an alert looks like.", urgency: 1 })
                 .then((d) => {
                   setAlerts(d);
@@ -524,56 +417,102 @@ export default function SettingsScreen(): React.ReactNode {
             }}
           />
         ) : null}
-      </Section>
+      </Group>
+      <View style={{ paddingHorizontal: SPACE.xs, paddingTop: SPACE.xs }}>
+        {/* Said plainly rather than implied. A companion that claims to watch
+            a pocket it cannot reach is worse than one that says where it
+            stops. */}
+        <Note>
+          They arrive over the live connection, so they reach you while the app is running and for a
+          while after the screen goes off — not for ever. Android eventually freezes it.
+        </Note>
+      </View>
 
-      {/*
-        The three things the Inbox no longer carries.
-
-        Each left it for a reason and each is still one tap away. Repos was a
-        screen that said "Nothing changed here" most days on a machine that
-        works a worktree per pull request, and it was spending a fifth of the
-        bar on that. The queue and the plan are both about AGENTS, and the
-        Inbox is now only about pull requests, issues and cards — so the queue
-        is a row here and the plan is the card under this one.
-
-        The queue also has a louder door: a band appears at the bottom of the
-        terminal whenever something is actually held. This row is the one that
-        is always here, for when you want to go and look rather than be told.
-      */}
-      <Section
-        label="Elsewhere"
-        note="What an agent is doing is read in the terminal it is running in. The queue is where a stopped one is answered."
-      >
-        {/* The count is ON the row rather than above it. Two lines saying
-            "Held right now: 3 waiting" and then "Open the queue" are one
-            thought split in half, and the half with the number is the half
-            that decides whether you press the other one. */}
-        <Go
-          mark={NowIcon}
-          name="The queue"
-          value={held ? `${held} waiting` : "nothing"}
-          onPress={() => router.push("/now")}
+      <GroupTitle text="Appearance" />
+      <Group inset={50}>
+        <Row
+          title="Theme"
+          sub={look.mode === "system" ? `Following the phone, ${look.polarity} now` : undefined}
+          lead={<Lead name="contrast" />}
+          trail={<Pick label="Theme" value={look.mode} options={MODES} onChange={(mode) => setLook({ mode })} />}
         />
-        <Go mark={ReposIcon} name="Working tree" onPress={() => router.push("/repos")} />
-        <Go
-          mark={TerminalIcon}
-          name="The key bar"
+        <View>
+          <Row
+            title="Accent"
+            sub="The cursor, the tab you are on, a button that does something"
+            lead={<Lead name="type" />}
+          />
+          <Swatches />
+        </View>
+      </Group>
+
+      <GroupTitle text="Terminal" />
+      <Group inset={50}>
+        <Row
+          title="Width"
+          /* 60 to read, 80 to work. There is no wider rung on purpose: measured
+             on this screen, 120 columns clips each glyph inside its own cell
+             and characters change identity — a seven loses its bar and reads as
+             a slash, so a commit hash comes back wrong. And it is what the pane
+             is RESIZED to while the phone looks at it, not a zoom on the glass:
+             a wider pane is shown from its left edge, and the terminal says so. */
+          sub="Columns asked of the pane while you look"
+          lead={<Lead name="fit" />}
+          trail={
+            <Pick
+              label="Width"
+              value={String(cols)}
+              options={COLUMNS.map((n) => ({ id: String(n), name: String(n) }))}
+              onChange={(v) => { const n = Number(v); setTermColumns(n); setCols(n); }}
+            />
+          }
+        />
+        <Row
+          title="Keyboard suggestions"
+          /* Off by default because the field usually holds a command: a
+             keyboard that helps rewrites flags, paths and branch names into
+             English, silently, and the first you know is a command that did not
+             run — or one that ran differently. */
+          sub={assist ? "Autocorrect may rewrite what you compose" : "Off keeps commands exactly as typed"}
+          lead={<Lead name="spark" />}
+          checked={assist}
+          trail={<Switch on={assist} />}
+          onPress={() => { setTermAssist(!assist); setAssist(!assist); }}
+        />
+        <Row
+          title="Key bar"
+          sub={`${onBar} keys on the bar${keys.mine.length ? ` · ${keys.mine.length} of your own` : ""}`}
+          lead={<KeyboardIcon color={C.text2} size={20} />}
+          chevron
           onPress={() => router.push("/terminal-settings")}
         />
-        <Go
-          mark={SettingsIcon}
-          name="Troubleshooting"
+      </Group>
+
+      <GroupTitle text="Help" />
+      <Group inset={50}>
+        <Row
+          title="Troubleshooting"
+          sub="What this computer has, and what is missing"
+          lead={<Lead name="wrench" />}
+          chevron
           onPress={() => router.push("/troubleshoot")}
         />
-      </Section>
+        <Row
+          title="Version"
+          lead={<Lead name="info" />}
+          trail={
+            <Text style={{ color: C.text3, fontSize: T.body, fontFamily: MONO }}>
+              {Constants.expoConfig?.version ?? "unknown"}
+            </Text>
+          }
+        />
+      </Group>
 
-      <PlanCard />
-
-      <Look />
-
-      <Section label="This device">
+      <View style={{ paddingTop: SPACE.lg }}>
         <Btn label="Forget this computer" tone="danger" busy={going} onPress={onForget} />
-      </Section>
+      </View>
+
+      <ComputerSheet open={sheet} onClose={() => setSheet(false)} onForget={onForget} />
     </ScrollView>
   );
 }

@@ -44,7 +44,7 @@
  * remember, which is exactly right.
  */
 import {
-  PANE, PHONE_ACCENTS, inkOn, paletteFor, polarityOf, sanitizeLook,
+  PANE, PHONE_ACCENTS, inkOn, phonePalette, polarityOf, sanitizeLook,
   type AccentId, type Look, type Palette, type Polarity, type ThemeMode,
 } from "../../shared/palettes.ts";
 
@@ -72,7 +72,7 @@ const SHIPPED: Look = { mode: "dark", accent: "teal" };
 /** The live palette. Read it at render time — never destructure it into a
  *  module-level constant, which would freeze a screen in the palette that was
  *  current when its file was first evaluated. */
-export const C: Palette = { ...paletteFor("dark", SHIPPED.accent, PANE) };
+export const C: Palette = { ...phonePalette("dark", SHIPPED.accent) };
 
 let look: Look = { ...SHIPPED };
 let polarity: Polarity = "dark";
@@ -138,7 +138,7 @@ function systemIsDark(): boolean {
  */
 function paint(): void {
   polarity = polarityOf(look.mode, systemIsDark());
-  const next = paletteFor(polarity, look.accent, PANE);
+  const next = phonePalette(polarity, look.accent);
   let changed = false;
   for (const key of Object.keys(PANE.dark) as (keyof Palette)[]) {
     if (C[key] !== next[key]) { C[key] = next[key]; changed = true; }

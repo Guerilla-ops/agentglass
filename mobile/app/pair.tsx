@@ -27,7 +27,8 @@
  * so a page on that address has neither half.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { KeyboardAvoidingView, ScrollView, Text, TextInput, View } from "react-native";
+import { KeyboardAvoidingView, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import Svg, { Circle } from "react-native-svg";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
@@ -39,8 +40,10 @@ import { probe } from "../src/lib/api.ts";
 import { randomnessReady } from "../src/lib/rng.ts";
 import type { Host } from "../src/lib/host.ts";
 import { useAgentglass } from "../src/state/host-context.tsx";
-import { Btn, Card, Field, Label, Note, TAP } from "../src/ui.tsx";
-import { C, RADIUS, SPACE, T } from "../src/theme.ts";
+import { Btn, Field, Note } from "../src/ui.tsx";
+import { Glyph } from "../src/nav/glyphs.tsx";
+import { BackIcon } from "../src/nav/icons.tsx";
+import { C, MONO, SPACE, T, tint } from "../src/theme.ts";
 import type { DeviceScope } from "../../shared/types.ts";
 
 type Step = "start" | "scan" | "code" | "waiting";
@@ -50,6 +53,9 @@ type Step = "start" | "scan" | "code" | "waiting";
  *  minted the instant before the claim is followed to its actual end. */
 const WAIT_MS = 130_000;
 const POLL_MS = 1_500;
+
+/** The two-minute TTL itself: what the ring while waiting is a share of. */
+const TICKET_MS = 120_000;
 
 /** Under this, the countdown turns amber. Thirty seconds is about the point
  *  where the answer changes from "walk to the computer" to "show a new code",
@@ -61,7 +67,7 @@ const LOW_MS = 30_000;
  *
  * This screen used to answer an expiry with "Nobody answered at the computer,
  * and the invitation has expired" — a sentence about a person, for the case
- * that is almost always about a clock. He is usually the person at both ends.
+ * that is almost always about a clock. The same person is usually at both ends.
  */
 const EXPIRED = "That invitation has run out. Show a new one on the computer — two minutes covers the whole trip, from the code appearing to somebody accepting it.";
 
@@ -432,22 +438,61 @@ export default function PairScreen(): React.ReactNode {
 
   if (step === "scan") {
     return (
-      <View style={{ flex: 1, backgroundColor: "#000" }}>
-        <CameraView
-          style={{ flex: 1 }}
-          facing="back"
-          barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
-          onBarcodeScanned={onScan}
-        />
-        <View style={{ position: "absolute", left: 0, right: 0, bottom: 0, padding: SPACE.lg, ...pad, gap: SPACE.md }}>
-          <Text style={{ color: "#fff", fontSize: T.body, textAlign: "center" }}>
-            Point it at the code in Settings ▸ Remote access
-          </Text>
-          <Btn label="Type it instead" onPress={() => setStep("code")} />
+      <View style={{ flex: 1, backgroundColor: "#000", paddingTop: insets.top }}>
+        <View style={{ height: 56, flexDirection: "row", alignItems: "center", paddingHorizontal: SPACE.xs }}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Close the camera"
+            onPress={() => setStep("start")}
+            style={{ width: 48, height: 48, alignItems: "center", justifyContent: "center" }}
+          >
+            <Glyph name="close" color="#ffffff" size={24} />
+          </Pressable>
+        </View>
+        <View style={{ flex: 1 }}>
+          <CameraView
+            style={{ flex: 1 }}
+            facing="back"
+            barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
+            onBarcodeScanned={onScan}
+          />
+          {/* The frame: four corners, so the code has somewhere to go. */}
+          <View pointerEvents="none" style={{ position: "absolute", left: 0, right: 0, top: 0, bottom: 0, alignItems: "center", justifyContent: "center", gap: 28 }}>
+            <View style={{ width: 236, height: 236 }}>
+              {(["tl", "tr", "bl", "br"] as const).map((c) => (
+                <View key={c} style={{
+                  position: "absolute", width: 36, height: 36, borderColor: "#ffffff",
+                  ...(c[0] === "t" ? { top: 0, borderTopWidth: 3 } : { bottom: 0, borderBottomWidth: 3 }),
+                  ...(c[1] === "l" ? { left: 0, borderLeftWidth: 3 } : { right: 0, borderRightWidth: 3 }),
+                  ...(c === "tl" ? { borderTopLeftRadius: 14 } : c === "tr" ? { borderTopRightRadius: 14 }
+                    : c === "bl" ? { borderBottomLeftRadius: 14 } : { borderBottomRightRadius: 14 }),
+                }} />
+              ))}
+            </View>
+            <Text style={{ color: "#ffffff", fontSize: 15, fontWeight: "500", textAlign: "center", paddingHorizontal: 40, lineHeight: 22 }}>
+              Point it at the QR code in agentglass › Settings › Remote access
+            </Text>
+          </View>
+        </View>
+        <View style={{ padding: SPACE.xl, paddingBottom: insets.bottom + SPACE.xl }}>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setStep("code")}
+            style={({ pressed }) => ({
+              height: 48, borderRadius: 24, borderWidth: 1, borderColor: "rgba(255,255,255,0.4)",
+              alignItems: "center", justifyContent: "center", transform: [{ scale: pressed ? 0.97 : 1 }],
+            })}
+          >
+            <Text style={{ color: "#ffffff", fontSize: 15, fontWeight: "600" }}>Type it instead</Text>
+          </Pressable>
         </View>
       </View>
     );
   }
+
+  /* The share of the two minutes still left, for the ring while waiting. The
+     ticket lives TICKET_MS; the ring says so without anybody reading digits. */
+  const share = left === null ? 1 : Math.max(0, Math.min(1, left / TICKET_MS));
 
   return (
     /*
@@ -474,34 +519,64 @@ export default function PairScreen(): React.ReactNode {
       style={{ flex: 1, backgroundColor: C.bg }}
       behavior="padding"
     >
-      <ScrollView
-        contentContainerStyle={{ padding: SPACE.lg, gap: SPACE.lg, ...pad }}
-        keyboardShouldPersistTaps="handled"
-      >
-        <View style={{ gap: SPACE.xs }}>
-          <Text style={{ color: C.text, fontSize: T.head, fontWeight: "700" }}>Add this phone</Text>
-          <Note>
-            On the computer, open agentglass ▸ Settings ▸ Remote access. It shows a code and six
-            digits.
-          </Note>
-        </View>
-
-        {step === "start" ? (
-          <Card>
-            <Btn label="Scan the code" tone="primary" onPress={() => { void openCamera(); }} />
-            {/* Second, above typing: a link that reached this phone in a
-                message is a whole pairing minus six digits, and the alternative
-                is a long-press, a menu and twelve characters of proofreading. */}
+      {step === "start" ? (
+        /*
+          The three ways in, in the order they are worth: the camera, a link
+          that reached this phone in a message (a whole pairing minus six
+          digits — the alternative is a long-press, a menu and twelve
+          characters of proofreading), and typing. At the bottom, under the
+          thumb, with what is going to happen said above them.
+        */
+        <View style={{ flex: 1, ...pad, paddingHorizontal: SPACE.xl }}>
+          <View style={{ flex: 1, justifyContent: "center", gap: SPACE.lg }}>
+            <View style={{
+              width: 56, height: 56, borderRadius: 28, alignItems: "center", justifyContent: "center",
+              backgroundColor: tint(C.primary, 0.16),
+            }}>
+              <Glyph name="link" color={C.primary} size={28} />
+            </View>
+            <Text style={{ color: C.text, fontSize: 28, fontWeight: "600", lineHeight: 34 }}>Connect to your computer</Text>
+            <Text style={{ color: C.text2, fontSize: 15.5, lineHeight: 23 }}>
+              On the computer, open agentglass › Settings › Remote access. It shows a QR code and six digits.
+            </Text>
+          </View>
+          <View style={{ gap: 10 }}>
+            <Btn label="Scan the QR code" tone="primary" onPress={() => { void openCamera(); }} />
             <Btn label="Paste a link" onPress={() => { void paste(); }} />
-            <Btn label="Type it by hand" onPress={() => setStep("code")} />
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setStep("code")}
+              style={({ pressed }) => ({ minHeight: 48, alignItems: "center", justifyContent: "center", opacity: pressed ? 0.7 : 1 })}
+            >
+              <Text style={{ color: C.primary, fontSize: T.body, fontWeight: "600" }}>Type the address</Text>
+            </Pressable>
             {error ? <Note tone="bad">{error}</Note> : null}
-          </Card>
-        ) : null}
+            <Text style={{ color: C.text3, fontSize: 13, textAlign: "center", paddingTop: SPACE.sm }}>
+              Nothing is created until someone accepts it on the computer.
+            </Text>
+          </View>
+        </View>
+      ) : null}
 
-        {step === "code" ? (
-          <Card>
+      {step === "code" ? (
+        <>
+          <View style={{ paddingTop: insets.top, height: insets.top + 56, flexDirection: "row", alignItems: "center", paddingHorizontal: SPACE.xs }}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Back"
+              onPress={() => { setStep("start"); setError(null); }}
+              style={{ width: 48, height: 48, alignItems: "center", justifyContent: "center" }}
+            >
+              <BackIcon color={C.text} size={22} />
+            </Pressable>
+            <Text style={{ color: C.text, fontSize: T.title, fontWeight: "600" }}>Connect</Text>
+          </View>
+          <ScrollView
+            contentContainerStyle={{ padding: SPACE.lg, paddingTop: SPACE.sm, gap: SPACE.lg, paddingBottom: insets.bottom + SPACE.xl }}
+            keyboardShouldPersistTaps="handled"
+          >
             <Field
-              label="The computer's address"
+              label="Computer address"
               value={origin}
               onChangeText={(text) => { if (!absorb(text)) setOrigin(text); }}
               placeholder="192.168.1.20:4000"
@@ -509,62 +584,103 @@ export default function PairScreen(): React.ReactNode {
             />
             {/* The label and the placeholder both say "link", because the field
                 accepting one is the entire fix and nothing else on the screen
-                could tell him. It used to read "from the QR code", which is
-                where the ticket comes from and not what may be put in here. */}
+                could say so. It used to read "from the QR code", which is where
+                the ticket comes from and not what may be put in here. */}
             <Field
-              label="Ticket, or the whole link"
+              label="Ticket, or paste the whole link"
               value={ticket}
               onChangeText={(text) => { if (!absorb(text)) setTicket(text); }}
               placeholder="paste http://…/?pair=… here"
               kind="code"
             />
-            <Btn label="Paste a link" onPress={() => { void paste(); }} />
+            <View style={{ gap: SPACE.sm }}>
+              <Text style={{ color: C.text2, fontSize: 13, fontWeight: "500" }}>The six digits on the computer</Text>
+              {/*
+                Six boxes, drawn from the value, over one real field. The field
+                is on top and nearly transparent, so a tap anywhere on the boxes
+                is a tap on it and the number pad comes up for it — there is
+                one input, which is what makes a paste of all six work, and
+                what the auto-submit on the sixth digit listens to.
+              */}
+              <View style={{ height: 56 }}>
+                <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                  {Array.from({ length: 6 }, (_, i) => {
+                    const here = i === code.length;
+                    return (
+                      <View key={i} style={{
+                        width: 46, height: 56, borderRadius: 12, alignItems: "center", justifyContent: "center",
+                        backgroundColor: C.bg2, borderWidth: here ? 2 : 1, borderColor: here ? C.primary : C.border2,
+                      }}>
+                        <Text style={{ color: C.text, fontSize: 22, fontWeight: "600", fontFamily: MONO }}>{code[i] ?? ""}</Text>
+                      </View>
+                    );
+                  })}
+                </View>
+                <TextInput
+                  ref={digits}
+                  accessibilityLabel="The six digits"
+                  value={code}
+                  onChangeText={(text) => setCode(text.replace(/\D/g, "").slice(0, 6))}
+                  keyboardType="number-pad"
+                  textContentType="oneTimeCode"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  caretHidden
+                  onSubmitEditing={() => { void submit(); }}
+                  style={{ position: "absolute", left: 0, right: 0, top: 0, bottom: 0, color: "transparent", opacity: 0.02, fontSize: 1 }}
+                />
+              </View>
+            </View>
             <Countdown left={left} expired={expired} known={clock !== null} />
-            <Field
-              ref={digits}
-              label="The six digits"
-              value={code}
-              onChangeText={(text) => setCode(text.replace(/\D/g, "").slice(0, 6))}
-              placeholder="000000"
-              kind="digits"
-              style={{ fontSize: 24, letterSpacing: 6, textAlign: "center" }}
-              onSubmitEditing={() => { void submit(); }}
-            />
+            {/* Below the digits on purpose. It arrives filled in and nothing
+                fails without it, so it is not one of the things between
+                somebody and being added — and every field above the button
+                reads like one. */}
+            <Field label="Name this phone" value={label} onChangeText={setLabel} placeholder="My phone" />
             {error ? <Note tone="bad">{error}</Note> : null}
             <Btn label="Ask to be added" tone="primary" busy={busy} onPress={() => { void submit(); }} />
-            {/* Below the button on purpose. It arrives filled in and nothing
-                fails without it, so it is not one of the things between him and
-                being added — and every field above the button reads like one. */}
-            <Field label="Call this phone" value={label} onChangeText={setLabel} placeholder="My phone" />
-            <Btn label="Scan instead" onPress={() => { void openCamera(); }} />
-          </Card>
-        ) : null}
-
-        {step === "waiting" ? (
-          <Card>
-            <Label text="Waiting" />
-            <Text style={{ color: C.text, fontSize: T.title }}>
-              Go and accept it on the computer.
-            </Text>
-            <Note>
-              The request is in Settings ▸ Remote access, naming this phone and the same six digits.
-              Nothing is created until somebody agrees.
-            </Note>
-            <View style={{
-              height: TAP, borderRadius: RADIUS.md, backgroundColor: C.bg3,
-              alignItems: "center", justifyContent: "center",
-            }}>
-              <Text style={{ color: C.text3, fontSize: T.small }}>{code}</Text>
+            <View style={{ flexDirection: "row", gap: SPACE.sm }}>
+              <Btn label="Paste a link" style={{ flex: 1 }} onPress={() => { void paste(); }} />
+              <Btn label="Scan instead" style={{ flex: 1 }} onPress={() => { void openCamera(); }} />
             </View>
+          </ScrollView>
+        </>
+      ) : null}
+
+      {step === "waiting" ? (
+        <View style={{ flex: 1, ...pad, paddingHorizontal: SPACE.xl }}>
+          <View style={{ flex: 1, justifyContent: "center", alignItems: "center", gap: SPACE.xl }}>
             {/* The same clock, on the screen where it is actually running out:
                 this is the minute somebody has to walk to the computer, and it
-                is the half of the two minutes he was losing blind. */}
-            <Countdown left={left} expired={expired} known={clock !== null}
-              tail="left to accept it at the computer." />
-            <Btn label="Cancel" onPress={() => { setStep("code"); setError(null); }} />
-          </Card>
-        ) : null}
-      </ScrollView>
+                is the half of the two minutes that used to be lost blind. */}
+            <View style={{ width: 132, height: 132, alignItems: "center", justifyContent: "center" }}>
+              <Svg width={132} height={132} viewBox="0 0 132 132" style={{ position: "absolute" }}>
+                <Circle cx={66} cy={66} r={63} fill="none" stroke={C.bg4} strokeWidth={6} />
+                <Circle
+                  cx={66} cy={66} r={63} fill="none" stroke={expired ? C.error : C.primary} strokeWidth={6}
+                  strokeLinecap="round" strokeDasharray={`${2 * Math.PI * 63 * share} ${2 * Math.PI * 63}`}
+                  transform="rotate(-90 66 66)"
+                />
+              </Svg>
+              <Text style={{ color: C.text, fontSize: 28, fontWeight: "600", fontVariant: ["tabular-nums"] }}>
+                {left === null ? "…" : fmtLeft(left)}
+              </Text>
+            </View>
+            <View style={{ gap: SPACE.md }}>
+              <Text style={{ color: C.text, fontSize: 24, fontWeight: "600", textAlign: "center" }}>Accept it on the computer</Text>
+              <Text style={{ color: C.text2, fontSize: 15, lineHeight: 22, textAlign: "center" }}>
+                agentglass › Settings › Remote access shows a request from {label || "this phone"} with these digits.
+                Nothing is created until somebody agrees.
+              </Text>
+            </View>
+            <Text style={{ color: C.text, fontSize: 34, fontWeight: "600", fontFamily: MONO, letterSpacing: 4 }}>
+              {code.slice(0, 3)} {code.slice(3)}
+            </Text>
+            {expired ? <Countdown left={left} expired={expired} known={clock !== null} /> : null}
+          </View>
+          <Btn label="Cancel" onPress={() => { setStep("code"); setError(null); }} />
+        </View>
+      ) : null}
     </KeyboardAvoidingView>
   );
 }

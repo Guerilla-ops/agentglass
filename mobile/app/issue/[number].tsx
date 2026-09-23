@@ -27,17 +27,14 @@ import { useAgentglass } from "../../src/state/host-context.tsx";
 import { Md } from "../../src/md/Md.tsx";
 import { usePaletteTick } from "../../src/state/use-palette.ts";
 import { requestHandoff } from "../../src/terminal/handoff.ts";
+import { openLinkedPr } from "../../src/state/open-pr.ts";
+import { repoOf } from "../../src/model/prRef.ts";
 import { since } from "../../src/lib/dates.ts";
-import { Btn, Card, Label, Note } from "../../src/ui.tsx";
+import { canRunAgents } from "../../src/model/scope.ts";
+import { Btn, Card, Chip, Group, GroupTitle, Label, LabelChip, Note, Row, Sheet, TAP } from "../../src/ui.tsx";
+import { IssuesIcon, PrsIcon } from "../../src/nav/icons.tsx";
 import { RADIUS as R } from "../../src/theme.ts";
-import { C, MONO, RADIUS, SPACE, T } from "../../src/theme.ts";
-
-/** A label in the colour the repository gave it, with a floor — the same rule
- *  and the same reason as the list's. */
-function labelInk(hex: string): string {
-  const clean = (hex || "").replace(/^#/, "");
-  return /^[0-9a-fA-F]{6}$/.test(clean) ? `#${clean}` : C.text3;
-}
+import { C, MONO, SPACE, T } from "../../src/theme.ts";
 
 /** What a linked pull request is called, and what colour that is. `linked` is
  *  the difference between one somebody attached and a bare `#123` that
@@ -45,14 +42,14 @@ function labelInk(hex: string): string {
  *  promises a fix nobody committed to. */
 function prTone(pr: IssuePr): { word: string; ink: string } {
   if (pr.state === "MERGED") return { word: "merged", ink: C.success };
-  if (pr.state === "CLOSED") return { word: "closed", ink: C.text4 };
-  if (pr.draft) return { word: "draft", ink: C.text4 };
+  if (pr.state === "CLOSED") return { word: "closed", ink: C.text3 };
+  if (pr.draft) return { word: "draft", ink: C.text3 };
   return { word: pr.linked ? "will close this" : "mentions it", ink: pr.linked ? C.success : C.text3 };
 }
 
 export default function IssueScreen(): React.ReactNode {
   usePaletteTick(); // a scene repaints only if it asks — see use-palette.ts
-  const { host } = useAgentglass();
+  const { host, fleet } = useAgentglass();
   const router = useRouter();
   const { number, root } = useLocalSearchParams<{ number: string; root: string }>();
   /* Cutting a branch is a write. A phone paired to answer gates does not get
@@ -184,16 +181,16 @@ export default function IssueScreen(): React.ReactNode {
   }, [host, detail, root, say, load]);
 
   const closed = (detail?.state ?? "").toLowerCase() === "closed";
+  const [commenting, setCommenting] = useState(false);
+  const mine = !!detail && detail.assignees.length > 0 && !!fleet.me && detail.assignees.includes(fleet.me);
 
   return (
     /* `padding`, on both platforms, and never Platform-conditional — the rule
        and the measurement behind it are in test/keyboard-inset.test.ts. This
-       screen takes typing now, so it is in scope for it. */
+       screen takes typing, so it is in scope for it. */
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: C.bg }} behavior="padding">
       <Stack.Screen options={{ title: `#${number}` }} />
-      <ScrollView
-        contentContainerStyle={{ padding: SPACE.lg, gap: SPACE.lg, paddingBottom: SPACE.xl }}
-      >
+      <ScrollView contentContainerStyle={{ padding: SPACE.lg, gap: SPACE.xs, paddingBottom: SPACE.xl }}>
 
       {error ? (
         <Card>
@@ -206,203 +203,232 @@ export default function IssueScreen(): React.ReactNode {
 
       {detail ? (
         <>
-          <View style={{ gap: SPACE.sm }}>
-            <Text style={{ color: C.text, fontSize: T.head, fontWeight: "700", lineHeight: 26 }}>
+          <View style={{ gap: 10, paddingHorizontal: SPACE.xs, paddingBottom: SPACE.md }}>
+            <Text style={{ color: C.text, fontSize: T.head, fontWeight: "600", lineHeight: 26 }}>
               {detail.title}
             </Text>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: SPACE.sm, flexWrap: "wrap" }}>
-              <View style={{
-                paddingHorizontal: SPACE.sm, paddingVertical: 2, borderRadius: RADIUS.sm,
-                borderWidth: 1, borderColor: closed ? C.text4 : C.success,
-              }}>
-                <Text style={{ color: closed ? C.text4 : C.success, fontSize: T.eyebrow }}>
-                  {closed ? "closed" : "open"}
-                </Text>
-              </View>
-              {detail.labels.map((l) => {
-                const ink = labelInk(l.color);
-                return (
-                  <View key={l.name} style={{
-                    paddingHorizontal: SPACE.sm, paddingVertical: 2, borderRadius: RADIUS.sm,
-                    borderWidth: 1, borderColor: ink,
-                  }}>
-                    <Text style={{ color: ink, fontSize: T.eyebrow }}>{l.name}</Text>
-                  </View>
-                );
-              })}
-              <Text style={{ color: C.text4, fontSize: T.eyebrow }}>
-                {detail.author} · {since(detail.updatedAt, now)}
-              </Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+              <Chip
+                label={closed ? "Closed" : "Open"}
+                tone={closed ? "neutral" : "good"}
+                icon={<IssuesIcon color={closed ? C.text2 : C.success} size={14} />}
+              />
+              {detail.labels.map((l) => <LabelChip key={l.name} name={l.name} color={l.color} />)}
             </View>
+            <Text style={{ color: C.text3, fontSize: T.small }}>
+              Opened by {detail.author} · updated {since(detail.updatedAt, now)}
+            </Text>
           </View>
 
-          {detail.body.trim() ? (
-            <Card>
-              {/* Rendered, and never reflowed into something that reads like a
-                  different report: a report's own headings, its numbered steps
-                  and its fenced output are how it argues, and flattening them
-                  is what made an issue harder to read here than on the web.
-                  Uncapped, because an issue is read rather than skimmed — the
-                  cap belongs on a pull request template, not on somebody's
-                  account of a bug. */}
-              <Md text={detail.body.trim()} host={host} />
-            </Card>
-          ) : (
-            <Card>
-              <Note>This issue has no description.</Note>
-            </Card>
-          )}
-
-          <Card style={{ gap: SPACE.sm }}>
-            <Label text="Who has it" />
-            <Note>
-              {detail.assignees.length
-                ? detail.assignees.join(", ")
-                : "Nobody is assigned."}
-            </Note>
-            {/* `work` is the server's record of a branch cut FROM this app for
-                this issue. It is the difference between "nobody has started
-                it" and "somebody has, somewhere else", and only the machine
-                knows it. */}
-            {detail.work ? (
-              <Note>
-                Started here as <Text style={{ fontFamily: MONO, color: C.text2 }}>{detail.work.branch}</Text>
-                {" "}· {since(new Date(detail.work.startedAt).toISOString(), now)}
-              </Note>
-            ) : null}
-            {detail.milestone ? <Note>Milestone: {detail.milestone}</Note> : null}
-          </Card>
-
           {/*
-            Saying something, and taking it.
+            Is this mine, has anybody started it: the facts a decision is made
+            from, as one group of rows rather than a card of sentences.
 
-            Only with `full`, and not drawn otherwise — the rule repos.tsx set
-            and the same one the Start button above follows. A comment posted
-            under your name and an assignment are both writes to somebody
-            else's repository, and a phone paired to answer gates does not get
-            to make them.
-
-            Not offered on a closed issue. Commenting on one is a real thing
-            people do, but claiming it is not, and a box with one live button
-            beside one dead one is a worse answer than the sentence.
+            `work` is the server's record of a branch cut FROM this app for
+            this issue. It is the difference between "nobody has started it"
+            and "somebody has, somewhere else", and only the machine knows it.
           */}
-          {mayWrite && !closed ? (
-            <Card style={{ gap: SPACE.sm }}>
-              <Label text="Say something" />
-              <TextInput
-                value={say}
-                onChangeText={setSay}
-                placeholder="A note on the issue…"
-                placeholderTextColor={C.text4}
-                multiline
-                style={{
-                  minHeight: 72, borderWidth: 1, borderColor: C.border,
-                  borderRadius: R.sm, backgroundColor: C.bg,
-                  color: C.text, padding: SPACE.sm, fontSize: T.body,
-                }}
-              />
-              <View style={{ flexDirection: "row", gap: SPACE.sm }}>
-                <Btn
-                  label="Comment"
-                  style={{ flex: 1 }}
-                  busy={busy === "comment"}
-                  disabled={!say.trim() || busy !== null}
-                  onPress={() => { void act("comment"); }}
-                />
-                <Btn
-                  // The label says what the box will do, because the box
-                  // changes what the button means: claiming with something
-                  // typed posts it too, in the same call.
-                  label={say.trim() ? "Claim it, and say that" : "Claim it"}
-                  tone="primary"
-                  style={{ flex: 1.4 }}
-                  busy={busy === "claim"}
+          <Group>
+            <Fact
+              name="Assignee"
+              value={detail.assignees.length ? (mine ? "You" : detail.assignees.join(", ")) : "Nobody yet"}
+              quiet={!detail.assignees.length}
+              trail={mayWrite && !closed && !detail.assignees.length ? (
+                <Pressable
+                  accessibilityRole="button"
                   disabled={busy !== null}
                   onPress={() => { void act("claim"); }}
-                />
-              </View>
-              {said ? <Note tone={said.ok ? "quiet" : "bad"}>{said.text}</Note> : null}
-            </Card>
-          ) : null}
+                  style={({ pressed }) => ({ minHeight: TAP, justifyContent: "center", paddingHorizontal: SPACE.sm, opacity: pressed ? 0.7 : 1 })}
+                >
+                  {busy === "claim"
+                    ? <ActivityIndicator color={C.primary} />
+                    : <Text style={{ color: C.primary, fontSize: T.body, fontWeight: "600" }}>Assign to me</Text>}
+                </Pressable>
+              ) : undefined}
+            />
+            <Fact
+              name="Work"
+              value={detail.work ? `${detail.work.branch} · ${since(new Date(detail.work.startedAt).toISOString(), now)}` : "Not started"}
+              mono={!!detail.work}
+              quiet={!detail.work}
+            />
+            {detail.milestone ? <Fact name="Milestone" value={detail.milestone} /> : null}
+            {detail.comments ? <Fact name="Comments" value={String(detail.comments)} /> : null}
+          </Group>
+          {said ? <View style={{ paddingHorizontal: SPACE.xs, paddingTop: SPACE.xs }}><Note tone={said.ok ? "quiet" : "bad"}>{said.text}</Note></View> : null}
 
-          <View style={{ gap: SPACE.sm }}>
-            <Label text="Pull requests" />
-            {prs === null ? (
-              // "Not asked yet" is a different claim from "there are none", and
-              // drawing the second during the first is how a screen lies.
-              <Note>Asking GitHub…</Note>
-            ) : prs.length === 0 ? (
+          <View style={{ paddingTop: SPACE.md }}>
+            {detail.body.trim() ? (
               <Card>
-                <Note>Nothing open against this issue yet.</Note>
+                {/* Rendered, and never reflowed into something that reads like a
+                    different report: a report's own headings, its numbered steps
+                    and its fenced output are how it argues, and flattening them
+                    is what made an issue harder to read here than on the web.
+                    Uncapped, because an issue is read rather than skimmed — the
+                    cap belongs on a pull request template, not on somebody's
+                    account of a bug. */}
+                <Md text={detail.body.trim()} host={host} />
               </Card>
             ) : (
-              prs.map((pr) => {
-                const tone = prTone(pr);
-                return (
-                  <Pressable key={pr.number} onPress={() => { if (pr.url) void Linking.openURL(pr.url); }}>
-                    <Card style={{ gap: SPACE.xs }}>
-                      <View style={{ flexDirection: "row", alignItems: "center", gap: SPACE.sm }}>
-                        <Text style={{ color: C.text4, fontSize: T.eyebrow, fontFamily: MONO }}>#{pr.number}</Text>
-                        <Text style={{ color: tone.ink, fontSize: T.eyebrow }}>{tone.word}</Text>
-                      </View>
-                      <Text style={{ color: C.text, fontSize: T.body, lineHeight: 19 }}>{pr.title}</Text>
-                    </Card>
-                  </Pressable>
-                );
-              })
+              <Card>
+                <Note>This issue has no description.</Note>
+              </Card>
             )}
           </View>
 
+          <GroupTitle text="Linked pull requests" />
+          {prs === null ? (
+            // "Not asked yet" is a different claim from "there are none", and
+            // drawing the second during the first is how a screen lies.
+            <View style={{ paddingHorizontal: SPACE.xs }}><Note>Asking GitHub…</Note></View>
+          ) : prs.length === 0 ? (
+            <View style={{ paddingHorizontal: SPACE.xs }}><Note>Nothing open against this issue yet.</Note></View>
+          ) : (
+            <Group inset={50}>
+              {prs.map((pr) => {
+                const tone = prTone(pr);
+                return (
+                  <Row
+                    key={pr.number}
+                    title={`#${pr.number} ${pr.title}`}
+                    sub={tone.word}
+                    lead={<PrsIcon color={tone.ink} size={20} />}
+                    chevron
+                    // In the app when the computer has the checkout — see
+                    // model/prRef.ts — and the browser only when it has not.
+                    onPress={() => {
+                      if (host && pr.url) void openLinkedPr(host, router, pr.url, { repo: repoOf(detail.url), root: root ?? "" });
+                    }}
+                  />
+                );
+              })}
+            </Group>
+          )}
+
           {/* The way out to the full thing, for everything this screen does not
               carry — the comment thread, the reactions, the cross-references.
-              It is at the BOTTOM and it is not the primary action: the point of
-              this screen is that you did not have to go there. */}
+              At the BOTTOM and not the primary action: the point of this screen
+              is that you did not have to go there. */}
           {detail.url ? (
-            <Btn label="Open on GitHub" onPress={() => { void Linking.openURL(detail.url); }} />
+            <View style={{ paddingTop: SPACE.lg }}>
+              <Btn label="Open on GitHub" onPress={() => { void Linking.openURL(detail.url); }} />
+            </View>
           ) : null}
         </>
       ) : null}
       </ScrollView>
 
       {/*
-        The shortest path there is from reading a bug to working on it.
+        The bar: say something, and the shortest path there is from reading a
+        bug to working on it.
 
         `/issues/start` cuts the worktree and the branch and hands back a
-        directory and a prompt; the letterbox then opens a tmux window with
-        the agent in it. Two steps rather than one because they are two
-        different failures — a branch that could not be cut is worth saying
-        out loud, and a terminal that has not attached yet is not a reason to
-        have not cut it.
+        directory and a prompt; the letterbox then opens a tmux window with the
+        agent in it. Two steps rather than one because they are two different
+        failures — a branch that could not be cut is worth saying out loud, and
+        a terminal that has not attached yet is not a reason to have not cut it.
 
-        Only with `full`. It writes to the repository, and a phone paired to
-        answer gates does not get to cut branches — the same rule repos.tsx
-        follows, and the control is not drawn rather than drawn and refused.
+        Only with `full`. Commenting, claiming and cutting a branch are writes
+        to somebody else's repository, and a phone paired to answer gates does
+        not get to make them — not drawn rather than drawn and refused. Comment
+        is not offered on a closed issue: claiming one is not a real thing, and
+        a box with one live button beside one dead one is worse than nothing.
+
+        Already started, the primary is the way back to that work rather than a
+        sentence telling you to go and find it: "Open it in the terminal." used
+        to be a line of text with nothing to press. The terminal picks the
+        window this issue's work is in — by its name, then by its directory.
       */}
-      {detail && !detail.work && mayWrite ? (
+      {detail && mayWrite ? (
         <View style={{
+          flexDirection: "row", gap: SPACE.sm,
           paddingHorizontal: SPACE.lg, paddingTop: SPACE.md, paddingBottom: SPACE.lg,
           borderTopWidth: 1, borderTopColor: C.border, backgroundColor: C.bg2,
         }}>
-          <Btn
-            label="✦ Start with Claude"
-            tone="primary"
-            busy={starting}
-            onPress={() => { void start(); }}
-          />
+          {!closed ? <Btn label="Comment" style={{ flex: 1 }} onPress={() => setCommenting(true)} /> : null}
+          {detail.work ? (
+            canRunAgents(host?.scope) ? (
+              <Btn
+                label="Open in terminal"
+                tone="primary"
+                style={{ flex: 1.6 }}
+                onPress={() => router.push({
+                  pathname: "/terminal",
+                  params: { where: detail.work!.path, window: detail.work!.window ?? `i${detail.number}` },
+                })}
+              />
+            ) : null
+          ) : (
+            <Btn
+              label="Start with Claude"
+              tone="primary"
+              style={{ flex: 1.6 }}
+              busy={starting}
+              onPress={() => { void start(); }}
+            />
+          )}
         </View>
       ) : null}
 
-      {detail?.work ? (
-        <View style={{
-          paddingHorizontal: SPACE.lg, paddingTop: SPACE.md, paddingBottom: SPACE.lg,
-          borderTopWidth: 1, borderTopColor: C.border, backgroundColor: C.bg2,
-        }}>
-          <Note>
-            Already started as <Text style={{ fontFamily: MONO, color: C.text2 }}>{detail.work.branch}</Text>.
-            Open it in the terminal.
-          </Note>
+      <Sheet open={commenting} onClose={() => setCommenting(false)} title={`Comment on #${number}`}>
+        <View style={{ gap: SPACE.md, paddingBottom: SPACE.md }}>
+          <TextInput
+            value={say}
+            onChangeText={setSay}
+            placeholder="A note on the issue…"
+            placeholderTextColor={C.text3}
+            multiline
+            autoFocus
+            style={{
+              minHeight: 96, borderWidth: 1, borderColor: C.border2,
+              borderRadius: R.md, backgroundColor: C.bg,
+              color: C.text, padding: SPACE.md, fontSize: T.body, textAlignVertical: "top",
+            }}
+          />
+          <View style={{ flexDirection: "row", gap: SPACE.sm }}>
+            <Btn
+              label="Comment"
+              style={{ flex: 1 }}
+              busy={busy === "comment"}
+              disabled={!say.trim() || busy !== null}
+              onPress={() => { void act("comment").then(() => setCommenting(false)); }}
+            />
+            {!detail?.assignees.length ? (
+              <Btn
+                // The label says what the box will do, because the box changes
+                // what the button means: claiming with something typed posts it
+                // too, in the same call.
+                label={say.trim() ? "Claim it, and say that" : "Claim it"}
+                tone="primary"
+                style={{ flex: 1.4 }}
+                busy={busy === "claim"}
+                disabled={busy !== null}
+                onPress={() => { void act("claim").then(() => setCommenting(false)); }}
+              />
+            ) : null}
+          </View>
+          {said && !said.ok ? <Note tone="bad">{said.text}</Note> : null}
         </View>
-      ) : null}
+      </Sheet>
     </KeyboardAvoidingView>
+  );
+}
+
+/** A name and its value, the fact a decision is made from. */
+function Fact({ name, value, trail, mono, quiet }: {
+  name: string;
+  value: string;
+  trail?: React.ReactNode;
+  mono?: boolean;
+  quiet?: boolean;
+}): React.ReactNode {
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: SPACE.sm, minHeight: 48, paddingLeft: SPACE.lg, paddingRight: SPACE.sm }}>
+      <Text style={{ color: C.text3, fontSize: 14, width: 96 }}>{name}</Text>
+      <Text numberOfLines={1} style={{
+        color: quiet ? C.text2 : C.text, fontSize: 14, fontWeight: "500", flex: 1, fontFamily: mono ? MONO : undefined,
+      }}>{value}</Text>
+      {trail}
+    </View>
   );
 }
