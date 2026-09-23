@@ -105,6 +105,14 @@ function FileRow({ file, onOpen }: {
   );
 }
 
+/** The three verdicts, with what each one does — the words GitHub's own
+ *  review form uses. */
+const VERDICTS: { id: "approve" | "request_changes" | "comment"; label: string; what: string }[] = [
+  { id: "comment", label: "Comment", what: "Feedback, without a verdict" },
+  { id: "approve", label: "Approve", what: "Good to merge as it is" },
+  { id: "request_changes", label: "Request changes", what: "Must be addressed before it merges" },
+];
+
 /** The three faces of a review. Overview is what a pull request IS; the other
  *  two are what it changed and what was said about it. */
 type Pane = "overview" | "files" | "threads";
@@ -204,6 +212,9 @@ export default function PrScreen(): React.ReactNode {
      `review=1` on the route. Otherwise it is the second button below. */
   const [reviewing, setReviewing] = useState(review === "1");
   const [verdict, setVerdict] = useState<"approve" | "request_changes" | "comment" | null>(null);
+  /** The verdict picked in the sheet, before it is sent. Comment by default:
+   *  the one that commits nobody to anything. */
+  const [choice, setChoice] = useState<"approve" | "request_changes" | "comment">("comment");
   const [summary, setSummary] = useState("");
   const [sent, setSent] = useState<string | null>(null);
   /*
@@ -777,8 +788,8 @@ export default function PrScreen(): React.ReactNode {
         ) : pending === "unknown" ? (
           <View style={{ paddingBottom: SPACE.md }}>
             <Note>
-              Could not ask GitHub whether a review is already started here. If one is, whichever
-              verdict you press below submits it too.
+              Could not ask GitHub whether a review is already started here. If one is, the review
+              you submit below takes it along.
             </Note>
           </View>
         ) : pending.length ? (
@@ -793,8 +804,7 @@ export default function PrScreen(): React.ReactNode {
               </View>
             ))}
             <Note>
-              Started somewhere else and never sent. Whichever verdict you press below submits
-              these too.
+              Started somewhere else and never sent. The review you submit below takes these along.
             </Note>
           </View>
         ) : null}
@@ -825,7 +835,7 @@ export default function PrScreen(): React.ReactNode {
           value={summary}
           onChangeText={setSummary}
           placeholder="Summary — optional"
-          placeholderTextColor={C.text4}
+          placeholderTextColor={C.text3}
           multiline
           style={{
             minHeight: 72, borderWidth: 1, borderColor: C.border, borderRadius: RADIUS.md,
@@ -833,17 +843,49 @@ export default function PrScreen(): React.ReactNode {
           }}
         />
 
-        <View style={{ gap: SPACE.sm, paddingTop: SPACE.md }}>
-          <Btn label="Approve" tone="good" busy={verdict === "approve"}
-            disabled={!!verdict} onPress={() => { void send("approve"); }} />
-          <View style={{ flexDirection: "row", gap: SPACE.sm }}>
-            <Btn label="Request changes" tone="danger" style={{ flex: 1 }}
-              busy={verdict === "request_changes"} disabled={!!verdict}
-              onPress={() => { void send("request_changes"); }} />
-            <Btn label="Comment" style={{ flex: 1 }}
-              busy={verdict === "comment"} disabled={!!verdict}
-              onPress={() => { void send("comment"); }} />
-          </View>
+        {/*
+          The verdict is chosen, then sent: one button. It was three pressed
+          buttons side by side, Approve over Request changes beside Comment,
+          and a verdict is the one thing on this sheet that cannot be taken
+          back — three live targets a thumb-width apart is where the wrong one
+          gets pressed.
+        */}
+        <View accessibilityRole="radiogroup" style={{ paddingTop: SPACE.md }}>
+          {VERDICTS.map((v) => {
+            const on = choice === v.id;
+            return (
+              <Pressable
+                key={v.id}
+                accessibilityRole="radio"
+                accessibilityState={{ checked: on }}
+                onPress={() => setChoice(v.id)}
+                style={({ pressed }) => ({
+                  flexDirection: "row", alignItems: "center", gap: 14, minHeight: 56,
+                  paddingVertical: SPACE.sm, backgroundColor: pressed ? C.bg3 : "transparent",
+                })}
+              >
+                <View style={{
+                  width: 22, height: 22, borderRadius: 11, borderWidth: 2,
+                  borderColor: on ? C.primary : C.text4, alignItems: "center", justifyContent: "center",
+                }}>
+                  {on ? <View style={{ width: 11, height: 11, borderRadius: 6, backgroundColor: C.primary }} /> : null}
+                </View>
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Text style={{ color: C.text, fontSize: 15, fontWeight: "500" }}>{v.label}</Text>
+                  <Text style={{ color: C.text3, fontSize: T.small }}>{v.what}</Text>
+                </View>
+              </Pressable>
+            );
+          })}
+        </View>
+        <View style={{ paddingTop: SPACE.md }}>
+          <Btn
+            label="Submit review"
+            tone={choice === "request_changes" ? "danger" : "primary"}
+            busy={!!verdict}
+            disabled={!!verdict}
+            onPress={() => { void send(choice); }}
+          />
         </View>
 
         {sent ? <View style={{ paddingTop: SPACE.sm }}><Note tone="bad">{sent}</Note></View> : null}
