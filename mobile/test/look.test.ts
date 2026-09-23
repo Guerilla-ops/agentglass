@@ -10,7 +10,7 @@ import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import {
-  ACCENTS, BASE, PANE, PHONE_ACCENTS, accentFor, cssVars, inkOn, paletteFor, polarityOf, sanitizeLook,
+  ACCENTS, BASE, PANE, PHONE_ACCENTS, accentFor, cssVars, inkOn, paletteFor, phonePalette, polarityOf, sanitizeLook,
   type AccentId, type Palette, type Polarity,
 } from "../../shared/palettes.ts";
 import { tint } from "../src/theme.ts";
@@ -250,5 +250,39 @@ describe("tint", () => {
     // green and red written out as rgba(), on a phone that wears PANE.
     expect(tint(PANE.dark.error, 0.14).startsWith(PANE.dark.error)).toBe(true);
     expect(tint(PANE.light.error, 0.14).startsWith(PANE.light.error)).toBe(true);
+  });
+});
+
+describe("the phone's palette can be read", () => {
+  /*
+   * Measured before the change: ink on the violet button 4.48:1 on dark, and
+   * the teal accent as text on a white card 1.7:1 on light. Every accent is
+   * now walked to a shade that reads — as text on both grounds, and as a fill
+   * under its own ink.
+   */
+  test("every accent, both polarities, as text and as a fill", () => {
+    for (const polarity of POLARITIES) {
+      for (const id of IDS) {
+        const p = phonePalette(polarity, id as AccentId);
+        expect(contrast(p.primary, p.bg), `${polarity}/${id} on the ground`).toBeGreaterThanOrEqual(4.5);
+        expect(contrast(p.primary, p.bg2), `${polarity}/${id} on a card`).toBeGreaterThanOrEqual(4.5);
+        expect(contrast(inkOn(p.primary), p.primary), `${polarity}/${id} under its ink`).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+  });
+
+  test("dark violet takes the light member of its pair, as the design measured", () => {
+    expect(phonePalette("dark", "violet").primary).toBe("#a78bfa");
+  });
+
+  test("an accent that already reads is left exactly as the desk has it", () => {
+    expect(phonePalette("dark", "teal").primary).toBe("#4dd6c1");
+  });
+
+  test("the notes under a control read on both grounds", () => {
+    for (const polarity of POLARITIES) {
+      expect(contrast(PANE[polarity].text3, PANE[polarity].bg2)).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(PANE[polarity].text3, PANE[polarity].bg)).toBeGreaterThanOrEqual(4.5);
+    }
   });
 });

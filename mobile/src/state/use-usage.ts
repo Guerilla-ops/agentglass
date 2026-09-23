@@ -18,8 +18,16 @@
  * a card that blanked on the walk to the kitchen would say "no quota" when what
  * happened is "no wifi", which the age line under the number already tells the
  * truth about.
+ *
+ * ── one poll, however many chips ─────────────────────────────────────────
+ * The number is on every destination's header now, as the usage chip, and a
+ * hook per chip would be a poll per chip: four screens stay mounted in the tab
+ * navigator, so four requests every five minutes to learn one number. The poll
+ * lives in a provider, once, and every chip reads it.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  createContext, createElement, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode,
+} from "react";
 import { AppState, type AppStateStatus } from "react-native";
 import type { ProviderUsage } from "../../../shared/types.ts";
 import { ask, REVOKED } from "../lib/api.ts";
@@ -44,7 +52,7 @@ export interface PlanUsage {
   reload: () => void;
 }
 
-export function useUsage(): PlanUsage {
+function usePlanPoll(): PlanUsage {
   const { host } = useAgentglass();
   const [rows, setRows] = useState<ProviderUsage[] | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -113,5 +121,18 @@ export function useUsage(): PlanUsage {
     return () => { stop(); sub.remove(); };
   }, [host, load]);
 
-  return { rows, loaded, error, at, reload };
+  return useMemo(() => ({ rows, loaded, error, at, reload }), [rows, loaded, error, at, reload]);
+}
+
+const UsageContext = createContext<PlanUsage | null>(null);
+
+/** Inside HostProvider: the poll follows the paired host. */
+export function UsageProvider({ children }: { children: ReactNode }): ReactNode {
+  return createElement(UsageContext.Provider, { value: usePlanPoll() }, children);
+}
+
+export function useUsage(): PlanUsage {
+  const usage = useContext(UsageContext);
+  if (!usage) throw new Error("useUsage outside its provider");
+  return usage;
 }

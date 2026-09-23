@@ -10,17 +10,14 @@
  * They are drawn in the desk rail's coordinate system — a 24-unit box, see
  * web/src/components/workspace/icons.tsx — and several of them are that rail's
  * own shapes, unaltered. A pull request should not be one thing on the computer
- * and a different one in your hand. Of the twelve below, four are the rail's
- * (Terminal, Prs, Repos/FilesIcon, Tasks/IssuesIcon), one is GitHub's own
- * (Issues), and the rest are the phone's, each for a reason written over it.
+ * and a different one in your hand. Four are the rail's (Terminal, Prs,
+ * Repos, Tasks), one is GitHub's own (Issues), and the rest are the phone's,
+ * each for a reason written over it.
  *
- * They live here rather than in the tab layout because the bar is not what
- * draws most of them. Five of the twelve were tabs — Inbox, Prs, Terminal,
- * Issues, Tasks. The other five are somewhere else entirely: the faders and the
- * way back are in the header the tab layout puts over a pushed screen, the
- * chevron is on every Inbox row, and the ring and the folder are the two rows
- * in Settings ▸ Elsewhere, which is where Now and Repos went when the bar
- * became pull requests, issues and cards.
+ * They live here rather than in the tab bar because the bar is not what draws
+ * most of them. Four are its destinations; the gear and the way back are in
+ * the header over a destination or a pushed screen, the chevron ends a row
+ * that opens something, and the rest are the terminal's own controls.
  */
 // Expo Go carries react-native-svg, which is the only reason it may be
 // imported at the top of a file the router reaches. See
@@ -57,29 +54,6 @@ export type IconProps = { color: ColorValue; size?: number };
 
 const box = (size: number): { width: number; height: number } => ({ width: size, height: size });
 
-/**
- * A ring with its centre marked.
- *
- * Not a bell. The screen it opens argues at some length that it is a queue you
- * can empty rather than a notifications inbox, and a bell would promise exactly
- * the thing the list refuses to be — and a bell with nothing on it is a bell
- * that has already told you something, which is the one thing this must not
- * say when the queue is empty.
- *
- * It is off the bar now and marks a row in Settings, where the count sits
- * BESIDE it rather than on it. There is no badge anywhere in this app and its
- * absence is argued in src/nav/TabBar.tsx: a number the bar cannot recompute on
- * every screen is a number that goes stale on every screen but one.
- */
-export function NowIcon({ color, size = 20 }: IconProps): React.ReactNode {
-  return (
-    <Svg {...line} {...box(size)} color={color}>
-      <Circle cx="12" cy="12" r="8.4" />
-      <Circle cx="12" cy="12" r="3" />
-    </Svg>
-  );
-}
-
 /** The rail's own: a prompt, and the line you type on. */
 export function TerminalIcon({ color, size = 20 }: IconProps): React.ReactNode {
   return (
@@ -107,30 +81,6 @@ export function PrsIcon({ color, size = 20 }: IconProps): React.ReactNode {
 }
 
 /**
- * An open tray, for the screen that gathers what is waiting on you.
- *
- * Drawn for the Review destination, which held pull requests and cards behind
- * one control; it now marks the Inbox, which is the same claim made about one
- * more source. What it has to say is what all three share: something arrived
- * from outside and is waiting on a decision. A tray says that, and no single
- * source's own mark can without making the other two invisible.
- *
- * Open at the top, with the notch, and that is the whole of the drawing
- * decision. A closed box with a line across it — which is what every stock
- * "inbox" is — is a folder at 20px, and there is a folder two slots away in
- * Settings. This has no top edge at all: its silhouette is a U with a bite out
- * of the shoulders, which nothing else in the bar shares.
- */
-export function InboxIcon({ color, size = 20 }: IconProps): React.ReactNode {
-  return (
-    <Svg {...line} {...box(size)} color={color}>
-      <Path d="M3 13.4h5.2l1.7 2.8h4.2l1.7-2.8H21" />
-      <Path d="M3 13.4v3.7a2.6 2.6 0 0 0 2.6 2.6h12.8a2.6 2.6 0 0 0 2.6-2.6v-3.7L18.3 5.6a2.6 2.6 0 0 0-2.4-1.6H8.1a2.6 2.6 0 0 0-2.4 1.6z" />
-    </Svg>
-  );
-}
-
-/**
  * A folder, which is the rail's mark for a checkout you browse.
  *
  * The screen is really about what has changed in one, so the desk's diff page
@@ -150,11 +100,9 @@ export function ReposIcon({ color, size = 20 }: IconProps): React.ReactNode {
 /**
  * GitHub's own issue mark: a ring with a solid centre.
  *
- * It shares its outline with NowIcon, and the fill is what separates them —
- * deliberately, because they are never in the bar together. Now is off the bar
- * and wears the ring in Settings; this one is a destination and wears the dot.
- * A stroked inner circle at 20px is a 3.2px hole and a filled one is a 5.2px
- * blob, which is the difference a thumb can see at arm's length.
+ * The centre is filled, not stroked: a stroked inner circle at 20px is a 3.2px
+ * hole and a filled one is a 5.2px blob, which is the difference a thumb can
+ * see at arm's length.
  *
  * Not a bug, an exclamation mark or a speech bubble: an issue is not
  * necessarily any of those, and this is the shape the site it comes from uses.

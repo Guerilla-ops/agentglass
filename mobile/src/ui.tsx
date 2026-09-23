@@ -14,7 +14,11 @@ import {
   type StyleProp, type TextStyle, type ViewStyle,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { C, RADIUS, SCRIM, SPACE, T, ink } from "./theme.ts";
+import * as Clipboard from "expo-clipboard";
+import * as Haptics from "expo-haptics";
+import { C, MONO, RADIUS, SCRIM, SPACE, T, ink, tint } from "./theme.ts";
+import { ChevronIcon } from "./nav/icons.tsx";
+import { Glyph } from "./nav/glyphs.tsx";
 
 /**
  * The floor for anything you tap.
@@ -55,7 +59,10 @@ export function Btn({ label, onPress, tone = "plain", busy, disabled, style }: {
           backgroundColor: face,
           borderWidth: tone === "plain" ? 1 : 0,
           borderColor: C.border,
-          opacity: off ? 0.45 : pressed ? 0.75 : 1,
+          // A press is the face moving under the thumb, not fading: 0.97, the
+          // same everywhere a thing can be pressed.
+          opacity: off ? 0.45 : 1,
+          transform: [{ scale: pressed && !off ? 0.97 : 1 }],
         },
         style,
       ]}
@@ -110,11 +117,17 @@ export const Field = forwardRef<TextInput, {
   );
 });
 
+/**
+ * The name of a block, in sentence case.
+ *
+ * It was 11-point uppercase with letter-spacing — a desk convention, and on a
+ * phone the least legible line on the screen, on the line that says what the
+ * block below is. Now it is the group title's type: 13 points, the second ink,
+ * weight 600, written as the words are written.
+ */
 export function Label({ text }: { text: string }): ReactNode {
   return (
-    <Text style={{
-      color: C.text3, fontSize: T.eyebrow, letterSpacing: 0.8, textTransform: "uppercase",
-    }}>{text}</Text>
+    <Text accessibilityRole="header" style={{ color: C.text2, fontSize: 13, fontWeight: "600" }}>{text}</Text>
   );
 }
 
@@ -337,51 +350,13 @@ export function Segmented<T extends string>({ options, value, onChange, style }:
             >{option.label}</Text>
             {option.count === undefined ? null : (
               <Text style={{
-                color: on ? C.text3 : C.text4, fontSize: T.eyebrow, fontVariant: ["tabular-nums"],
+                color: on ? C.text2 : C.text3, fontSize: T.eyebrow, fontVariant: ["tabular-nums"],
               }}>{option.count}</Text>
             )}
           </Pressable>
         );
       })}
     </View>
-  );
-}
-
-/**
- * The header's title, when the title is also a choice.
- *
- * The repository strip used to be a whole row under the header, and the header
- * above it said "Pull requests" — a word the tab below was already saying. So
- * the row is gone and the name of what you are looking at moved into the space
- * that was spending itself on the category.
- *
- * It is a title first and a control second, which is why it is the header's own
- * type and not a button's: the chevron is the entire affordance, and it is
- * enough because the alternative reading — that this static word opens
- * something — costs one tap to discover and nothing to be wrong about.
- */
-export function HeaderPick({ label, onPress }: { label: string; onPress: () => void }): ReactNode {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={`${label}. Opens the list.`}
-      onPress={onPress}
-      style={({ pressed }) => ({
-        minHeight: TAP,
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: SPACE.xs,
-        paddingHorizontal: SPACE.sm,
-        opacity: pressed ? 0.6 : 1,
-      })}
-    >
-      <Text
-        numberOfLines={1}
-        style={{ color: C.text, fontSize: T.title, fontWeight: "700", maxWidth: 210 }}
-      >{label}</Text>
-      <Text style={{ color: C.text3, fontSize: T.small }}>▾</Text>
-    </Pressable>
   );
 }
 
@@ -497,8 +472,289 @@ export function SheetRow({ label, sub, on, onPress }: {
           a list of twenty without reading every line, and a mark at a fixed
           x-position is what the eye can run down. */}
       {on ? (
-        <Text style={{ color: C.primary, fontSize: T.title, fontWeight: "700" }}>✓</Text>
+        <View style={{
+          width: 12, height: 7, borderLeftWidth: 2.5, borderBottomWidth: 2.5, borderColor: C.primary,
+          transform: [{ rotate: "-45deg" }], marginTop: -3, marginRight: 4,
+        }} />
       ) : null}
     </Pressable>
+  );
+}
+
+/**
+ * A preference that is on or off: the platform's shape, drawn here.
+ *
+ * `Toggle` above is a box on purpose, for choices with no undo. A setting is
+ * the other kind — flipped, looked at, flipped back — and Android people read
+ * a switch as exactly that. Settings drew its one preference as a box beside
+ * a sentence that changed wording with the state ("This phone may buzz" /
+ * "Let this phone buzz"), so the only way to tell on from off was to read it.
+ *
+ * Material 3's geometry: a 52 × 32 track, a 24 thumb carrying a tick when on
+ * and a 16 one when off, and the off track outlined so it is a control and
+ * not a hole in the card. The whole row is the target, so the switch itself
+ * needs no padding of its own.
+ */
+export function Switch({ on, disabled }: { on: boolean; disabled?: boolean }): ReactNode {
+  return (
+    <View
+      style={{
+        width: 52, height: 32, borderRadius: 16, justifyContent: "center",
+        backgroundColor: on ? C.primary : C.bg4,
+        borderWidth: on ? 0 : 2, borderColor: C.text4,
+        opacity: disabled ? 0.45 : 1,
+      }}
+    >
+      <View style={{
+        position: "absolute",
+        left: on ? 24 : 6 - 2,
+        width: on ? 24 : 16, height: on ? 24 : 16, borderRadius: 12,
+        backgroundColor: on ? ink(C.primary) : C.text3,
+        alignItems: "center", justifyContent: "center",
+      }}>
+        {on ? (
+          <View style={{
+            width: 9, height: 5, borderLeftWidth: 2, borderBottomWidth: 2,
+            borderColor: C.primary, transform: [{ rotate: "-45deg" }], marginTop: -2,
+          }} />
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
+/**
+ * A group title: sentence case, above a group, in the second text colour.
+ *
+ * The screens titled their groups in small uppercase (`Label`), which is a
+ * desk convention: at 11 points on a phone it is the least legible line on the
+ * screen, and it is the line that says what the group below is.
+ */
+export function GroupTitle({ text, trailing }: { text: string; trailing?: ReactNode }): ReactNode {
+  return (
+    <View style={{
+      flexDirection: "row", alignItems: "center", gap: SPACE.sm,
+      paddingHorizontal: SPACE.xs, paddingTop: SPACE.md, paddingBottom: SPACE.xs,
+    }}>
+      <Text accessibilityRole="header" style={{ color: C.text2, fontSize: 13, fontWeight: "600", flex: 1 }}>
+        {text}
+      </Text>
+      {trailing}
+    </View>
+  );
+}
+
+/**
+ * Rows that belong together, on one surface with hairlines between them.
+ *
+ * The same argument as `groupEdge`, for rows that are not in a FlatList: one
+ * card with its rows divided, so eight settings read as eight lines of one
+ * thing. The hairline is inset past the leading icon, the way Android draws a
+ * list, so the icons read as a column and the dividers as belonging to the
+ * text.
+ */
+export function Group({ children, inset = SPACE.lg }: { children: ReactNode; inset?: number }): ReactNode {
+  const rows = (Array.isArray(children) ? children : [children]).flat().filter(Boolean);
+  return (
+    <View style={{
+      backgroundColor: C.bg2, borderRadius: RADIUS.lg, borderWidth: 1, borderColor: C.border, overflow: "hidden",
+    }}>
+      {rows.map((row, i) => (
+        <View key={i}>
+          {i > 0 ? <View style={{ height: 1, backgroundColor: C.border, marginLeft: inset }} /> : null}
+          {row}
+        </View>
+      ))}
+    </View>
+  );
+}
+
+/**
+ * One row of a Group: a leading mark, a title with its line under it, and
+ * whatever trails — a value, a switch, or the chevron that says it opens
+ * something. 56 points tall with a line under the title, 48 without: both
+ * over the floor, and the height a list row is on Android.
+ */
+export function Row({ title, sub, lead, trail, chevron, onPress, disabled, tone, checked }: {
+  title: string;
+  /** Set when the row IS a switch: TalkBack then says "switch, on" rather
+   *  than "button", and the trailing Switch is only the drawing of it. */
+  checked?: boolean;
+  sub?: string;
+  lead?: ReactNode;
+  trail?: ReactNode;
+  chevron?: boolean;
+  onPress?: () => void;
+  disabled?: boolean;
+  tone?: "danger";
+}): ReactNode {
+  const body = (pressed: boolean): ReactNode => (
+    <View style={{
+      flexDirection: "row", alignItems: "center", gap: 14,
+      minHeight: sub ? 56 : 48, paddingHorizontal: SPACE.lg, paddingVertical: SPACE.md,
+      backgroundColor: pressed ? C.bg3 : "transparent",
+      opacity: disabled ? 0.45 : 1,
+    }}>
+      {lead}
+      <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+        <Text numberOfLines={1} style={{
+          color: tone === "danger" ? C.error : C.text, fontSize: 15, fontWeight: "500",
+        }}>{title}</Text>
+        {sub ? <Text numberOfLines={2} style={{ color: C.text3, fontSize: T.small, lineHeight: 17 }}>{sub}</Text> : null}
+      </View>
+      {trail}
+      {chevron ? <ChevronIcon color={C.text3} size={18} /> : null}
+    </View>
+  );
+  if (!onPress) return body(false);
+  return (
+    <Pressable
+      accessibilityRole={checked === undefined ? "button" : "switch"}
+      accessibilityState={checked === undefined ? { disabled: !!disabled } : { checked, disabled: !!disabled }}
+      disabled={disabled}
+      onPress={onPress}
+    >
+      {({ pressed }) => body(pressed)}
+    </Pressable>
+  );
+}
+
+export type ChipTone = "neutral" | "accent" | "good" | "warn" | "bad";
+
+/**
+ * A short fact in a pill: "Approved", "2 failed", "bug".
+ *
+ * There were four: an outlined one in the pull requests, a tinted one on the
+ * cards, a label pill on issues and a status pill on the card detail, each
+ * with its own radius and padding. One now, filled with a tint of its tone and
+ * written in the tone itself, so the colour carries the meaning twice and the
+ * word carries it for somebody who cannot see the colour.
+ */
+export function Chip({ label, tone = "neutral", icon }: {
+  label: string;
+  tone?: ChipTone;
+  icon?: ReactNode;
+}): ReactNode {
+  const ink_ = tone === "accent" ? C.primary : tone === "good" ? C.success : tone === "warn" ? C.warning
+    : tone === "bad" ? C.error : C.text2;
+  return (
+    <View style={{
+      flexDirection: "row", alignItems: "center", gap: 4, height: 24, paddingHorizontal: 8,
+      borderRadius: 6, backgroundColor: tone === "neutral" ? C.bg3 : tint(ink_, 0.14), flexShrink: 1,
+    }}>
+      {icon}
+      <Text numberOfLines={1} style={{ color: ink_, fontSize: T.small, fontWeight: "500" }}>{label}</Text>
+    </View>
+  );
+}
+
+/**
+ * A row of filters, scrolled sideways: "All repos", then each repository.
+ *
+ * A scrolling row rather than the full-width `Segmented`, because this list
+ * grows with the machine and a segmented control cannot. The selected one is
+ * filled and ticked, so it is findable without reading every label.
+ */
+export function FilterChips<V extends string>({ options, value, onChange, label }: {
+  options: { id: V; label: string }[];
+  value: V;
+  onChange: (v: V) => void;
+  label: string;
+}): ReactNode {
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      accessibilityLabel={label}
+      contentContainerStyle={{ paddingHorizontal: SPACE.lg, gap: SPACE.sm }}
+      style={{ flexGrow: 0 }}
+    >
+      {options.map((o) => {
+        const on = o.id === value;
+        return (
+          <Pressable
+            key={o.id}
+            accessibilityRole="radio"
+            accessibilityState={{ checked: on }}
+            onPress={() => onChange(o.id)}
+            hitSlop={{ top: 8, bottom: 8 }}
+            style={({ pressed }) => ({
+              flexDirection: "row", alignItems: "center", gap: 6, height: 32,
+              paddingHorizontal: 12, borderRadius: RADIUS.sm,
+              backgroundColor: on ? tint(C.primary, 0.16) : "transparent",
+              borderWidth: 1, borderColor: on ? "transparent" : C.border2,
+              transform: [{ scale: pressed ? 0.97 : 1 }],
+            })}
+          >
+            {on ? (
+              <View style={{
+                width: 9, height: 5, borderLeftWidth: 2, borderBottomWidth: 2, borderColor: C.primary,
+                transform: [{ rotate: "-45deg" }], marginTop: -2,
+              }} />
+            ) : null}
+            <Text style={{ color: on ? C.primary : C.text2, fontSize: 13, fontWeight: on ? "600" : "500" }}>
+              {o.label}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </ScrollView>
+  );
+}
+
+/**
+ * A repository's label, in the colour the repository gave it — as a dot and a
+ * tint behind the name, with the name in the text colour.
+ *
+ * GitHub stores these as six hex digits and no `#`, and some are chosen
+ * against a white page: a label written in its own pale yellow was unreadable
+ * on the dark ground. The colour still says which label it is; the word is
+ * legible whatever the repository picked.
+ */
+export function LabelChip({ name, color }: { name: string; color?: string }): ReactNode {
+  const clean = (color || "").replace(/^#/, "");
+  const hex = /^[0-9a-fA-F]{6}$/.test(clean) ? `#${clean}` : null;
+  return (
+    <View style={{
+      flexDirection: "row", alignItems: "center", gap: 6, height: 24, paddingHorizontal: 8, borderRadius: 6,
+      backgroundColor: hex ? tint(hex, 0.18) : C.bg3,
+    }}>
+      {hex ? <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: hex }} /> : null}
+      <Text numberOfLines={1} style={{ color: C.text, fontSize: T.small, fontWeight: "500" }}>{name}</Text>
+    </View>
+  );
+}
+
+/**
+ * A command to run on the computer, with a button that copies it.
+ *
+ * Selectable and copyable, not runnable. Every command this app shows is for
+ * somebody else's machine (an install, a `gh auth login`) and a phone that
+ * could run one would be a phone that can run anything as whoever owns it.
+ * One component because Troubleshooting and the pull request list both need
+ * it, and two copies of a box are two boxes that stop matching.
+ */
+export function CommandLine({ line }: { line: string }): ReactNode {
+  return (
+    <View style={{
+      flexDirection: "row", alignItems: "center", paddingLeft: SPACE.md,
+      backgroundColor: C.bg, borderRadius: RADIUS.md, borderWidth: 1, borderColor: C.border,
+    }}>
+      <Text selectable style={{ color: C.text, fontSize: T.small, fontFamily: MONO, flex: 1 }}>{line}</Text>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Copy: ${line}`}
+        onPress={() => {
+          void Clipboard.setStringAsync(line);
+          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        }}
+        style={({ pressed }) => ({
+          width: TAP, height: TAP, alignItems: "center", justifyContent: "center",
+          transform: [{ scale: pressed ? 0.97 : 1 }],
+        })}
+      >
+        <Glyph name="copy" color={C.text2} size={18} />
+      </Pressable>
+    </View>
   );
 }

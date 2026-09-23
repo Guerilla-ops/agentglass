@@ -37,7 +37,9 @@ import {
   ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View,
 } from "react-native";
 import * as Haptics from "expo-haptics";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { setStatusBarStyle } from "expo-status-bar";
+import { isDark, setTerminalPalette } from "../../src/nav/barPalette.ts";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ask } from "../../src/lib/api.ts";
 import { useAgentglass } from "../../src/state/host-context.tsx";
@@ -62,7 +64,12 @@ import {
   clearFocusTimer, endsTheLine, focusCapture, liveDetail, scheduleFocus, type FocusTimer,
 } from "../../src/terminal/liveFocus.ts";
 import { onHandoff, takeHandoff } from "../../src/terminal/handoff.ts";
-import { BackIcon, ImageIcon, KeyboardIcon, MicIcon } from "../../src/nav/icons.tsx";
+import { GateCard } from "../../src/terminal/GateCard.tsx";
+import { Glyph } from "../../src/nav/glyphs.tsx";
+import { UsageChip } from "../../src/usage/Usage.tsx";
+import { gatesInOrder } from "../../src/model/gates.ts";
+import { paneFor } from "../../src/model/checkout.ts";
+import { ImageIcon, KeyboardIcon, MicIcon, SettingsIcon } from "../../src/nav/icons.tsx";
 import { since } from "../../src/lib/dates.ts";
 import { canRunAgents } from "../../src/model/scope.ts";
 import type { AgentSessionRow, DeviceScope } from "../../../shared/types.ts";
@@ -117,7 +124,7 @@ interface AgentOffer {
 import { bestSession, readStrip, sessionsOf, type Tab } from "../../src/terminal/tabs.ts";
 import type { PanesResponse } from "../../../shared/types.ts";
 import { Btn, Card, Label, Note, Sheet, SheetRow, TAP, Toggle } from "../../src/ui.tsx";
-import { C, MONO, RADIUS, SPACE, T, ink } from "../../src/theme.ts";
+import { C, MONO, RADIUS, SPACE, T, currentLook, ink } from "../../src/theme.ts";
 
 /**
  * The gate in front of the pane.
@@ -140,62 +147,69 @@ export default function TerminalScreen(): React.ReactNode {
   return <TerminalPane />;
 }
 
-/** What a phone that may not type sees instead of a pane that cannot open. */
+/**
+ * What a phone that may not type sees instead of a pane that cannot open.
+ *
+ * The destination stays in the bar for every pairing, because "what are the
+ * agents doing, and is one waiting on me" is a question every pairing asks. A
+ * phone paired to answer gets the held gates to answer, here; a phone paired
+ * to look is told so, and what would change it.
+ */
 function TerminalRefused({ scope }: { scope: DeviceScope }): React.ReactNode {
   usePaletteTick(); // a scene repaints only if it asks — see use-palette.ts
-  const { fleet } = useAgentglass();
+  const { host, fleet, refresh } = useAgentglass();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const held = fleet.gates.length;
+  const gates = gatesInOrder(fleet.gates);
+  const answers = scope === "answer";
   return (
     <View style={{ flex: 1, backgroundColor: C.bg, paddingTop: insets.top }}>
-      {/* The same back control the pane draws, for the same reason: this
-          screen has no navigator header, and `back` in a tab navigator lands
-          on the Inbox anyway. */}
-      <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: SPACE.xs }}>
+      <View style={{ flexDirection: "row", alignItems: "center", minHeight: 56, paddingLeft: SPACE.lg }}>
+        <Text style={{ color: C.text, fontSize: T.head, fontWeight: "600", flex: 1 }}>Terminal</Text>
         <Pressable
-          onPress={() => router.replace("/")}
+          onPress={() => router.push("/settings")}
           accessibilityRole="button"
-          accessibilityLabel="Back to the inbox"
+          accessibilityLabel="Settings"
           style={({ pressed }) => ({
-            width: 40, minHeight: 44, alignItems: "center", justifyContent: "center",
-            opacity: pressed ? 0.6 : 1,
+            width: TAP, height: TAP, marginRight: SPACE.xs, borderRadius: TAP / 2,
+            alignItems: "center", justifyContent: "center",
+            backgroundColor: pressed ? C.bg3 : "transparent",
           })}
         >
-          <BackIcon color={C.text3} size={20} />
+          <SettingsIcon color={C.text2} size={22} />
         </Pressable>
-        <Text style={{ color: C.text, fontSize: T.body, fontWeight: "700" }}>Terminal</Text>
       </View>
-      <View style={{ padding: SPACE.lg, gap: SPACE.lg }}>
+      <ScrollView contentContainerStyle={{ padding: SPACE.lg, gap: SPACE.lg }}>
         <Card>
-          <Label text="Not on this phone" />
+          <Text style={{ color: C.text, fontSize: T.title, fontWeight: "600" }}>
+            {answers ? "This phone answers agents" : "This phone only looks"}
+          </Text>
           <Note>
-            {scope === "answer"
-              ? "This phone was paired to answer things — approving a held command and replying to a "
-                + "running session. Opening a terminal needs the full grant, which is given at the computer "
-                + "when a phone is paired."
-              : "This phone was paired to look only. Opening a terminal needs the full grant, which is "
-                + "given at the computer when a phone is paired."}
+            {answers
+              ? "It can approve or refuse a held command. Typing into a terminal needs full access, which is "
+                + "chosen at the computer when a phone is paired."
+              : "It can read pull requests, checks, issues and cards. Typing into a terminal or answering an "
+                + "agent needs more access, which is chosen at the computer when a phone is paired."}
           </Note>
         </Card>
-        {/* The door the pane keeps for an `answer` phone stays open here: a
-            held gate is the one thing such a phone is FOR, and the pane was
-            where it was pointed at. */}
-        {held > 0 ? (
-          <Btn
-            label={held === 1 ? "An agent is waiting on you" : `${held} agents are waiting on you`}
-            tone="primary"
-            onPress={() => router.push("/now")}
-          />
+        {answers && host ? (
+          <View style={{ gap: SPACE.sm }}>
+            <Text style={{ color: C.text2, fontSize: T.body, fontWeight: "600" }}>
+              {gates.length ? `Waiting on you · ${gates.length}` : "Nothing is waiting on you"}
+            </Text>
+            {gates.map((gate) => (
+              <GateCard key={gate.id} gate={gate} host={host} colors={C} now={Date.now()} onDone={refresh} />
+            ))}
+          </View>
         ) : null}
-      </View>
+      </ScrollView>
     </View>
   );
 }
 
 function TerminalPane(): React.ReactNode {
   usePaletteTick(); // a scene repaints only if it asks — see use-palette.ts
-  const { host, fleet } = useAgentglass();
+  const { host, fleet, refresh } = useAgentglass();
   const router = useRouter();
   /*
    * The pane is painted by the COMPUTER, so when the computer says which palette
@@ -233,13 +247,39 @@ function TerminalPane(): React.ReactNode {
    */
   const paneBase = desk ? { ...C, ...desk } : C;
   const paneColours = { ...paneBase, primary: C.primary, primaryHover: C.primaryHover };
+  /*
+   * One surface, top to bottom, and this is it.
+   *
+   * The chrome used to wear the PHONE's palette and only the pane the desk's,
+   * so a light phone drew a light header and key bar around a dark pane: a
+   * seam across the screen at the one place the eye goes, and two surfaces
+   * pretending to be one window. Everything this screen draws itself — the
+   * header, the tabs, the held gates, the key bar, the composer — wears the
+   * pane's colours now, and so does the bar under it (see nav/barPalette.ts).
+   * The sheets that rise over it keep the phone's: they are the app's, not the
+   * pane's, and arrive over a scrim.
+   */
+  const K = paneColours;
+  /* The bar under this screen and the status bar over it are the two strips
+     of the same surface this screen does not draw itself. Said on focus and
+     taken back on the way out, because every other destination is the
+     phone's. */
+  const surface = JSON.stringify(K);
+  useFocusEffect(useCallback(() => {
+    setTerminalPalette(K);
+    setStatusBarStyle(isDark(K.bg) ? "light" : "dark");
+    return () => setStatusBarStyle(currentLook().polarity === "dark" ? "light" : "dark");
+    // `surface` is K by value: K is a fresh object on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [surface]));
   const insets = useSafeAreaInsets();
   const terminal = useRef<TerminalHandle>(null);
   /* How many agents are stopped at a gate. Straight off the store's own list
      rather than through the queue's rules: a pending gate IS the fact — the
      hook's request is open and nothing proceeds until somebody answers — and
      it needs no interpretation to be counted. */
-  const held = fleet.gates.length;
+  const gates = gatesInOrder(fleet.gates);
+  const [allGates, setAllGates] = useState(false);
 
   /*
    * The strip itself, and not the pane list it came from.
@@ -594,6 +634,25 @@ function TerminalPane(): React.ReactNode {
   /** The overflow menu, and the past sessions it can offer. Null until asked —
    *  it is a read per checkout and the menu is not opened on the way in. */
   const [more, setMore] = useState(false);
+  /** Every session and window on the machine, opened from the title. */
+  const [sessionsOpen, setSessionsOpen] = useState(false);
+  /*
+   * Arriving FOR a window: "Open in terminal" on a started issue sends the
+   * worktree and the window name. Picked as soon as the strip lists it, and
+   * the request is then dropped, so it cannot pull the selection back later.
+   * Kept while the strip does not have it yet — a window just opened on the
+   * computer is on the next poll, not this one.
+   */
+  const arriving = useLocalSearchParams<{ where?: string; window?: string }>();
+  useEffect(() => {
+    if (!arriving.where || !strip) return;
+    const tab = paneFor(strip, arriving.where, arriving.window);
+    if (!tab) return;
+    setSession(tab.session);
+    setActive(tab.paneId);
+    setWhy(null);
+    router.setParams({ where: undefined, window: undefined });
+  }, [arriving.where, arriving.window, strip, router]);
   const [past, setPast] = useState<AgentSessionRow[] | null>(null);
   useEffect(() => onTermPrefs(() => {
     setBar(keyLayout()); setColumns(termColumns()); setAssist(termAssist());
@@ -1392,7 +1451,7 @@ function TerminalPane(): React.ReactNode {
      * window at the desk too, for as long as the keyboard is up. That is the
      * same bargain `fit` already makes, arriving at a new moment.
      */
-    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: C.bg }} behavior="padding">
+    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: K.bg }} behavior="padding">
       {/* ── the tabs ───────────────────────────────────────────────────── */}
       {/* This screen hides the navigation header so the terminal gets the
           height, and hiding the header also gives up the inset that came with
@@ -1400,72 +1459,67 @@ function TerminalPane(): React.ReactNode {
           its top half untappable. The inset has to be paid here instead. */}
       <View style={{
         paddingTop: insets.top,
-        backgroundColor: C.bg,
-        borderBottomWidth: 1, borderBottomColor: C.border,
+        backgroundColor: K.bg,
+        borderBottomWidth: 1, borderBottomColor: K.border,
       }}>
         {/*
           Where you are, above what you are switching between.
 
-          This bar was empty — a `+` and a `⟳` floating over a strip of pills,
-          with nothing saying which checkout the pane in front of you belongs
-          to. On a phone that is the question you arrive with: there are six
-          windows called `2 AI00` and the only thing that tells them apart is
-          the directory, which was one screen further in.
+          The checkout, as the title: on a phone that is the question you
+          arrive with — there are six windows called `2 AI00` and the only thing
+          that tells them apart is the directory. The line under it is the tmux
+          session and how many windows it has, because a strip that has
+          scrolled shows three of eight and "8 windows" is how you know the
+          other five exist. The whole title opens Sessions: every session and
+          window on the machine, which agent is in which. That sheet replaced a
+          second strip of session names that appeared above the tabs on a
+          machine with more than one, cut in the middle and 32 points tall.
 
-          The count beside it is not decoration either. A strip that has
-          scrolled shows three of eight, and "8 tabs" is how you know the other
-          five exist without dragging to find out.
+          Then the plan, a new window, and the menu for this checkout. The
+          re-read (`⟳`) is gone: the strip is polled, and a machine with nothing
+          open says so with a button of its own.
         */}
         <View style={{
-          flexDirection: "row", alignItems: "center", gap: SPACE.sm,
-          paddingHorizontal: SPACE.xs, paddingTop: SPACE.xs,
+          flexDirection: "row", alignItems: "center", minHeight: 56,
+          paddingLeft: SPACE.xs, paddingRight: SPACE.xs,
         }}>
-          {/*
-            The way out, and it is load-bearing rather than decorative.
-
-            This screen is the one that does not draw the tab bar — see the
-            note in src/nav/TabBar.tsx for why it gives the pane those ninety
-            points. Which means this is the only control on it that leads
-            anywhere, and without it the way back would be Android's own
-            gesture, which on the first tab of a navigator closes the app
-            rather than going anywhere.
-          */}
           <Pressable
-            onPress={() => router.replace("/")}
+            onPress={() => setSessionsOpen(true)}
             accessibilityRole="button"
-            accessibilityLabel="Back to the inbox"
+            accessibilityLabel={`Sessions and windows. Now: ${open ? leafOf(open.where) : "nothing attached"}`}
             style={({ pressed }) => ({
-              width: 40, minHeight: 44, alignItems: "center", justifyContent: "center",
-              opacity: pressed ? 0.6 : 1,
+              flex: 1, minWidth: 0, minHeight: TAP, justifyContent: "center",
+              paddingHorizontal: SPACE.md, borderRadius: RADIUS.md,
+              backgroundColor: pressed ? K.bg3 : "transparent",
             })}
           >
-            <BackIcon color={C.text3} size={20} />
-          </Pressable>
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <Text
-              numberOfLines={1}
-              ellipsizeMode="head"
-              style={{ color: C.text, fontSize: T.body, fontWeight: "700" }}
-            >
-              {/* The leaf, because that is what a person calls a checkout —
-                  the same rule tabs.ts uses for a window's name. The head is
-                  what gets cut when a path is long: the tail is the part that
-                  says which one. */}
-              {open ? (open.where.split("/").filter(Boolean).pop() ?? open.session) : "Terminal"}
-            </Text>
-            <Text numberOfLines={1} style={{ color: C.text4, fontSize: T.eyebrow, fontFamily: MONO }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+              <Text
+                numberOfLines={1}
+                ellipsizeMode="head"
+                style={{ color: K.text, fontSize: T.title, fontWeight: "600", flexShrink: 1 }}
+              >
+                {/* The leaf, because that is what a person calls a checkout —
+                    the same rule tabs.ts uses for a window's name. The head is
+                    what gets cut when a path is long: the tail is the part that
+                    says which one. */}
+                {open ? leafOf(open.where) || open.session : "Terminal"}
+              </Text>
+              <Glyph name="down" color={K.text3} size={18} />
+            </View>
+            <Text numberOfLines={1} style={{ color: K.text3, fontSize: T.small, fontFamily: MONO }}>
               {open
-                ? `${open.session}${tabs.length ? ` · ${tabs.length} ${tabs.length === 1 ? "tab" : "tabs"}` : ""}`
-                : "nothing attached"}
+                ? `${open.session}${tabs.length ? ` · ${tabs.length} ${tabs.length === 1 ? "window" : "windows"}` : ""}`
+                : sessions.length ? `${sessions.length} ${sessions.length === 1 ? "session" : "sessions"}` : "nothing attached"}
             </Text>
-          </View>
+          </Pressable>
+          <UsageChip colors={K} />
           {/*
-            A new tab, with an agent already running in it.
+            A new window, with an agent already running in it.
 
-            Pinned beside the re-read rather than carried at the end of the
-            scroller, and for the reason written on that button: where a control
+            In the header rather than at the end of the strip: where a control
             riding after the last tab SITS depends on how many tabs there are,
-            so with six windows the `+` is off the right-hand edge — and the
+            so with six windows the `+` was off the right-hand edge — and the
             moment somebody wants a seventh is the moment there are six.
 
             Live only while a pane is attached, because the pane is what says
@@ -1477,84 +1531,30 @@ function TerminalPane(): React.ReactNode {
             onPress={() => setPicking(true)}
             disabled={!open || opening}
             accessibilityRole="button"
-            accessibilityLabel="New tab in this project"
-            style={{
-              paddingHorizontal: SPACE.md, minHeight: 44, justifyContent: "center",
-              borderLeftWidth: 1, borderLeftColor: C.border,
-            }}
+            accessibilityLabel={open ? `New window in ${leafOf(open.where)}` : "New window"}
+            accessibilityState={{ disabled: !open || opening, busy: opening }}
+            style={({ pressed }) => ({
+              width: 48, height: 48, alignItems: "center", justifyContent: "center", borderRadius: 24,
+              backgroundColor: pressed ? K.bg3 : "transparent", opacity: !open ? 0.4 : 1,
+            })}
           >
-            <Text style={{
-              color: !open || opening ? C.text4 : C.primary,
-              fontSize: T.title, fontWeight: "700",
-            }}>{opening ? "…" : "+"}</Text>
+            {opening ? <ActivityIndicator color={K.text2} /> : <Glyph name="plus" color={K.text} size={24} />}
           </Pressable>
-          {/* Everything this screen can reach that is not a key or a tab.
-              A menu rather than three more buttons: the header has room for
-              three controls and these are four, and they are all "go and look
-              at something" rather than "do something here". */}
+          {/* Everything this screen can reach that is not a key or a tab, for
+              this checkout: Source control and Files open HERE, the pane's two
+              switches, the agent sessions that ran in it, and the key bar. */}
           <Pressable
             onPress={() => setMore(true)}
             accessibilityRole="button"
-            accessibilityLabel="More, for this checkout"
-            style={{
-              paddingHorizontal: SPACE.md, minHeight: 44, justifyContent: "center",
-              borderLeftWidth: 1, borderLeftColor: C.border,
-            }}
+            accessibilityLabel={open ? `Menu for ${leafOf(open.where)}` : "Menu"}
+            style={({ pressed }) => ({
+              width: 48, height: 48, alignItems: "center", justifyContent: "center", borderRadius: 24,
+              backgroundColor: pressed ? K.bg3 : "transparent",
+            })}
           >
-            <Text style={{ color: C.text4, fontSize: T.title }}>···</Text>
-          </Pressable>
-          <Pressable
-            onPress={() => { void load(); }}
-            accessibilityRole="button"
-            accessibilityLabel="Read the machine's panes again"
-            style={{
-              paddingHorizontal: SPACE.md, minHeight: 44, justifyContent: "center",
-              borderLeftWidth: 1, borderLeftColor: C.border,
-            }}
-          >
-            <Text style={{ color: C.text4, fontSize: T.title }}>⟳</Text>
+            <Glyph name="more" color={K.text} size={22} />
           </Pressable>
         </View>
-        {/* The session, when there is more than one. A machine running four
-            tmux sessions has four strips' worth of windows, and showing them
-            all at once is not a strip anybody reads — the desk has the same
-            problem and solves it with a session picker. */}
-        {sessions.length > 1 ? (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: SPACE.sm, gap: SPACE.xs, paddingBottom: SPACE.xs }}
-          >
-            {sessions.map((name) => {
-              const on = name === session;
-              return (
-                <Pressable
-                  key={name}
-                  onPress={() => {
-                    setSession(name);
-                    setActive(all.find((t) => t.session === name)?.paneId ?? null);
-                  }}
-                  style={{ paddingHorizontal: SPACE.sm, minHeight: 32, justifyContent: "center" }}
-                >
-                  {/* Cut, and cut in the MIDDLE. A session is named after the
-                      thing it is for, and on this machine that is a worktree:
-                      measured, `agentglass-mobile-feat-android-2026` took two
-                      thirds of the strip and pushed the third session off the
-                      right-hand edge — and the tail is where a name shaped like
-                      that says which one of them it is. */}
-                  <Text
-                    numberOfLines={1}
-                    ellipsizeMode="middle"
-                    style={{
-                      color: on ? C.primary : C.text4, fontSize: T.eyebrow, fontFamily: MONO,
-                      fontWeight: on ? "700" : "400", maxWidth: 130,
-                    }}
-                  >{name}</Text>
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-        ) : null}
         {/* Just the tabs. `+` and the re-read moved up to the header, which is
             where the pair of them stop depending on how many tabs there are:
             riding at the end of this scroller put them off the right-hand edge
@@ -1594,7 +1594,7 @@ function TerminalPane(): React.ReactNode {
                     paddingHorizontal: SPACE.md,
                     paddingVertical: SPACE.sm,
                     borderBottomWidth: 2,
-                    borderBottomColor: on ? C.primary : "transparent",
+                    borderBottomColor: on ? K.primary : "transparent",
                     minHeight: 44,
                     justifyContent: "center",
                     flexDirection: "row",
@@ -1608,7 +1608,7 @@ function TerminalPane(): React.ReactNode {
                   <Text
                     numberOfLines={1}
                     style={{
-                      color: on ? C.text : C.text3, fontSize: T.small,
+                      color: on ? K.text : K.text3, fontSize: T.small,
                       fontWeight: on ? "600" : "400", maxWidth: 150,
                     }}
                   >{tab.label}</Text>
@@ -1617,7 +1617,7 @@ function TerminalPane(): React.ReactNode {
                       sits outside the truncated label, because a dot that a
                       long window name can ellipsise away is a dot that says
                       "no agent here" on exactly the tabs that have one. */}
-                  {tab.agent ? <Text style={{ color: C.success, fontSize: T.small }}> ●</Text> : null}
+                  {tab.agent ? <Text style={{ color: K.success, fontSize: T.small }}> ●</Text> : null}
                 </Pressable>
               );
             })}
@@ -1685,43 +1685,55 @@ function TerminalPane(): React.ReactNode {
       </View>
 
       {/*
-        A held gate, and the way to answer it.
+        A held gate, answered here.
 
-        This is the door the Inbox gave up. Approving a command an agent is
-        stopped on is the reason this app exists — it is the only POST a
-        phone paired for "answer" may make — and when agents left the Inbox
-        it was left reachable only from Settings, which is not where anybody
-        would look for it.
+        Approving a command an agent is stopped on is the reason this app
+        exists. This used to be a band that counted the held gates and sent
+        you to the Now screen to answer them, so answering an agent meant
+        leaving it. The card is the answer itself: which window is asking,
+        what it wants to run, Deny and Allow — and a way to that window when it
+        is not the one on screen.
 
-        Here, because this is where agents live now: the star is the one
-        surface that shows what an agent is doing, so it is the one that
-        should say when an agent has stopped and is waiting. It draws only
-        when something is actually held, which is what keeps it a signal —
-        the same rule the two strips below follow.
+        The oldest first, and one at a time unless asked: two cards over a
+        pane leave no pane. It draws only when something is held, which is
+        what keeps it a signal.
       */}
-      {held > 0 ? (
-        <Pressable
-          onPress={() => router.push("/now")}
-          accessibilityRole="button"
-          accessibilityLabel={`${held} ${held === 1 ? "agent is" : "agents are"} waiting on you. Opens the queue.`}
-          style={{
-            flexDirection: "row", alignItems: "center", gap: SPACE.sm,
-            paddingHorizontal: SPACE.lg, paddingVertical: SPACE.sm,
-            backgroundColor: C.bg2, borderTopWidth: 2, borderTopColor: C.error,
-          }}
-        >
-          <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: C.error }} />
-          <Text style={{ color: C.text, fontSize: T.small, fontWeight: "700", flex: 1 }} numberOfLines={1}>
-            {held === 1 ? "An agent is stopped, waiting on you" : `${held} agents are stopped, waiting on you`}
-          </Text>
-          <Text style={{ color: C.primary, fontSize: T.small, fontWeight: "700" }}>Answer</Text>
-        </Pressable>
+      {gates.length > 0 && host ? (
+        <View style={{ paddingHorizontal: SPACE.sm, paddingTop: SPACE.sm, gap: SPACE.sm, backgroundColor: paneColours.bg }}>
+          {(allGates ? gates : gates.slice(0, 1)).map((gate) => {
+            const there = gate.pane ? all.find((t) => t.paneId === gate.pane) : undefined;
+            return (
+              <GateCard
+                key={gate.id}
+                gate={gate}
+                host={host}
+                colors={paneColours}
+                now={Date.now()}
+                onDone={refresh}
+                onOpen={there && there.paneId !== active
+                  ? () => { setSession(there.session); setActive(there.paneId); setWhy(null); }
+                  : undefined}
+              />
+            );
+          })}
+          {gates.length > 1 ? (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setAllGates((v) => !v)}
+              style={{ minHeight: TAP, justifyContent: "center", alignItems: "center" }}
+            >
+              <Text style={{ color: paneColours.primary, fontSize: T.small, fontWeight: "600" }}>
+                {allGates ? "Show one" : `${gates.length - 1} more waiting on you`}
+              </Text>
+            </Pressable>
+          ) : null}
+        </View>
       ) : null}
 
       {/* Said quietly, and only when it is not fine: a status line that is
           always there is one nobody reads when it matters. */}
       {stale ? (
-        <View style={{ paddingHorizontal: SPACE.lg, paddingVertical: SPACE.sm, backgroundColor: C.bg2 }}>
+        <View style={{ paddingHorizontal: SPACE.lg, paddingVertical: SPACE.sm, backgroundColor: K.bg2 }}>
           <Note tone="bad">
             This computer&apos;s agentglass is older than the pane attach, so a tab opens a new
             shell instead of the session that is running. Update it, or pair with one that has it.
@@ -1746,20 +1758,20 @@ function TerminalPane(): React.ReactNode {
       {live && !fit && grid && !following && grid.cols > columns ? (
         <Pressable
           onPress={() => { setFit(true); setTookBack(null); }}
-          style={{ paddingHorizontal: SPACE.lg, paddingVertical: SPACE.sm, backgroundColor: C.bg2 }}
+          style={{ paddingHorizontal: SPACE.lg, paddingVertical: SPACE.sm, backgroundColor: K.bg2 }}
         >
           {/* Who ended the reflow, when it was not the person holding the
               phone. Everything under this line is true either way; this is the
               one thing that is not knowable from here. */}
           {tookBack === open?.paneId ? (
-            <Text style={{ color: C.text2, fontSize: T.eyebrow, marginBottom: SPACE.xs }}>
+            <Text style={{ color: K.text2, fontSize: T.eyebrow, marginBottom: SPACE.xs }}>
               The computer took its width back.
             </Text>
           ) : null}
-          <Text style={{ color: C.text3, fontSize: T.eyebrow }}>
-            This pane is <Text style={{ color: C.text2, fontFamily: MONO }}>{grid.cols}</Text> columns
-            wide and you are seeing <Text style={{ color: C.text2, fontFamily: MONO }}>{columns}</Text>.
-            {" "}<Text style={{ color: C.primary, fontWeight: "700" }}>Tap to reflow it</Text> — this
+          <Text style={{ color: K.text3, fontSize: T.eyebrow }}>
+            This pane is <Text style={{ color: K.text2, fontFamily: MONO }}>{grid.cols}</Text> columns
+            wide and you are seeing <Text style={{ color: K.text2, fontFamily: MONO }}>{columns}</Text>.
+            {" "}<Text style={{ color: K.primary, fontWeight: "700" }}>Tap to reflow it</Text> — this
             window only, put back when you leave.
           </Text>
         </Pressable>
@@ -1799,13 +1811,13 @@ function TerminalPane(): React.ReactNode {
       {live && !fit && following && columns < 80 ? (
         <Pressable
           onPress={() => { setColumns(80); setTermColumns(80); }}
-          style={{ paddingHorizontal: SPACE.lg, paddingVertical: SPACE.sm, backgroundColor: C.bg2 }}
+          style={{ paddingHorizontal: SPACE.lg, paddingVertical: SPACE.sm, backgroundColor: K.bg2 }}
         >
-          <Text style={{ color: C.text3, fontSize: T.eyebrow }}>
+          <Text style={{ color: K.text3, fontSize: T.eyebrow }}>
             Nothing wider is looking at this window, so it is
-            {" "}<Text style={{ color: C.text2, fontFamily: MONO }}>{columns}</Text> columns for the
+            {" "}<Text style={{ color: K.text2, fontFamily: MONO }}>{columns}</Text> columns for the
             computer too — and a split pane gets a share of that.
-            {" "}<Text style={{ color: C.primary, fontWeight: "700" }}>Tap for 80</Text>.
+            {" "}<Text style={{ color: K.primary, fontWeight: "700" }}>Tap for 80</Text>.
           </Text>
         </Pressable>
       ) : null}
@@ -1831,14 +1843,14 @@ function TerminalPane(): React.ReactNode {
           onPress={() => setError(null)}
           accessibilityRole="button"
           accessibilityLabel={`${error}. Tap to dismiss.`}
-          style={{ paddingHorizontal: SPACE.lg, paddingVertical: SPACE.sm, backgroundColor: C.bg2 }}
+          style={{ paddingHorizontal: SPACE.lg, paddingVertical: SPACE.sm, backgroundColor: K.bg2 }}
         >
-          <Text style={{ color: C.error, fontSize: T.eyebrow }}>{error}</Text>
+          <Text style={{ color: K.error, fontSize: T.eyebrow }}>{error}</Text>
         </Pressable>
       ) : null}
       {open && state !== "live" ? (
-        <View style={{ paddingHorizontal: SPACE.lg, paddingVertical: SPACE.xs, backgroundColor: C.bg2 }}>
-          <Text style={{ color: state === "gone" ? C.error : C.text3, fontSize: T.eyebrow }}>
+        <View style={{ paddingHorizontal: SPACE.lg, paddingVertical: SPACE.xs, backgroundColor: K.bg2 }}>
+          <Text style={{ color: state === "gone" ? K.error : K.text3, fontSize: T.eyebrow }}>
             {state === "connecting" ? "Attaching…" : why ?? "Disconnected"}
           </Text>
         </View>
@@ -1855,7 +1867,7 @@ function TerminalPane(): React.ReactNode {
         already accounted for by the time this row exists, and adding it again
         just pushes everything up by the height of a navigation bar.
       */}
-      <View style={{ borderTopWidth: 1, borderTopColor: C.border, backgroundColor: C.bg2 }}>
+      <View style={{ borderTopWidth: 1, borderTopColor: K.border, backgroundColor: K.bg2 }}>
         <View style={{ flexDirection: "row", alignItems: "center" }}>
           <ScrollView
             horizontal
@@ -1937,7 +1949,7 @@ function TerminalPane(): React.ReactNode {
                    * a fourth kind of control.
                    */
                   borderWidth: key.id === "tmuxPrefix" || latch !== "off" ? 1 : 0,
-                  borderColor: C.primary,
+                  borderColor: K.primary,
                   // A key the latch has made unavailable says so by going pale,
                   // rather than by doing nothing when a thumb lands on it.
                   opacity: mute ? 0.35 : 1,
@@ -1946,13 +1958,13 @@ function TerminalPane(): React.ReactNode {
                   // only thing between it and the fold.
                   paddingHorizontal: SPACE.xs,
                   borderRadius: RADIUS.sm,
-                  backgroundColor: pressed || latch === "locked" ? C.bg4 : C.bg3,
+                  backgroundColor: pressed || latch === "locked" ? K.bg4 : K.bg3,
                   alignItems: "center",
                   justifyContent: "center",
                 })}
               >
                 <Text style={{
-                  color: latch === "off" ? C.text2 : C.primary,
+                  color: latch === "off" ? K.text2 : K.primary,
                   fontSize: T.small,
                   fontFamily: MONO,
                 }}>{key.label}</Text>
@@ -2013,9 +2025,9 @@ function TerminalPane(): React.ReactNode {
              * mode is a FIELD: a raised ground inside a hairline, which is what
              * every other field in this app looks like.
              */
-            backgroundColor: raw ? C.bg3 : C.bg2,
+            backgroundColor: raw ? K.bg3 : K.bg2,
             borderWidth: raw ? 0 : 1,
-            borderColor: C.border,
+            borderColor: K.border,
             // The capsule, and the only one on this screen. Pane allows exactly
             // one round thing per screen against everything else being nearly
             // rectangular, and on the terminal this is it: the place you type.
@@ -2048,7 +2060,7 @@ function TerminalPane(): React.ReactNode {
               {/* The glyph is what a border used to do: say what this is. It
                   goes first because it is read first — the words after it are
                   the CONTENT of the button, not its name. */}
-              <KeyboardIcon color={C.text3} size={18} />
+              <KeyboardIcon color={K.text3} size={18} />
               <Text
                 numberOfLines={1}
                 /* From the HEAD, so a long line shows its END. The other way
@@ -2059,7 +2071,7 @@ function TerminalPane(): React.ReactNode {
                   // `text2`, not the placeholder's `text4`. Faint grey on the
                   // left of a rounded box IS the drawing of an empty field —
                   // the one thing this must not look like.
-                  color: keyed.length > 0 ? C.text : C.text2,
+                  color: keyed.length > 0 ? K.text : K.text2,
                   fontSize: T.body,
                   // The line itself is the pane's, so it is mono. The prompt to
                   // press is this app talking, so it is not.
@@ -2086,7 +2098,7 @@ function TerminalPane(): React.ReactNode {
                 // before anybody had typed anything.
                 : mirror ? "The pane's line" : "Write a line"
               : "Nothing is open"}
-            placeholderTextColor={C.text4}
+            placeholderTextColor={K.text4}
             editable={!!open}
             // Putting the phone down hands the line back to the pane, which is
             // the only moment it is safe to: the field is no longer where
@@ -2153,7 +2165,7 @@ function TerminalPane(): React.ReactNode {
                    * job. Absolute so its one point does not sit in the row.
                    */
                   position: "absolute", opacity: 0, width: 1, height: 1,
-                  color: C.text,
+                  color: K.text,
                 }
               : {
                   // TAP, not 40. The key bar's 40 is argued in tap-floor.test.ts
@@ -2165,7 +2177,7 @@ function TerminalPane(): React.ReactNode {
                   // A fixed height rather than a floor and a ceiling:
                   // `minHeight` with `multiline` is what let this grow.
                   flex: 1, height: TAP,
-                  backgroundColor: "transparent", color: C.text,
+                  backgroundColor: "transparent", color: K.text,
                   paddingVertical: 0, paddingRight: SPACE.xs,
                   fontSize: T.body, fontFamily: MONO,
                 }}
@@ -2206,8 +2218,8 @@ function TerminalPane(): React.ReactNode {
             })}
           >
             {sending
-              ? <ActivityIndicator color={C.text3} size="small" />
-              : <ImageIcon color={HARDWARE_READY ? C.text3 : C.text4} size={19} />}
+              ? <ActivityIndicator color={K.text3} size="small" />
+              : <ImageIcon color={HARDWARE_READY ? K.text3 : K.text4} size={19} />}
           </Pressable>
           {/* The microphone, beside the picture, for the same reason: what is
               being said is part of the line being written, not a separate
@@ -2229,14 +2241,14 @@ function TerminalPane(): React.ReactNode {
               // Filled only while it is listening. Inside the pill an idle fill
               // would be a button drawn on top of a field; a live one is the
               // one state on this row that has to be unmissable.
-              backgroundColor: hearing === "listening" ? C.error : "transparent",
+              backgroundColor: hearing === "listening" ? K.error : "transparent",
               opacity: !HARDWARE_READY ? 0.28 : !open ? 0.4 : pressed ? 0.5 : 1,
             })}
           >
             {hearing === "thinking"
-              ? <ActivityIndicator color={C.text3} size="small" />
+              ? <ActivityIndicator color={K.text3} size="small" />
               : <MicIcon
-                  color={hearing === "listening" ? ink(C.error) : HARDWARE_READY ? C.text3 : C.text4}
+                  color={hearing === "listening" ? ink(K.error) : HARDWARE_READY ? K.text3 : K.text4}
                   size={19}
                 />}
           </Pressable>
@@ -2255,10 +2267,10 @@ function TerminalPane(): React.ReactNode {
               alignItems: "center", justifyContent: "center",
               // The only filled thing inside the pill, because it is the only
               // one that DOES something to what has been typed.
-              backgroundColor: canSend ? C.primary : "transparent",
+              backgroundColor: canSend ? K.primary : "transparent",
             }}
           >
-            <Text style={{ color: canSend ? ink(C.primary) : C.text4, fontSize: T.title }}>
+            <Text style={{ color: canSend ? ink(K.primary) : K.text4, fontSize: T.title }}>
               {raw ? "⏎" : "↑"}
             </Text>
           </Pressable>
@@ -2302,7 +2314,10 @@ function TerminalPane(): React.ReactNode {
             <SheetRow
               label="Source control"
               sub="What has changed, the commits, the pull request"
-              onPress={() => { setMore(false); router.push("/repos"); }}
+              onPress={() => {
+                setMore(false);
+                router.push({ pathname: "/repos", params: { root: open.where } });
+              }}
             />
             <SheetRow
               label="Files"
@@ -2378,9 +2393,68 @@ function TerminalPane(): React.ReactNode {
         ) : (
           <Note>Attach to a pane first — these all need to know which checkout.</Note>
         )}
+        {/* The two that are about the app rather than this checkout, last and
+            apart. The key bar's own screen was reachable only from a row deep
+            in Settings, while the bar it edits is on this screen. */}
+        <View style={{ gap: SPACE.xs, paddingBottom: SPACE.md }}>
+          <SheetRow
+            label="Key bar"
+            sub="Which keys sit above the keyboard, and in what order"
+            onPress={() => { setMore(false); router.push("/terminal-settings"); }}
+          />
+          <SheetRow
+            label="Settings"
+            sub="The computer, notifications and appearance"
+            onPress={() => { setMore(false); router.push("/settings"); }}
+          />
+        </View>
       </Sheet>
 
-      <Sheet open={picking} onClose={() => setPicking(false)} title="New tab">
+      {/*
+        Every session and every window, and which agent is where.
+
+        Grouped by tmux session, because that is how the machine groups them
+        and a window's name is only unique inside one. Each row says the
+        checkout it is in, whether an agent is running there, and whether it
+        is the one holding a gate on you — so "which window is asking" is
+        answered before it is opened.
+      */}
+      <Sheet open={sessionsOpen} onClose={() => setSessionsOpen(false)} title="Sessions">
+        {sessions.length === 0 ? (
+          <Note>No tmux session is open on the computer, or none has a client attached.</Note>
+        ) : sessions.map((name) => {
+          const windows = all.filter((t) => t.session === name);
+          return (
+            <View key={name} style={{ paddingBottom: SPACE.md }}>
+              <Text style={{ color: C.text2, fontSize: 13, fontWeight: "600", paddingTop: SPACE.sm }}>
+                {name} · {windows.length} {windows.length === 1 ? "window" : "windows"}
+              </Text>
+              {windows.map((tab) => {
+                const asking = gates.some((g) => g.pane === tab.paneId);
+                return (
+                  <SheetRow
+                    key={tab.paneId}
+                    label={tab.label}
+                    sub={[
+                      leafOf(tab.where),
+                      asking ? "waiting on you" : tab.agent ? "agent running" : "",
+                    ].filter(Boolean).join(" · ")}
+                    on={tab.paneId === active}
+                    onPress={() => {
+                      setSessionsOpen(false);
+                      setSession(name);
+                      setActive(tab.paneId);
+                      setWhy(null);
+                    }}
+                  />
+                );
+              })}
+            </View>
+          );
+        })}
+      </Sheet>
+
+      <Sheet open={picking} onClose={() => setPicking(false)} title="New window">
         {agents === null ? (
           <Note>Asking the computer which agents it has…</Note>
         ) : (
@@ -2407,7 +2481,7 @@ function TerminalPane(): React.ReactNode {
                     <Text style={{ color: C.warning, fontSize: T.small }}>
                       …and skip permission prompts
                     </Text>
-                    <Text style={{ color: C.text4, fontSize: T.eyebrow }}>
+                    <Text style={{ color: C.text3, fontSize: T.eyebrow }}>
                       It will not stop to ask before running a command.
                     </Text>
                   </Pressable>

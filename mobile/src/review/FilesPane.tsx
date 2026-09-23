@@ -71,6 +71,7 @@ import { ThreadMarker } from "./ThreadMarker.tsx";
 import { useThreadActions } from "./useThreadActions.ts";
 import { Btn, Card, Label, Note, Sheet, SheetRow, TAP } from "../ui.tsx";
 import { C, MONO, RADIUS, SPACE, T, tint } from "../theme.ts";
+import { Glyph } from "../nav/glyphs.tsx";
 
 /** The two backgrounds a changed line takes.
  *
@@ -94,7 +95,7 @@ function Context({ from, lines }: { from: number; lines: string[] }): React.Reac
         <View key={from + i} style={{ flexDirection: "row", minHeight: 22 }}>
           <Text style={{
             width: 38, textAlign: "right", paddingRight: SPACE.sm,
-            color: C.text4, fontSize: 10.5, fontFamily: MONO, lineHeight: 20,
+            color: C.text3, fontSize: 10.5, fontFamily: MONO, lineHeight: 20,
           }}>{from + i}</Text>
           <Text style={{ width: 10, fontSize: 10.5, fontFamily: MONO, lineHeight: 20 }}> </Text>
           <Text style={{
@@ -477,7 +478,7 @@ export function FilesPane({ number, root, path, bar = true }: {
         {dir === "down" ? bar : null}
         {failed ? (
           <Text style={{
-            color: C.text4, fontSize: T.eyebrow, paddingHorizontal: SPACE.md, paddingVertical: SPACE.xs,
+            color: C.text3, fontSize: T.eyebrow, paddingHorizontal: SPACE.md, paddingVertical: SPACE.xs,
           }}>{failed}</Text>
         ) : null}
       </>
@@ -511,14 +512,14 @@ export function FilesPane({ number, root, path, bar = true }: {
               look at once. */}
           <Text style={{
             width: 38, textAlign: "right", paddingRight: SPACE.sm,
-            color: C.text4, fontSize: 10.5, fontFamily: MONO, lineHeight: 20,
+            color: C.text3, fontSize: 10.5, fontFamily: MONO, lineHeight: 20,
           }}>{line.newNo ?? line.oldNo ?? ""}</Text>
           <Text style={{
             width: 10, color: face.ink, fontSize: 10.5, fontFamily: MONO, lineHeight: 20,
           }}>{face.mark}</Text>
           <Text
             style={{
-              flex: 1, color: line.kind === "meta" ? C.text4 : C.text2,
+              flex: 1, color: line.kind === "meta" ? C.text3 : C.text2,
               fontSize: 10.5, fontFamily: MONO, lineHeight: 20, paddingRight: SPACE.sm,
             }}
           >
@@ -592,11 +593,14 @@ export function FilesPane({ number, root, path, bar = true }: {
           accessibilityRole="button"
           style={{ flex: 1, minHeight: TAP, justifyContent: "center" }}
         >
-          <Text numberOfLines={1} style={{ color: C.text, fontSize: T.small, fontFamily: MONO }}>
-            {file ? fileLabel(file) : "…"} ▾
-          </Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+            <Text numberOfLines={1} style={{ color: C.text, fontSize: T.small, fontFamily: MONO, flexShrink: 1 }}>
+              {file ? fileLabel(file) : "…"}
+            </Text>
+            <Glyph name="down" color={C.text3} size={16} />
+          </View>
         </Pressable>
-        <Text style={{ color: C.text4, fontSize: T.eyebrow, fontFamily: MONO }}>
+        <Text style={{ color: C.text3, fontSize: T.eyebrow, fontFamily: MONO }}>
           {files.length ? `${at + 1}/${files.length}` : ""}
         </Text>
       </View>
@@ -666,6 +670,18 @@ export function FilesPane({ number, root, path, bar = true }: {
             ) : null}
           </>
         }
+        /* Said once, under the file, because nothing on a diff line looks
+           pressable and it is the only way in: a comment is started by tapping
+           the line. It is a draft until the review goes, which is the other
+           half people ask about after typing one. Removed lines have no
+           new-side number and GitHub will not take a comment on them. */
+        ListFooterComponent={
+          file && !file.binary && file.hunks.length ? (
+            <View style={{ paddingHorizontal: SPACE.lg, paddingTop: SPACE.md }}>
+              <Note>Tap a line to comment on it. It goes with your review, not straight away.</Note>
+            </View>
+          ) : null
+        }
         ListEmptyComponent={
           file && !file.binary && file.hunks.length === 0 ? (
             <View style={{ padding: SPACE.lg }}>
@@ -706,7 +722,7 @@ export function FilesPane({ number, root, path, bar = true }: {
         borderTopWidth: 1, borderTopColor: C.border, backgroundColor: C.bg2,
       }}>
         <Btn
-          label="‹ Previous"
+          label="Previous"
           style={{ flex: 1 }}
           disabled={at === 0}
           onPress={() => { setWriting(null); setAt((n) => Math.max(0, n - 1)); }}
@@ -723,7 +739,7 @@ export function FilesPane({ number, root, path, bar = true }: {
           />
         ) : null}
         <Btn
-          label="Next ›"
+          label="Next"
           style={{ flex: 1 }}
           disabled={at >= files.length - 1}
           onPress={() => { setWriting(null); setAt((n) => Math.min(files.length - 1, n + 1)); }}

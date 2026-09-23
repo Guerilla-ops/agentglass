@@ -31,7 +31,7 @@ export function Hunk({ text }: { text: string }): React.ReactNode {
   return (
     <View style={{ backgroundColor: C.bg, borderRadius: RADIUS.sm, paddingVertical: SPACE.xs }}>
       {clipped ? (
-        <Text style={{ color: C.text4, fontSize: 10, fontFamily: MONO, paddingHorizontal: SPACE.sm }}>⋯</Text>
+        <Text style={{ color: C.text3, fontSize: 10, fontFamily: MONO, paddingHorizontal: SPACE.sm }}>⋯</Text>
       ) : null}
       {shown.map((line, i) => {
         const add = line.startsWith("+");
@@ -94,7 +94,7 @@ export function ThreadCard({ thread, host, actions, where = true, hunk = true, n
           {thread.isResolved ? (
             <Text style={{ color: C.success, fontSize: T.eyebrow }}>resolved</Text>
           ) : thread.isOutdated ? (
-            <Text style={{ color: C.text4, fontSize: T.eyebrow }}>outdated</Text>
+            <Text style={{ color: C.text3, fontSize: T.eyebrow }}>outdated</Text>
           ) : null}
         </View>
       ) : null}
@@ -107,7 +107,7 @@ export function ThreadCard({ thread, host, actions, where = true, hunk = true, n
             <Text style={{ color: C.text, fontSize: T.small, fontWeight: "600" }}>
               {comment.author}{comment.isBot ? " · bot" : ""}
             </Text>
-            <Text style={{ color: C.text4, fontSize: T.eyebrow }}>
+            <Text style={{ color: C.text3, fontSize: T.eyebrow }}>
               {since(comment.createdAt, now)}
             </Text>
           </View>

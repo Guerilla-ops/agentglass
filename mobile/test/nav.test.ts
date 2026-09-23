@@ -14,7 +14,7 @@
 import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { BAR, OFF_BAR, PUSHED, type TabRoute } from "../src/nav/bar.ts";
+import { BAR, OFF_BAR, PUSHED, launchRoute, taskDestinations, type TabRoute } from "../src/nav/bar.ts";
 
 /**
  * How wide each word is, in dp, at the bar's 10px in the weight it is drawn.
@@ -73,41 +73,54 @@ const ITEM_PADDING = 10;
 const slot = (screenDp: number, items: number): number => screenDp / items - ITEM_PADDING;
 
 describe("the bar", () => {
-  test("five destinations, and the star is the middle one", () => {
-    // Centred is a property of an odd count, not of an index: four items with
-    // the star third is not centred, it is off to the right.
-    expect(BAR.length).toBe(5);
-    expect(BAR.length % 2).toBe(1);
-    const star = BAR.findIndex((d) => d.star);
-    expect(star).toBe((BAR.length - 1) / 2);
-    expect(BAR[star]?.route).toBe("terminal");
-    expect(BAR.filter((d) => d.star)).toHaveLength(1);
+  test("four destinations, the terminal first", () => {
+    // First is where the app lands when it has nothing remembered, and the
+    // terminal is what the phone is opened for.
+    expect(BAR.map((d) => d.route)).toEqual(["terminal", "prs", "issues", "tasks"]);
   });
 
-  test("the star carries no label and everything else does", () => {
-    for (const dest of BAR) {
-      if (dest.star) expect(dest.label, `${dest.route} is the star`).toBeUndefined();
-      else expect(dest.label, `${dest.route} has no label`).toBeTruthy();
-    }
+  test("every destination carries a label", () => {
+    // The star that had none is gone with the odd count that centred it.
+    for (const dest of BAR) expect(dest.label, `${dest.route} has no label`).toBeTruthy();
   });
 
   test("every word in it has been measured", () => {
     // The lock. A destination whose label is not in the table above cannot be
     // checked against a slot, so it does not get in until somebody measures it.
     for (const dest of BAR) {
-      if (!dest.label) continue;
       expect(DP_AT_10PX[dest.label], `${dest.label} has not been measured`).toBeGreaterThan(0);
     }
   });
+
+  test("a machine that tracks work nowhere loses Cards and nothing else", () => {
+    expect(taskDestinations(BAR, false).map((d) => d.route)).toEqual(["terminal", "prs", "issues"]);
+    expect(taskDestinations(BAR, null)).toBe(BAR);
+  });
 });
 
-describe("the width that decided there would be five", () => {
+describe("where the app opens", () => {
+  test("where it was left, when that is still offered", () => {
+    expect(launchRoute("prs", BAR)).toBe("prs");
+    expect(launchRoute("tasks", BAR)).toBe("tasks");
+  });
+
+  test("the terminal when nothing was remembered, or it is gone", () => {
+    expect(launchRoute(null, BAR)).toBe("terminal");
+    // Cards remembered on a machine that has since stopped tracking work.
+    expect(launchRoute("tasks", taskDestinations(BAR, false))).toBe("terminal");
+    // A value an older build wrote: the Inbox, which no longer exists.
+    expect(launchRoute("index", BAR)).toBe("terminal");
+    expect(launchRoute("settings", BAR)).toBe("terminal");
+  });
+});
+
+describe("the width that decided the count", () => {
   test("seven did not fit, and the first notch of the text size is what spent it", () => {
     /*
-     * The claim the old layout made, re-derived rather than repeated. "Terminal"
-     * is no longer in the bar as a word, so this is a check on the history: it
-     * is why the bar is the shape it is, and if the numbers stop supporting it
-     * the shape should be argued again rather than inherited.
+     * The claim the old layout made, re-derived rather than repeated. It is a
+     * check on the history — why the bar was cut from seven — and "Terminal"
+     * is the word that decided it then and is the tightest word in it again
+     * now, below.
      */
     const at360 = slot(360, 7);
     expect(at360).toBeCloseTo(41.43, 2);
@@ -122,35 +135,33 @@ describe("the width that decided there would be five", () => {
     expect(terminal * 1.3).toBeGreaterThan(slot(411.4, 7));
   });
 
-  test("five leaves every label room past the top of Android's scale", () => {
+  test("four, at twelve points, still leave every label room near the top of Android's scale", () => {
     /*
-     * Android's text-size setting tops out at 200% for accessibility; 130% is
-     * the last notch of the ordinary slider. The bar is not required to look
-     * good at 200% — very little does — but it must not be the first thing to
-     * break, and the tightest word in it is "Review" on a 360dp phone at 194%.
-     * Everything else has more: 239% on the same phone for "Chats", and every
-     * label clears 227% on the 411dp emulator this was looked at on.
+     * The bar is drawn by hand now (src/nav/TabBar.tsx): each item is an equal
+     * share of the width with no padding of its own, and the labels are 12
+     * points, not the stock 10. So a label's room is screen / 4 and its width
+     * is the 10-point reading above times 1.2.
      *
-     * Nineteen notches of headroom, against the two dp the seven-tab bar had.
+     * The tightest is "Terminal" on a 360dp phone: 90dp against 47.2, which
+     * ellipsises at 191% text size. Android's ordinary slider tops out at 130%.
+     * The readings are at weight 500, which is how the three inactive labels
+     * are drawn; the active one is 600 and was not measured, and the margin
+     * below 191% is what is left for it.
      */
     for (const phone of PHONES) {
-      const room = slot(phone, BAR.length);
+      const room = phone / BAR.length;
       for (const dest of BAR) {
-        if (!dest.label) continue;
-        const width = DP_AT_10PX[dest.label]!;
+        const width = DP_AT_10PX[dest.label]! * 1.2;
         const breaks = room / width;
         expect(breaks,
           `"${dest.label}" on a ${phone}dp phone ellipsises at ${(breaks * 100).toFixed(0)}% text size`)
-          // 1.9 rather than 2.0, because "Review" at 360dp is 1.94 and that is
-          // the measurement rather than a target. Past the ordinary slider's
-          // top notch by half again is what this is guarding.
-          .toBeGreaterThan(1.9);
+          .toBeGreaterThan(1.85);
       }
     }
   });
 });
 
-describe("nothing was deleted to get to five", () => {
+describe("every screen is still reachable", () => {
   const dir = join(import.meta.dir, "..", "app", "(tabs)");
   const routes = readdirSync(dir)
     .filter((f) => /\.tsx$/.test(f) && f !== "_layout.tsx")
@@ -173,15 +184,23 @@ describe("nothing was deleted to get to five", () => {
     //   `review` was DISSOLVED, not folded: it was a wrapper that drew `prs`
     //   and `tasks` behind a segmented control, and both of those are now
     //   destinations in their own right. Nothing it showed is gone.
-    for (const was of ["now", "terminal", "prs", "repos", "tasks", "settings", "issues"]) {
+    //
+    //   `now` was DISSOLVED too. A held gate is answered where the agent is,
+    //   in the terminal (src/terminal/GateCard.tsx), and on the Terminal
+    //   screen of a phone that may answer but not type; the queue's other
+    //   cards were pull requests, which are PRs' own rows.
+    //
+    //   `index` stays as a name and stopped being a screen: it was the Inbox
+    //   and is now the launch route that forwards to the last destination.
+    for (const was of ["index", "terminal", "prs", "repos", "tasks", "settings", "issues"]) {
       expect(routes, `${was} is gone`).toContain(was as TabRoute);
     }
   });
 
-  test("the two that were removed are really gone, not orphaned", () => {
+  test("the three that were removed are really gone, not orphaned", () => {
     // The other direction of the same lock: a deleted screen must not linger
     // as a file nothing points at.
-    for (const gone of ["chats", "review"]) {
+    for (const gone of ["chats", "review", "now"]) {
       expect(routes, `${gone} is still on disk`).not.toContain(gone as TabRoute);
     }
   });
@@ -201,15 +220,12 @@ describe("nothing was deleted to get to five", () => {
       expect(off.from, `${off.route} has no way in`).toMatch(/\S/);
       expect(off.title, `${off.route} has no title`).toMatch(/\S/);
     }
-    // All three off-bar routes are entered and left now. `prs` and `tasks`
-    // used to be here as screens Review drew in place and nothing navigated
-    // to; they are destinations with their own tabs, so the bar returns you
-    // from them and they need no way back of their own.
-    expect([...PUSHED].sort()).toEqual(["now", "repos", "settings"]);
+    // The launch route is not entered: it forwards and is never on screen.
+    expect([...PUSHED].sort()).toEqual(["repos", "settings"]);
   });
 
   test("the two that are entered draw a way back", () => {
-    // The bar can return you to any of its own five. These two it cannot, so
+    // The bar can return you to any of its own four. These two it cannot, so
     // the layout has to — checked in the source because there is no navigator
     // to run here.
     const source = readFileSync(join(dir, "_layout.tsx"), "utf8");
