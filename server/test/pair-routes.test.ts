@@ -235,6 +235,15 @@ describe("what a paired phone can do", () => {
     const res = await fetch(base + "/health");
     expect(JSON.stringify(await res.json())).not.toContain(hostname());
   });
+
+  test("nor by the route that does carry it, asked without one", async () => {
+    // /health is the obvious leak and whoami the likely one: it is the route
+    // the name was added to, so it is the one a refactor of its auth would
+    // open up.
+    const res = await get("/pair/whoami");
+    expect(res.status).toBe(401);
+    expect(JSON.stringify(await res.json())).not.toContain(hostname());
+  });
 });
 
 describe("taking one back", () => {
