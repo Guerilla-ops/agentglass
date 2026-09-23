@@ -44,7 +44,8 @@ import {
   MERGE_LABEL, MERGE_OPTION, allowedMethods, mergeSubject, pickMergeMethod,
   type MergeMethod,
 } from "../../../shared/mergeMethod.ts";
-import { Btn, Card, Chip, Group, Label, Note, Row, Segmented, Sheet, SheetRow, TAP, Toggle } from "../../src/ui.tsx";
+import { Btn, Card, Chip, Group, GroupTitle, Label, Note, Row, Segmented, Sheet, SheetRow, TAP, Toggle } from "../../src/ui.tsx";
+import { mergeObstacles } from "../../src/model/mergeObstacles.ts";
 import { Glyph, type GlyphName } from "../../src/nav/glyphs.tsx";
 import { ChevronIcon } from "../../src/nav/icons.tsx";
 import { C, MONO, RADIUS, SPACE, T, ink } from "../../src/theme.ts";
@@ -416,6 +417,8 @@ export default function PrScreen(): React.ReactNode {
   /* Opened on what the repository would have checked, once — not on every
      render, or a tap on "Rebase" would be undone by the next repaint. */
   const methods = useMemo(() => allowedMethods(detail?.mergePolicy), [detail?.mergePolicy]);
+  /** The parts of a blocked verdict, one row each. See src/model/mergeObstacles.ts. */
+  const obstacles = useMemo(() => (detail ? mergeObstacles(detail) : []), [detail]);
   useEffect(() => {
     if (detail && method === null) setMethod(pickMergeMethod(undefined, detail.mergePolicy));
   }, [detail, method]);
@@ -946,6 +949,31 @@ export default function PrScreen(): React.ReactNode {
                 has already decided to press the button, and this is the last
                 place to tell them the branch is behind. */}
             <Note tone={gate?.blocked ? "bad" : "quiet"}>{gate?.line ?? ""}</Note>
+
+            {/* Then the parts of it, when it is blocked: the line above names
+                the first problem, and a pull request that is red, behind and
+                unreviewed is all three. A failed check opens the logs; the
+                rest are fixed on GitHub or on the branch, and say where. */}
+            {gate?.blocked && obstacles.length ? (
+              <View>
+                <GroupTitle text="What is in the way" />
+                <Group inset={52}>
+                  {obstacles.map((o) => (
+                    <Row
+                      key={o.title}
+                      title={o.title}
+                      sub={o.sub}
+                      lead={<Glyph name={o.tone === "bad" ? "x_circle" : "alert"} color={o.tone === "bad" ? C.error : C.warning} size={22} weight={1.9} />}
+                      chevron={!!o.opens}
+                      onPress={o.opens ? () => {
+                        setMerging(false);
+                        router.push({ pathname: "/pr/checks", params: { number: String(number), root: root ?? "" } });
+                      } : undefined}
+                    />
+                  ))}
+                </Group>
+              </View>
+            ) : null}
 
             {/* Only what the repository permits. A repository that forbids
                 squash used to be offered it anyway, which is a button that
