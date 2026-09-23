@@ -132,8 +132,8 @@ export default function PrScreen(): React.ReactNode {
   const tracked = useTracksWork(host);
 
   const router = useRouter();
-  const { number, root, review, pane: wanted } = useLocalSearchParams<{
-    number: string; root: string; review?: string; pane?: string;
+  const { number, root, review, pane: wanted, ask: asked } = useLocalSearchParams<{
+    number: string; root: string; review?: string; pane?: string; ask?: string;
   }>();
   /*
    * Which pane, and which file it was opened on.
@@ -172,6 +172,15 @@ export default function PrScreen(): React.ReactNode {
   const { detail, error, reload: load } = usePrDetail(host, root ?? "", String(number ?? ""));
 
   const [handing, setHanding] = useState(false);
+  /* `ask=1` opens the Claude menu: Checks sends you back here with it, so a
+     red job is one tap from the recipes rather than a back and a hunt for the
+     bar. Cleared once read, or the menu would reopen on every later visit that
+     happens to carry the same params. Only where `hand` would go anyway. */
+  useEffect(() => {
+    if (asked !== "1") return;
+    router.setParams({ ask: undefined });
+    if (mayWrite) setHanding(true);
+  }, [asked, mayWrite, router]);
   const [allFiles, setAllFiles] = useState(false);
   /* The description folds after six blocks. Six is where this project's own
      template stops being the checklist and starts being the CU reference —

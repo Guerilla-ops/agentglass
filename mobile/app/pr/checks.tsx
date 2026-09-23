@@ -27,7 +27,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from "react-native";
-import { Stack, useLocalSearchParams } from "expo-router";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import type { PrCheckJob } from "../../../shared/types.ts";
 import { ask } from "../../src/lib/api.ts";
 import { byUrgency, looksFailed, ranFor, standingOf, tailOf } from "../../src/model/checkJobs.ts";
@@ -55,7 +55,12 @@ const MARK = { failed: "x_circle", running: "run_circle", fine: "ok_circle" } as
 export default function ChecksScreen(): React.ReactNode {
   usePaletteTick(); // a scene repaints only if it asks — see use-palette.ts
   const { host } = useAgentglass();
+  const router = useRouter();
   const { number, root } = useLocalSearchParams<{ number: string; root: string }>();
+  /* Handing a pull request to Claude opens a terminal, and a terminal needs
+     the full grant: on any other pairing the button is not drawn, the same
+     rule the pull request's own bar keeps. */
+  const mayWrite = host?.scope === "full";
 
   const [jobs, setJobs] = useState<PrCheckJob[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -115,6 +120,24 @@ export default function ChecksScreen(): React.ReactNode {
     void Clipboard.setStringAsync(shown.join("\n"));
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   }, [log, shown]);
+
+  /**
+   * Back to the pull request with its Claude menu open.
+   *
+   * The menu is not rebuilt here. The recipes, the one suggested for this
+   * pull request and the read-back of the prompt all live on that screen, and
+   * a second copy of them is the one that drifts; `ask=1` asks it to open
+   * what it already has. `dismissTo` pops back to the screen underneath
+   * rather than pushing another on top, so back from the terminal still lands
+   * on one pull request and not two.
+   *
+   * "About it" and not "fix it": the recipe a failing pull request of yours
+   * is offered first diagnoses and changes nothing, and a button that
+   * promised a fix would be promising what the prompt tells Claude not to do.
+   */
+  const askClaude = (): void => {
+    router.dismissTo({ pathname: "/pr/[number]", params: { number: String(number), root: root ?? "", ask: "1" } });
+  };
 
   const jobRow = (job: PrCheckJob): React.ReactNode => {
     const { standing } = standingOf(job);
@@ -211,7 +234,12 @@ export default function ChecksScreen(): React.ReactNode {
             paddingHorizontal: SPACE.lg, paddingTop: SPACE.md, paddingBottom: SPACE.lg,
             borderTopWidth: 1, borderTopColor: C.border, backgroundColor: C.bg2,
           }}>
-            <Btn label="All checks" onPress={() => { setOpen(null); setLog(null); setLogErr(null); }} />
+            <View style={{ flexDirection: "row", gap: SPACE.sm }}>
+              <Btn label="All checks" style={{ flex: 1 }} onPress={() => { setOpen(null); setLog(null); setLogErr(null); }} />
+              {mayWrite && standingOf(open).standing === "failed" ? (
+                <Btn label="Ask Claude about it" tone="primary" style={{ flex: 1.4 }} onPress={askClaude} />
+              ) : null}
+            </View>
           </View>
         </>
       ) : (
@@ -274,6 +302,14 @@ export default function ChecksScreen(): React.ReactNode {
           ) : null}
         </ScrollView>
       )}
+      {!open && mayWrite && bands.failed.length ? (
+        <View style={{
+          paddingHorizontal: SPACE.lg, paddingTop: SPACE.md, paddingBottom: SPACE.lg,
+          borderTopWidth: 1, borderTopColor: C.border, backgroundColor: C.bg2,
+        }}>
+          <Btn label={bands.failed.length === 1 ? "Ask Claude about it" : "Ask Claude about them"} tone="primary" onPress={askClaude} />
+        </View>
+      ) : null}
     </View>
   );
 }
