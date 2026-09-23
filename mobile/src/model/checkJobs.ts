@@ -82,3 +82,34 @@ export function tailOf(text: string, limit: number): { lines: string[]; total: n
   if (!total) return { lines: [], total: 0 };
   return { lines: total <= limit ? all : all.slice(-limit), total };
 }
+
+/**
+ * How long a job ran, or has been running: the second line of its row.
+ *
+ * "failed" alone does not say whether it fell over in the install step or
+ * after twelve minutes of tests, and the difference is most of what somebody
+ * needs to guess where in the log to look.
+ */
+export function ranFor(job: PrCheckJob, now: number): string {
+  const span = (ms: number): string => {
+    const s = Math.max(0, Math.round(ms / 1000));
+    if (s < 60) return `${s}s`;
+    const m = Math.floor(s / 60);
+    if (m < 60) return s % 60 ? `${m}m ${s % 60}s` : `${m}m`;
+    return `${Math.floor(m / 60)}h ${m % 60}m`;
+  };
+  const started = job.startedAt ? Date.parse(job.startedAt) : NaN;
+  const ended = job.completedAt ? Date.parse(job.completedAt) : NaN;
+  const { standing, word } = standingOf(job);
+  if (standing === "running") return Number.isFinite(started) ? `Started ${span(now - started)} ago` : word[0]!.toUpperCase() + word.slice(1);
+  // GitHub's conclusion is a noun ("failure"); the row reads as a sentence.
+  const said = word === "failure" ? "failed" : word;
+  const label = said[0]!.toUpperCase() + said.slice(1);
+  return Number.isFinite(started) && Number.isFinite(ended) ? `${label} after ${span(ended - started)}` : label;
+}
+
+/** A log line worth tinting: where it says it failed. Conservative on
+ *  purpose — a tint on every line containing "error" in a path is noise. */
+export function looksFailed(line: string): boolean {
+  return /(^|\s)(✗|✕|×|FAIL\b|FAILED\b)|\b[Ee]rror:|##\[error\]|exited with code [1-9]|^\s*(Expected|Received):/.test(line);
+}

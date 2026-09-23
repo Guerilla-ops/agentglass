@@ -98,7 +98,7 @@ describe("the tab bar and the keyboard", () => {
   /*
    * The third face of the same bug. The bar is a flex sibling of the scene, so
    * a window that resizes carries it up to sit mid-screen over the list (API
-   * 34, which is what he photographed) and a window that does not leaves it
+   * 34, which is what was photographed) and a window that does not leaves it
    * buried under the keys (API 36). React Navigation's own answer,
    * `tabBarHideOnKeyboard`, is read inside ITS BottomTabBar and this app draws
    * its own — so the option is a no-op here and the behaviour has to be in our
@@ -106,20 +106,18 @@ describe("the tab bar and the keyboard", () => {
    */
   const bar = code(readFileSync(join(root, "src/nav/TabBar.tsx"), "utf8"));
 
-  test("the bar draws nothing at all", () => {
+  test("the bar stands down while a keyboard is up", () => {
     /*
-     * It used to stand down while somebody was typing. It stands down always
-     * now — the bar is retired, and every screen carries its own way back (see
-     * the note in src/nav/TabBar.tsx and app/(tabs)/_layout.tsx).
-     *
-     * The lock changes shape rather than going away, and this is the shape that
-     * matters: if anybody brings the bar back, this fails, and the thing they
-     * have to re-read is the paragraph below — which is the whole reason the
-     * keyboard rule existed. A bar restored without it was photographed twice,
-     * once riding up to mid-screen with the star over the list, once buried
-     * under the keys.
+     * It was retired for a while and drew nothing, and this lock said: if the
+     * bar comes back, re-read the paragraph above. It came back, and this is
+     * the paragraph's rule, in the file that has to carry it. Photographed
+     * twice without it: once riding up to mid-screen over the list, once
+     * buried under the keys.
      */
-    expect(bar).toMatch(/return null;\s*\}/);
-    expect(bar).not.toMatch(/<Pressable/);
+    expect(bar).toContain("useKeyboardShown()");
+    expect(bar).toMatch(/if \(typing\) return null;/);
+    // Before anything is drawn: the rule is not a style on a view that is
+    // still laid out.
+    expect(bar.indexOf("if (typing) return null;")).toBeLessThan(bar.indexOf("<Pressable"));
   });
 });

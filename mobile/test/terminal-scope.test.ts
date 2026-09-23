@@ -1,23 +1,21 @@
 /*
- * The terminal is offered only to a phone that may open one.
+ * The terminal opens a pane only for a phone that may type.
  *
  * `/terminal/pty` needs `full` (server/src/auth.ts, FULL_GET). The Inbox
  * listed the Terminal for every pairing and the screen opened the socket for
  * every pairing, so a phone paired for `read` was walked into a pane whose
  * socket the server closed on arrival, and told the connection had been lost.
  *
- * Three claims. The rule (`canRunAgents`) and the list it cuts
- * (`terminalDestinations`) are run. The screens are READ, the way
- * handoff-carries-an-id.test.ts reads them: the Terminal screen decides before
- * the pane mounts, and every hand-off that ends in the terminal checks the
- * scope before it puts a request on the letterbox.
+ * The destination is in the bar for every pairing now, because the Terminal
+ * screen is also where an `answer` phone answers held gates. So the claim moved
+ * from "the list cuts it" to "the screen decides before the pane mounts": the
+ * rule (`canRunAgents`) is run, and the screens are READ, the way
+ * handoff-carries-an-id.test.ts reads them.
  */
 import { describe, expect, test } from "bun:test";
 import type { DeviceScope } from "../../shared/types.ts";
 import { canRunAgents } from "../src/model/scope.ts";
-import { BAR, terminalDestinations, type Destination } from "../src/nav/bar.ts";
-
-const all: Destination[] = [...BAR.filter((d) => d.route !== "index"), { route: "repos", label: "Source control" }];
+import { BAR } from "../src/nav/bar.ts";
 
 describe("canRunAgents", () => {
   test("full, and only full", () => {
@@ -30,23 +28,9 @@ describe("canRunAgents", () => {
   });
 });
 
-describe("terminalDestinations", () => {
-  test("a full phone keeps the star", () => {
-    expect(terminalDestinations(all, "full").map((d) => d.route)).toContain("terminal");
-    expect(terminalDestinations(all, "full")).toBe(all);
-  });
-
-  test("read and answer lose it, and nothing else", () => {
-    for (const scope of ["read", "answer"] as DeviceScope[]) {
-      const routes = terminalDestinations(all, scope).map((d) => d.route);
-      expect(routes, scope).not.toContain("terminal");
-      expect(routes, scope).toEqual(all.map((d) => d.route).filter((r) => r !== "terminal"));
-    }
-  });
-
-  test("unknown is not 'draw it' here — the scope is in hand, not in the air", () => {
-    // The opposite of taskDestinations, on purpose: nothing is being waited for.
-    expect(terminalDestinations(all, undefined).map((d) => d.route)).not.toContain("terminal");
+describe("the bar", () => {
+  test("offers the terminal to every pairing, and the screen decides what it shows", () => {
+    expect(BAR.map((d) => d.route)).toContain("terminal");
   });
 });
 
@@ -66,9 +50,16 @@ describe("the screens, read", () => {
     expect(body).not.toContain("useState");
   });
 
-  test("the Inbox cuts the terminal from its list by scope", async () => {
-    const src = await read("../app/(tabs)/index.tsx");
-    expect(src).toMatch(/terminalDestinations\([\s\S]*?host\?\.scope\)/);
+  test("a phone that may answer gets the held gates where the pane would be", async () => {
+    const src = await read("../app/(tabs)/terminal.tsx");
+    const start = src.indexOf("function TerminalRefused(");
+    const end = src.indexOf("function TerminalPane(");
+    expect(start).toBeGreaterThan(-1);
+    const body = src.slice(start, end);
+    expect(body).toContain('scope === "answer"');
+    expect(body).toContain("<GateCard");
+    // And never the socket.
+    expect(body).not.toContain("TerminalView");
   });
 
   test("every hand-off into the terminal checks the scope first", async () => {

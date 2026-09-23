@@ -50,13 +50,15 @@ const ALLOWED: { file: string; height: number; because: string }[] = [
       + "phone, and the measured trade is written over it: below 40 the seventh "
       + "key goes behind a swipe, which is where Ctrl+C would end up.",
   },
+
   {
-    file: "app/(tabs)/terminal.tsx",
-    height: 32,
+    file: "app/(tabs)/settings.tsx",
+    height: 36,
     because:
-      "the tmux session strip, which appears only on a machine running more "
-      + "than one session and sits above the window tabs — a second row of "
-      + "chrome over a screen whose whole point is the pane below it.",
+      "a value picked on a settings row (Theme, Width), drawn as a pill at the "
+      + "end of a 56-point row where a switch would sit. The pill is 36 so it "
+      + "fits the row with its own padding; each option carries 4 points of "
+      + "hitSlop above and below, so what a thumb can land on is 44.",
   },
   {
     file: "src/review/FilesPane.tsx",

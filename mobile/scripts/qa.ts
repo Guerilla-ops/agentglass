@@ -50,20 +50,21 @@ const SHOTS = join(import.meta.dir, "..", ".qa-shots");
  *  `paneText` and the check in the loop: under `full` a green row there has to
  *  mean characters arrived from a live tmux pane, not that a bar mounted. */
 const ROUTES: { path: string; name: string; expect: RegExp; pane?: boolean }[] = [
-  // Eight: the bar offers five and the other three are still routes. Two names
-  // that were here are not any more, and neither drifted out — Chats was
-  // deleted with the conversation UI, and Review was dissolved into the two
-  // destinations it used to wrap. Both of those are visited on their own below.
-  { path: "/", name: "Inbox", expect: /need you|ready to merge|Needs you|Clear|CI failing/i },
-  { path: "/now", name: "Now", expect: /waiting on you|Nothing is waiting|Empty/i },
+  // Seven: the bar offers four and the other three are routes. Names that were
+  // here and are not did not drift out — Chats was deleted with the
+  // conversation UI, Review was dissolved into the two destinations it
+  // wrapped, and Now into the terminal, where a held gate is answered. `/` was
+  // the Inbox and forwards now, to the last destination or the terminal.
+  { path: "/", name: "Launch", expect: /Terminal|Attaching|Disconnected|Nothing open|only looks|answers agents/i },
   // Not "Esc". That is on the key bar whatever the terminal is doing, and
   // asserting it is how this screen passed three times while showing nothing —
   // the comment saying so has been sitting above the regex that does it. What
   // is asserted here instead is the chrome telling the truth about the state
   // it is in, and, under `full`, the pane itself.
+  // A `read` pairing gets the Terminal screen's own refusal, not a pane.
   { path: "/terminal", name: "Terminal", pane: true,
-    expect: /Attaching|Disconnected|Nothing open|Looking|·p\d|^\s*\d+ /im },
-  { path: "/prs", name: "PRs", expect: /My review|Nothing open|Cannot ask GitHub/i },
+    expect: /Attaching|Disconnected|Nothing open|Looking|only looks|answers agents|·p\d|^\s*\d+ /im },
+  { path: "/prs", name: "PRs", expect: /Review|Nothing open|Can.t ask GitHub/i },
   // The detail is reached with two params and nothing else knows them, so this
   // walks it directly. `#0` is not a pull request anywhere, which is the point:
   // what is asserted is that the screen mounts and SAYS it could not read it,
@@ -77,7 +78,7 @@ const ROUTES: { path: string; name: string; expect: RegExp; pane?: boolean }[] =
   /* Four things it may honestly say, and the third is the one this machine
      shows: no tracker is connected here, so there is no board rather than an
      empty one. The distinction is the point of the state existing. */
-  { path: "/tasks", name: "Cards", expect: /hiding done|Nothing here|No board here|Cannot read the board/i },
+  { path: "/tasks", name: "Cards", expect: /hiding done|Nothing here|No board here|No tracker here|Cannot read the board/i },
   // Both details walked with ids that exist nowhere, for the same reason as
   // the pull request's: what is asserted is that the screen mounts and says it
   // could not read it, rather than rendering a blank.
@@ -133,7 +134,22 @@ async function pair(): Promise<{ origin: string; token: string; scope: string; d
 
   // `read`, deliberately. A QA run walks every screen and must not be able to
   // stage, commit, push or answer a gate on somebody's real machine.
-  const accepted = await (await desk("/pair/accept", { ticket: ticket.id, scope: SCOPE })).json() as unknown;
+  //
+  // With the desk's Origin, which accepting now requires: it is the human half
+  // of pairing and a bare machine token is not proof of one (see
+  // `mayReleaseAHold` in server/src/index.ts). Without it the accept was
+  // refused, collect answered "claimed", and the sweep died before its first
+  // screen. The server's own pair-routes test sends the same header.
+  const acceptRes = await fetch(SERVER + "/pair/accept", {
+    method: "POST",
+    headers: {
+      ...(machine ? { authorization: `Bearer ${machine}` } : {}),
+      "content-type": "application/json",
+      origin: "agentglass://app",
+    },
+    body: JSON.stringify({ ticket: ticket.id, scope: SCOPE }),
+  });
+  const accepted = await acceptRes.json() as unknown;
 
   const got = await (await fetch(
     `${SERVER}/pair/collect?ticket=${encodeURIComponent(ticket.id)}&secret=${encodeURIComponent(claim.secret)}`,

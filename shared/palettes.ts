@@ -104,7 +104,10 @@ export const BASE: Record<Polarity, Palette> = {
 export const PANE: Record<Polarity, Palette> = {
   dark: {
     bg: "#0a0c10", bg2: "#12161d", bg3: "#1a1f27", bg4: "#232833",
-    text: "#e8ecf1", text2: "#a6b0bd", text3: "#7b8593", text4: "#6b7683",
+    // text3 is #838d9a and not #7b8593: at 12 points on bg2 the older grey
+    // measured 4.43:1, under the 4.5 a line of small type needs. text4 is the
+    // disabled ink and is not used for anything somebody has to read.
+    text: "#e8ecf1", text2: "#a6b0bd", text3: "#838d9a", text4: "#6b7683",
     border: "#232833", border2: "#2f3540",
     // Replaced by the chosen accent — see paletteFor. These are what the shipped
     // one resolves to, so a palette read before a choice is made is not blue.
@@ -112,8 +115,11 @@ export const PANE: Record<Polarity, Palette> = {
     success: "#3fb950", warning: "#d9a441", error: "#f0776c", info: "#6aa9f5",
   },
   light: {
-    bg: "#faf9f7", bg2: "#f2f0ed", bg3: "#e8e5e0", bg4: "#dbd7d1",
-    text: "#16181c", text2: "#4a4e56", text3: "#6d727b", text4: "#8b9099",
+    // Cards are white on a warm ground, not a darker warm on a lighter one:
+    // with bg2 below bg the grouped lists read as holes in the page. text3 is
+    // #62676f because #6d727b on the old bg2 measured 4.29:1.
+    bg: "#f4f3f0", bg2: "#ffffff", bg3: "#e8e5e0", bg4: "#dbd7d1",
+    text: "#16181c", text2: "#4a4e56", text3: "#62676f", text4: "#8b9099",
     border: "#e2ded8", border2: "#cdc8c1",
     primary: "#0f9b88", primaryHover: "#0c8071",
     success: "#1a7f4b", warning: "#9a6a00", error: "#c2402f", info: "#1a63c8",
@@ -295,4 +301,46 @@ export function inkOn(face: string): string {
   const dark = (Math.max(l, luminance(INK_DARK)) + 0.05) / (Math.min(l, luminance(INK_DARK)) + 0.05);
   const light = (Math.max(l, luminance(INK_LIGHT)) + 0.05) / (Math.min(l, luminance(INK_LIGHT)) + 0.05);
   return dark >= light ? INK_DARK : INK_LIGHT;
+}
+
+/** The WCAG contrast ratio of two colours. */
+export function contrastRatio(a: string, b: string): number {
+  const la = luminance(a);
+  const lb = luminance(b);
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+
+/** `hex` moved `amount` of the way towards `to`, in sRGB. */
+function mix(hex: string, to: string, amount: number): string {
+  const read = (h: string): number[] => {
+    const n = Number.parseInt(h.replace("#", "").slice(0, 6), 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  };
+  const [a, b] = [read(hex), read(to)];
+  return `#${a.map((c, i) => Math.round(c + (b[i]! - c) * amount).toString(16).padStart(2, "0")).join("")}`;
+}
+
+/**
+ * The phone's palette, with an accent that can be read.
+ *
+ * The accents are the desk's hexes, chosen for the desk's surfaces, and two
+ * failures came from wearing them unchanged on the phone's. On dark, ink on a
+ * violet button measured 4.48:1 — the light member of the pair, #a78bfa, is
+ * 6.96:1 with the same ink. On light it was worse: the accent is also TEXT (a
+ * link, a selected tab, a count), and teal #4dd6c1 on a white card is 1.7:1.
+ *
+ * So the accent is walked, for the phone only: on dark, to the lighter of its
+ * pair when that reads and then towards white; on light, towards black. It
+ * stops at the first shade that is 4.5:1 against both grounds as text and
+ * 4.5:1 under its own ink as a fill. Neutral already is — it is the ink.
+ */
+export function phonePalette(polarity: Polarity, accent: AccentId): Palette {
+  const p = paletteFor(polarity, accent, PANE);
+  const reads = (c: string): boolean =>
+    contrastRatio(c, p.bg) >= 4.5 && contrastRatio(c, p.bg2) >= 4.5 && contrastRatio(inkOn(c), c) >= 4.5;
+  let primary = p.primary;
+  if (!reads(primary) && polarity === "dark" && reads(p.primaryHover)) primary = p.primaryHover;
+  for (let i = 0; i < 40 && !reads(primary); i++) primary = mix(primary, polarity === "dark" ? "#ffffff" : "#000000", 0.05);
+  if (primary === p.primary) return p;
+  return { ...p, primary, primaryHover: mix(primary, polarity === "dark" ? "#ffffff" : "#000000", 0.15) };
 }
