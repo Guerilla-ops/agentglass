@@ -670,6 +670,18 @@ export function FilesPane({ number, root, path, bar = true }: {
             ) : null}
           </>
         }
+        /* Said once, under the file, because nothing on a diff line looks
+           pressable and it is the only way in: a comment is started by tapping
+           the line. It is a draft until the review goes, which is the other
+           half people ask about after typing one. Removed lines have no
+           new-side number and GitHub will not take a comment on them. */
+        ListFooterComponent={
+          file && !file.binary && file.hunks.length ? (
+            <View style={{ paddingHorizontal: SPACE.lg, paddingTop: SPACE.md }}>
+              <Note>Tap a line to comment on it. It goes with your review, not straight away.</Note>
+            </View>
+          ) : null
+        }
         ListEmptyComponent={
           file && !file.binary && file.hunks.length === 0 ? (
             <View style={{ padding: SPACE.lg }}>
