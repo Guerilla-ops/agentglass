@@ -43,6 +43,8 @@ import { hunkChanges, hunkWithoutWhitespace } from "../../lib/diffNoWhitespace.t
 import { useDiffHighlight, HiliteCtx } from "../../lib/diffHighlight.ts";
 import { SplitDiff, UnifiedDiff, SCROLLBAR_CSS, SPLIT_SEL_CSS } from "./DiffLines.tsx";
 import { FileIcon, IconLabel } from "../../lib/glyphIcons.tsx";
+import { agentsOf, subscribeAgents } from "../../lib/fleetAgents.ts";
+import { SHARED_TREE_HINT, SHARED_TREE_TOOLTIP, isSharedCwd, liveSharedCwds } from "../../lib/sharedTree.ts";
 
 /* Storage keys are v3 on purpose: the two before them stored a group-by that no
    longer exists and ticks keyed by an id that no longer exists either. */
@@ -138,6 +140,11 @@ export function DiffPage({ active, onClose }: { active: boolean; onClose?: () =>
   );
   const groups = useMemo(() => groupRows(shown, groupBy), [shown, groupBy]);
   const totals = useMemo(() => totalsOf(shown, reviewed), [shown, reviewed]);
+
+  // Live fleet → which checkouts are shared. Exact repoRoot === cwd for v1.
+  const [, bumpAgents] = useState(0);
+  useEffect(() => subscribeAgents(() => bumpAgents((n) => n + 1)), []);
+  const sharedCwds = useMemo(() => liveSharedCwds(agentsOf()), [bumpAgents]);
 
   // The selection heals to something that is on screen — but only when what it
   // pointed at has actually gone, so a poll cannot move the reader.
@@ -261,7 +268,7 @@ export function DiffPage({ active, onClose }: { active: boolean; onClose?: () =>
             groups={groups} collapsed={collapsed} onToggleSection={toggleSection}
             selKey={selected?.key ?? null} onSelect={setSelKey}
             reviewed={reviewed} onToggleReviewed={toggleReviewed}
-            groupBy={groupBy}
+            groupBy={groupBy} sharedCwds={sharedCwds}
             empty={loading && !rows.length ? "Reading git…"
               : error ? error
               /*
@@ -413,10 +420,18 @@ function Tick({ on }: { on: boolean }) {
   );
 }
 
+
+/** A section is shared when its checkout key matches a live shared cwd (worktree
+ *  group), or when any row in it does (time / folder groups). */
+function sectionShared(g: RowGroup, groupBy: GroupBy, shared: ReadonlySet<string>): boolean {
+  if (groupBy === "worktree") return isSharedCwd(g.key, shared);
+  return g.rows.some((r) => isSharedCwd(r.repoRoot, shared));
+}
+
 /* ── the list ─────────────────────────────────────────────────────────────── */
 
 function List({
-  ref, groups, collapsed, onToggleSection, selKey, onSelect, reviewed, onToggleReviewed, groupBy, empty, notice,
+  ref, groups, collapsed, onToggleSection, selKey, onSelect, reviewed, onToggleReviewed, groupBy, sharedCwds, empty, notice,
 }: {
   ref: React.Ref<HTMLDivElement>;
   groups: RowGroup[];
@@ -427,6 +442,7 @@ function List({
   reviewed: ReadonlySet<string>;
   onToggleReviewed: (r: ChangeRow) => void;
   groupBy: GroupBy;
+  sharedCwds: ReadonlySet<string>;
   /** A node, not a string: when a filter comes from a jump the empty case has
    *  something to OFFER — the other mode, with the filter kept. See `emptyLine`. */
   empty: React.ReactNode;
@@ -459,6 +475,11 @@ function List({
               {" "}<span style={{ color: "var(--error)" }}>−{g.del}</span>
             </span>
           </button>
+          {sectionShared(g, groupBy, sharedCwds) && (
+            <p className="px-3 pb-1 text-[10.5px]" style={{ color: "var(--warning)" }} title={SHARED_TREE_TOOLTIP}>
+              {SHARED_TREE_HINT}
+            </p>
+          )}
           {!collapsed.has(g.key) && (
             <div className="pl-3">
               {g.rows.map((r) => (
