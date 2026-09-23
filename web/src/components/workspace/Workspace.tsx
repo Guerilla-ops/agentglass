@@ -214,7 +214,7 @@ export function Workspace({
               <ViewBoundary label={v.label}>
                 {v.id === "dash"
                   ? dashboard(active)
-                  : <Body id={v.id} active={active} openChat={openChat}
+                  : <Body id={v.id} active={active} openChat={openChat} openChatWith={openChatWith}
                       openBrowser={openBrowser} openLantern={openLantern} chatFocusId={chatFocusId} />}
               </ViewBoundary>
             </ViewBox>
@@ -272,9 +272,10 @@ function ViewBox({ active, children }: { active: boolean; children: React.ReactN
 
 /** The non-dashboard views, and the props each one wants. Split out so the map
  *  above stays about mounting rather than about plumbing. */
-function BodyImpl({ id, active, openChat, openBrowser, openLantern, chatFocusId }: {
+function BodyImpl({ id, active, openChat, openChatWith, openBrowser, openLantern, chatFocusId }: {
   id: ViewId; active: boolean;
   openChat: () => void;
+  openChatWith: (cwd: string, prompt: string, title: string) => void;
   openLantern: () => void;
   /** Bring the browser view forward — the Docker panel asks for it when you
    *  open a container's port, so a dev server lands in a tab of this app
@@ -288,7 +289,7 @@ function BodyImpl({ id, active, openChat, openBrowser, openLantern, chatFocusId 
        can be shown, and the board itself is rendered once, below. */
     case "tasks": return <BoardSlot kind="tasks" place="rail" visible={active} />;
     case "git": return <GitView active={active} onOpenChat={openChat} />;
-    case "diff": return <DiffPage active={active} />;
+    case "diff": return <DiffPage active={active} onOpenChatWith={openChatWith} />;
     case "pr": return <BoardSlot kind="pr" place="rail" visible={active} />;
     case "docker": return <DockerView active={active} onOpenBrowser={openBrowser} />;
     case "term": return <TermView active={active} />;
