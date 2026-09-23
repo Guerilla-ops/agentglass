@@ -142,9 +142,11 @@ export function DiffPage({ active, onClose }: { active: boolean; onClose?: () =>
   const totals = useMemo(() => totalsOf(shown, reviewed), [shown, reviewed]);
 
   // Live fleet → which checkouts are shared. Exact repoRoot === cwd for v1.
-  const [, bumpAgents] = useState(0);
+  // The tick, not the setter: a setter never changes, so a memo keyed on it
+  // computes once and the shared-tree warning never follows the fleet.
+  const [agentsTick, bumpAgents] = useState(0);
   useEffect(() => subscribeAgents(() => bumpAgents((n) => n + 1)), []);
-  const sharedCwds = useMemo(() => liveSharedCwds(agentsOf()), [bumpAgents]);
+  const sharedCwds = useMemo(() => liveSharedCwds(agentsOf()), [agentsTick]);
 
   // The selection heals to something that is on screen — but only when what it
   // pointed at has actually gone, so a poll cannot move the reader.
