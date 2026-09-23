@@ -25,7 +25,7 @@ import type { GitRepoRef, PrSummary } from "../../../shared/types.ts";
 import { ask } from "../../src/lib/api.ts";
 import { useAgentglass } from "../../src/state/host-context.tsx";
 import { usePaletteTick } from "../../src/state/use-palette.ts";
-import { Card, Chip, FilterChips, GroupTitle, Note, Segmented, groupEdge } from "../../src/ui.tsx";
+import { Card, Chip, CommandLine, FilterChips, GroupTitle, Note, Segmented, groupEdge } from "../../src/ui.tsx";
 import { mainCheckouts } from "../../src/model/prRows.ts";
 import { ciLook, flatten, reviewLook, type CiMark, type RepoGroup } from "../../src/model/prLook.ts";
 import { Glyph, type GlyphName } from "../../src/nav/glyphs.tsx";
@@ -279,12 +279,16 @@ export default function PrsScreen(): React.ReactNode {
               <Note tone={failed ? "bad" : "quiet"}>
                 {failed
                   ? (failed.needsAuth
-                    ? "GitHub has not been signed in to on the computer. Run `gh auth login` there."
+                    ? "GitHub has not been signed in to on the computer. Run this there:"
                     : failed.error)
                   : filter === "review"
                     ? "Nobody is waiting on your review."
                     : `No open pull request matches this filter${pick === ALL ? "" : " in this repository"}.`}
               </Note>
+              {/* The fix is one command on the computer, and it is copied
+                  rather than retyped: a phone is where it is read, the
+                  computer is where it is run. */}
+              {failed?.needsAuth ? <CommandLine line="gh auth login" /> : null}
             </Card>
           )
         }

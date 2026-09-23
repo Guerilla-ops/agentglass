@@ -14,8 +14,11 @@ import {
   type StyleProp, type TextStyle, type ViewStyle,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { C, RADIUS, SCRIM, SPACE, T, ink, tint } from "./theme.ts";
+import * as Clipboard from "expo-clipboard";
+import * as Haptics from "expo-haptics";
+import { C, MONO, RADIUS, SCRIM, SPACE, T, ink, tint } from "./theme.ts";
 import { ChevronIcon } from "./nav/icons.tsx";
+import { Glyph } from "./nav/glyphs.tsx";
 
 /**
  * The floor for anything you tap.
@@ -718,6 +721,40 @@ export function LabelChip({ name, color }: { name: string; color?: string }): Re
     }}>
       {hex ? <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: hex }} /> : null}
       <Text numberOfLines={1} style={{ color: C.text, fontSize: T.small, fontWeight: "500" }}>{name}</Text>
+    </View>
+  );
+}
+
+/**
+ * A command to run on the computer, with a button that copies it.
+ *
+ * Selectable and copyable, not runnable. Every command this app shows is for
+ * somebody else's machine (an install, a `gh auth login`) and a phone that
+ * could run one would be a phone that can run anything as whoever owns it.
+ * One component because Troubleshooting and the pull request list both need
+ * it, and two copies of a box are two boxes that stop matching.
+ */
+export function CommandLine({ line }: { line: string }): ReactNode {
+  return (
+    <View style={{
+      flexDirection: "row", alignItems: "center", paddingLeft: SPACE.md,
+      backgroundColor: C.bg, borderRadius: RADIUS.md, borderWidth: 1, borderColor: C.border,
+    }}>
+      <Text selectable style={{ color: C.text, fontSize: T.small, fontFamily: MONO, flex: 1 }}>{line}</Text>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Copy: ${line}`}
+        onPress={() => {
+          void Clipboard.setStringAsync(line);
+          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        }}
+        style={({ pressed }) => ({
+          width: TAP, height: TAP, alignItems: "center", justifyContent: "center",
+          transform: [{ scale: pressed ? 0.97 : 1 }],
+        })}
+      >
+        <Glyph name="copy" color={C.text2} size={18} />
+      </Pressable>
     </View>
   );
 }

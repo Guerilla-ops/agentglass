@@ -30,15 +30,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from "react-native";
 import { Stack } from "expo-router";
-import * as Clipboard from "expo-clipboard";
-import * as Haptics from "expo-haptics";
 import type { DepStatus } from "../../shared/deps.ts";
 import { ask } from "../src/lib/api.ts";
 import { DEP_LOOK, depNeedsAttention, depSummary, type DepTone } from "../src/model/depLook.ts";
 import { useAgentglass } from "../src/state/host-context.tsx";
 import { useComputer } from "../src/state/use-computer.ts";
 import { usePaletteTick } from "../src/state/use-palette.ts";
-import { Chip, Group, GroupTitle, Note, Row, TAP } from "../src/ui.tsx";
+import { Chip, CommandLine, Group, GroupTitle, Note, Row, TAP } from "../src/ui.tsx";
 import { Glyph, type GlyphName } from "../src/nav/glyphs.tsx";
 import { C, MONO, RADIUS, SPACE, T, tint } from "../src/theme.ts";
 
@@ -103,11 +101,6 @@ export default function TroubleshootScreen(): React.ReactNode {
   const summary = depSummary(deps);
   const summaryInk = summary.tone === "good" ? C.success : summary.tone === "warn" ? C.warning : C.error;
 
-  const copy = useCallback((line: string): void => {
-    void Clipboard.setStringAsync(line);
-    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-  }, []);
-
   if (!host) return null;
 
   return (
@@ -164,7 +157,7 @@ export default function TroubleshootScreen(): React.ReactNode {
                 machine missing fourteen optional tools, opening every row was
                 a wall of install lines over the one that mattered. */}
             {[...broken].sort((a, b) => Number(b.required) - Number(a.required)).map((dep) => (
-              <Tool key={dep.id} dep={dep} open={dep.required} onCopy={copy} />
+              <Tool key={dep.id} dep={dep} open={dep.required} />
             ))}
           </Group>
         </>
@@ -176,7 +169,7 @@ export default function TroubleshootScreen(): React.ReactNode {
           {/* Collapsed to the first few. Twenty tools with a paragraph each is a
               wall, and the ones that matter are the broken ones above. */}
           <Group inset={36}>
-            {(allFine ? fine : fine.slice(0, 4)).map((dep) => <Tool key={dep.id} dep={dep} onCopy={copy} />)}
+            {(allFine ? fine : fine.slice(0, 4)).map((dep) => <Tool key={dep.id} dep={dep} />)}
             {!allFine && fine.length > 4 ? (
               <Row title={`${fine.length - 4} more`} lead={<View style={{ width: 8 }} />} chevron onPress={() => setAllFine(true)} />
             ) : null}
@@ -239,10 +232,9 @@ function Banner({ ink, glyph, title, children }: {
 
 /** One tool. Open, it says why this app cares, what is wrong and the line
  *  that installs it; closed, it is a dot, a name and a version. */
-function Tool({ dep, open: startOpen, onCopy }: {
+function Tool({ dep, open: startOpen }: {
   dep: Dep;
   open?: boolean;
-  onCopy: (line: string) => void;
 }): React.ReactNode {
   const [open, setOpen] = useState(!!startOpen);
   const look = DEP_LOOK[dep.status] ?? DEP_LOOK.attention;
@@ -282,29 +274,7 @@ function Tool({ dep, open: startOpen, onCopy }: {
             <Text style={{ color: look.tone === "mute" ? ink : C.warning, fontSize: T.small }}>{dep.detail}</Text>
           ) : null}
           {dep.install ? (
-            <View style={{
-              flexDirection: "row", alignItems: "center", paddingLeft: SPACE.md,
-              backgroundColor: C.bg, borderRadius: RADIUS.md, borderWidth: 1, borderColor: C.border,
-            }}>
-              {/* Selectable and copyable, not runnable. Every remedy here is a
-                  package install on somebody else's computer, and a phone that
-                  could run one would be a phone that can run anything as
-                  whoever owns it. */}
-              <Text selectable style={{ color: C.text, fontSize: T.small, fontFamily: MONO, flex: 1 }}>
-                {dep.install}
-              </Text>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={`Copy: ${dep.install}`}
-                onPress={() => onCopy(dep.install!)}
-                style={({ pressed }) => ({
-                  width: TAP, height: TAP, alignItems: "center", justifyContent: "center",
-                  transform: [{ scale: pressed ? 0.97 : 1 }],
-                })}
-              >
-                <Glyph name="copy" color={C.text2} size={18} />
-              </Pressable>
-            </View>
+            <CommandLine line={dep.install} />
           ) : null}
         </View>
       ) : null}
