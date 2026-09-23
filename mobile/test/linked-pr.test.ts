@@ -41,6 +41,14 @@ describe("paneFor", () => {
   test("its directory, when the window was renamed", () => {
     expect(paneFor(tabs, "/w/orbit-wt/i231", "gone")?.label).toBe("2 i231");
   });
+  test("the worktree's own window before one in a folder under it, whatever the order", () => {
+    const shuffled = [tabs[2]!, tabs[0]!, tabs[1]!];
+    expect(paneFor(shuffled, "/w/orbit-wt/i231", "gone")?.label).toBe("2 i231");
+    expect(paneFor(shuffled, "/w/orbit-wt/i231/", undefined)?.label).toBe("2 i231");
+  });
+  test("a folder under it, when that is all there is", () => {
+    expect(paneFor([tabs[0]!, tabs[2]!], "/w/orbit-wt/i231", "gone")?.label).toBe("3 build");
+  });
   test("nothing, when the strip does not have it yet", () => {
     expect(paneFor(tabs, "/w/lantern", "i41")).toBeNull();
   });

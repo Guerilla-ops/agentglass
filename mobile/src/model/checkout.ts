@@ -27,19 +27,20 @@ export function checkoutFor(where: string, roots: string[]): string {
  * "Open in terminal" on a started issue carries the worktree it was started in
  * and the window name it was given (`i231`). The name wins when a tab carries
  * it — two windows can sit in one worktree — and the directory is the fallback,
- * the deepest match, for a window somebody has since renamed.
+ * for a window somebody has since renamed: a tab in the worktree itself before
+ * one in a folder under it, whatever order the tabs come in. The first match
+ * used to win, so a shell left in `src/` could be picked over the agent's own
+ * window at the root because it had the lower index.
  */
 export function paneFor<T extends { label: string; where: string }>(
   tabs: T[], where: string, window?: string,
 ): T | null {
-  const inside = (t: T): boolean => {
-    const w = t.where.replace(/\/+$/, "");
-    const p = where.replace(/\/+$/, "");
-    return w === p || w.startsWith(p + "/");
-  };
+  const p = where.replace(/\/+$/, "");
+  const at = (t: T): boolean => t.where.replace(/\/+$/, "") === p;
+  const inside = (t: T): boolean => at(t) || t.where.replace(/\/+$/, "").startsWith(p + "/");
   const named = window
     ? tabs.find((t) => inside(t) && t.label.split(/\s+/).slice(1).join(" ").split("·")[0] === window)
       ?? tabs.find((t) => t.label.split(/\s+/).slice(1).join(" ").split("·")[0] === window)
     : undefined;
-  return named ?? tabs.find(inside) ?? null;
+  return named ?? tabs.find(at) ?? tabs.find(inside) ?? null;
 }
