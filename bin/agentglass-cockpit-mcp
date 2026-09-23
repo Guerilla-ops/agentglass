@@ -1,0 +1,420 @@
+#!/usr/bin/env python3
+"""agentglass cockpit, as a read-only MCP server.
+
+Gives an agent a schema-bound way to ask the cockpit what the cockpit already
+knows about that agent's own session — spend, tokens — without discovering the
+REST surface by hand.
+
+WHY THIS SHAPE. Issue #296: the agent producing the telemetry cannot see it, so
+it cannot moderate itself. The REST routes exist; MCP is the discovery and
+schema layer. Read-only to start.
+
+WHY NOT AN SDK. server/ keeps one runtime dependency on purpose. The browser
+MCP already speaks JSON-RPC over stdio in stdlib Python; this follows that
+pattern and adds no package to server/.
+
+WHY ONE TOOL FIRST. Maintainer review bar on #296: one tool end to end, with
+the response-size ceiling in it, before the rest of the set.
+
+    claude mcp add agentglass-cockpit -- agentglass-cockpit-mcp
+
+Environment:
+    AGENTGLASS_SERVER   default http://localhost:4000
+    AGENTGLASS_TOKEN    only needed if the server was started with one
+"""
+from __future__ import annotations
+
+import json
+import os
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+
+
+def _server_or_die(url: str) -> str:
+    """Where the Bearer token goes. Plain http only to loopback — same rule as
+    agentglass-browser-mcp — so a mis-set AGENTGLASS_SERVER cannot leak the
+    token across the network in the clear."""
+    import ipaddress
+    from urllib.parse import urlsplit
+
+    u = urlsplit(url)
+    host = (u.hostname or "").lower()
+    if u.scheme == "https" and host:
+        return url
+    if u.scheme == "http" and host:
+        loop = host == "localhost"
+        if not loop:
+            try:
+                loop = ipaddress.ip_address(host).is_loopback
+            except ValueError:
+                loop = False
+        if loop:
+            return url
+        print(
+            f"agentglass: refusing plain http to {host}: the token would travel "
+            f"in the clear. Use https://, or http:// only to localhost/127.0.0.1/::1 "
+            f"(AGENTGLASS_SERVER={url})",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+    print(
+        f"agentglass: AGENTGLASS_SERVER must be https://<host> or http://<loopback>, got {url!r}",
+        file=sys.stderr,
+    )
+    sys.exit(2)
+
+
+SERVER = _server_or_die(os.environ.get("AGENTGLASS_SERVER", "http://localhost:4000").rstrip("/"))
+PROTOCOL = "2025-06-18"
+NAME = "agentglass-cockpit"
+VERSION = "0.1.0"
+
+# Soft ceiling for a tool result's JSON text. Large enough for a spend summary;
+# small enough that a runaway session detail cannot flood the model's context.
+# When a payload would exceed this, return a smaller well-formed object and name
+# what was dropped — never mid-string truncation.
+DEFAULT_MAX_BYTES = 12_288
+
+
+def http_get(path: str, query: dict | None = None, timeout: float = 30.0) -> dict:
+    """One GET against the local cockpit. Failures come back as objects, not
+    stack traces on stdout (stdout is the MCP transport)."""
+    q = urllib.parse.urlencode({k: v for k, v in (query or {}).items() if v is not None and v != ""})
+    url = f"{SERVER}{path}" + (f"?{q}" if q else "")
+    req = urllib.request.Request(
+        url,
+        method="GET",
+        headers={
+            "Accept": "application/json",
+            # Same-origin signal the server already accepts from local CLIs.
+            "Origin": SERVER,
+        },
+    )
+    token = os.environ.get("AGENTGLASS_TOKEN")
+    if token:
+        req.add_header("Authorization", f"Bearer {token}")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            raw = r.read() or b"{}"
+            return json.loads(raw)
+    except urllib.error.HTTPError as e:
+        try:
+            body = json.loads(e.read() or b"{}")
+        except json.JSONDecodeError:
+            body = {}
+        if isinstance(body, dict) and body.get("error"):
+            return {"ok": False, "error": str(body["error"]), "status": e.code}
+        return {"ok": False, "error": f"server said {e.code}", "status": e.code}
+    except urllib.error.URLError as e:
+        return {"ok": False, "error": f"no agentglass at {SERVER} ({e.reason})"}
+    except json.JSONDecodeError:
+        return {"ok": False, "error": "server returned non-JSON"}
+
+
+def bounded_json(obj: dict, max_bytes: int = DEFAULT_MAX_BYTES) -> dict:
+    """Enforce the #296 size ceiling.
+
+    If ``obj`` serialises under ``max_bytes``, return it with truncated=False.
+    Otherwise drop optional keys in a fixed order, record them in ``omitted``,
+    and set truncated=True. Core spend fields are kept until last resort so the
+    model still gets a usable answer it can narrow from.
+    """
+    if max_bytes < 64:
+        max_bytes = 64
+
+    def size_of(o: dict) -> int:
+        return len(json.dumps(o, separators=(",", ":"), default=str).encode("utf-8"))
+
+    out = dict(obj)
+    out.setdefault("truncated", False)
+    out.setdefault("omitted", [])
+    if size_of(out) <= max_bytes:
+        return out
+
+    # Drop heaviest / least-essential first. Order is the product decision:
+    # teach the model what to ask for next, don't silently amputate a number.
+    drop_order = (
+        "tool_mix",
+        "subagents",
+        "summary",
+        "models",
+        "by_model",
+        "project_path",
+        "cwd_path",
+        "title",
+        "source_app",
+        "model_name",
+        "events",
+        "tools",
+        "errors",
+        "window",
+    )
+    omitted: list[str] = list(out.get("omitted") or [])
+    for key in drop_order:
+        if key not in out:
+            continue
+        omitted.append(key)
+        del out[key]
+        out["truncated"] = True
+        out["omitted"] = omitted
+        if size_of(out) <= max_bytes:
+            return out
+
+    # Last resort: keep only the spend core + ceiling metadata.
+    core_keys = (
+        "ok",
+        "session_id",
+        "cost_usd",
+        "tokens",
+        "truncated",
+        "omitted",
+        "error",
+        "hint",
+    )
+    slim = {k: out[k] for k in core_keys if k in out}
+    for k in out:
+        if k not in slim and k not in omitted:
+            omitted.append(k)
+    slim["truncated"] = True
+    slim["omitted"] = omitted
+    # If even the core is somehow oversized (pathological session_id), shrink text fields.
+    if size_of(slim) > max_bytes and isinstance(slim.get("session_id"), str):
+        slim["session_id"] = slim["session_id"][:64]
+        if "session_id:clipped" not in omitted:
+            omitted.append("session_id:clipped")
+        slim["omitted"] = omitted
+    return slim
+
+
+def resolve_session_id(explicit: str | None) -> str | None:
+    if explicit:
+        return explicit.strip() or None
+    for key in (
+        "AGENTGLASS_SESSION_ID",
+        "CLAUDE_SESSION_ID",
+        "CLAUDE_CODE_SESSION_ID",
+        "CODEX_SESSION_ID",
+    ):
+        v = os.environ.get(key)
+        if v and v.strip():
+            return v.strip()
+    return None
+
+
+def session_spend(args: dict) -> dict:
+    """Read-only spend snapshot for one session (issue #296 first tool)."""
+    session_id = resolve_session_id(args.get("session_id"))
+    try:
+        max_bytes = int(args.get("max_bytes") or DEFAULT_MAX_BYTES)
+    except (TypeError, ValueError):
+        # An answer the model can correct, not a traceback that ends the server.
+        return {"ok": False, "error": "max_bytes must be an integer", "truncated": False, "omitted": []}
+    if max_bytes < 256:
+        max_bytes = 256
+    if max_bytes > 64_000:
+        max_bytes = 64_000
+
+    if not session_id:
+        return bounded_json(
+            {
+                "ok": False,
+                "error": "session_id is required (pass it, or set AGENTGLASS_SESSION_ID / CLAUDE_CODE_SESSION_ID)",
+                "hint": "call again with session_id set to the cockpit session you want spend for",
+                "truncated": False,
+                "omitted": [],
+            },
+            max_bytes,
+        )
+
+    detail = http_get("/session", {"id": session_id})
+    if detail.get("ok") is False or detail.get("error"):
+        return bounded_json(
+            {
+                "ok": False,
+                "session_id": session_id,
+                "error": detail.get("error") or "session not found",
+                "truncated": False,
+                "omitted": [],
+            },
+            max_bytes,
+        )
+    if not detail.get("session_id") and not detail.get("cost_usd") and detail.get("error"):
+        return bounded_json(
+            {
+                "ok": False,
+                "session_id": session_id,
+                "error": str(detail.get("error")),
+                "truncated": False,
+                "omitted": [],
+            },
+            max_bytes,
+        )
+    # /session returns 404 JSON {error:"not found"} with no session_id.
+    if detail.get("error") == "not found" or (
+        "session_id" not in detail and "cost_usd" not in detail and "input_tokens" not in detail
+    ):
+        return bounded_json(
+            {
+                "ok": False,
+                "session_id": session_id,
+                "error": detail.get("error") or "session not found",
+                "truncated": False,
+                "omitted": [],
+            },
+            max_bytes,
+        )
+
+    tokens = {
+        "input": int(detail.get("input_tokens") or 0),
+        "output": int(detail.get("output_tokens") or 0),
+    }
+    # Present when the server exposes them; omit quietly when not.
+    for src, dst in (
+        ("cache_creation_tokens", "cache_creation"),
+        ("cache_read_tokens", "cache_read"),
+        ("equiv_tokens", "equiv"),
+    ):
+        if detail.get(src) is not None:
+            tokens[dst] = int(detail.get(src) or 0)
+
+    title = detail.get("custom_title") or detail.get("ai_title") or detail.get("first_prompt")
+
+    payload = {
+        "ok": True,
+        "session_id": detail.get("session_id") or session_id,
+        "title": title,
+        "source_app": detail.get("source_app"),
+        "model_name": detail.get("model_name"),
+        "project_path": detail.get("project_path"),
+        "cwd_path": detail.get("cwd_path"),
+        "cost_usd": float(detail.get("cost_usd") or 0),
+        "tokens": tokens,
+        "events": int(detail.get("events") or 0),
+        "tools": int(detail.get("tools") or 0),
+        "errors": int(detail.get("errors") or 0),
+        "tool_mix": detail.get("tool_mix") or [],
+        "subagents": detail.get("subagents") or [],
+        "summary": detail.get("summary"),
+        "truncated": False,
+        "omitted": [],
+    }
+    return bounded_json(payload, max_bytes)
+
+
+TOOLS = [
+    {
+        "name": "cockpit_session_spend",
+        "description": (
+            "Read-only: how much the cockpit records for one agent session — "
+            "USD spend, token breakdown, tool/error counts. Use this to moderate "
+            "your own behaviour (e.g. stop burning budget). "
+            "Responses are size-capped; if truncated=true, omitted lists fields "
+            "that were dropped so you can narrow the next call. "
+            "Pass session_id, or rely on AGENTGLASS_SESSION_ID / CLAUDE_CODE_SESSION_ID."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "Cockpit session id. Optional if set in the environment.",
+                },
+                "max_bytes": {
+                    "type": "integer",
+                    "description": (
+                        f"Soft JSON size ceiling for the response (default {DEFAULT_MAX_BYTES}). "
+                        "When exceeded, returns a smaller well-formed object with truncated=true."
+                    ),
+                    "minimum": 256,
+                    "maximum": 64000,
+                },
+            },
+            "additionalProperties": False,
+        },
+    },
+]
+
+
+def run(name: str, args: dict) -> dict:
+    if name == "cockpit_session_spend":
+        result = session_spend(args if isinstance(args, dict) else {})
+        return {
+            "content": [{"type": "text", "text": json.dumps(result, default=str)}],
+            "isError": not result.get("ok", False),
+        }
+    return {
+        "content": [{"type": "text", "text": json.dumps({"ok": False, "error": f"unknown tool: {name}"})}],
+        "isError": True,
+    }
+
+
+def reply(msg_id, result=None, error=None):
+    out = {"jsonrpc": "2.0", "id": msg_id}
+    if error is not None:
+        out["error"] = error
+    else:
+        out["result"] = result
+    sys.stdout.write(json.dumps(out) + "\n")
+    sys.stdout.flush()
+
+
+def handle(method, msg_id, msg: dict) -> None:
+    if method == "initialize":
+        reply(
+            msg_id,
+            {
+                "protocolVersion": PROTOCOL,
+                "capabilities": {"tools": {}},
+                "serverInfo": {"name": NAME, "version": VERSION},
+                "instructions": (
+                    "Read-only agentglass cockpit. Start with cockpit_session_spend "
+                    "to see what the current session has cost. Respect truncated=true: "
+                    "fields in omitted were dropped for size — ask more narrowly next."
+                ),
+            },
+        )
+    elif method == "tools/list":
+        reply(msg_id, {"tools": TOOLS})
+    elif method == "tools/call":
+        params = msg.get("params")
+        params = params if isinstance(params, dict) else {}
+        reply(msg_id, run(params.get("name", ""), params.get("arguments") or {}))
+    elif method == "ping":
+        reply(msg_id, {})
+    else:
+        reply(msg_id, error={"code": -32601, "message": f"method not found: {method}"})
+
+
+def main() -> int:
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            msg = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        # A batch or a bare value has no id to answer; skipping it keeps the
+        # server up, where `.get` on a list ended the process and the tool
+        # with it until the client restarted it.
+        if not isinstance(msg, dict):
+            continue
+        method = msg.get("method")
+        msg_id = msg.get("id")
+        # Notifications have no id and must not be answered.
+        if msg_id is None:
+            continue
+        try:
+            handle(method, msg_id, msg)
+        except Exception as e:  # noqa: BLE001 — one bad call must not end the server
+            reply(msg_id, error={"code": -32603, "message": f"internal error: {type(e).__name__}"})
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except (BrokenPipeError, KeyboardInterrupt):
+        sys.exit(0)
