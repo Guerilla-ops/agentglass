@@ -70,7 +70,17 @@ const MODES = [
 ] as const;
 type Mode = (typeof MODES)[number]["key"];
 
-export function SearchModal({ open, onClose, onSelectApp }: { open: boolean; onClose: () => void; onSelectApp?: (app: string) => void }) {
+export function SearchModal({
+  open, onClose, onSelectApp, windowMs, provider,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onSelectApp?: (app: string) => void;
+  /** Cockpit time window (ms). Fleet search clips to Date.now() - windowMs. */
+  windowMs?: number;
+  /** Selected provider chip; empty/undefined = all providers. */
+  provider?: string;
+}) {
   const [q, setQ] = useState("");
   const [mode, setMode] = useState<Mode>("fleet");
   const [hits, setHits] = useState<SearchHit[] | null>(null);
@@ -94,7 +104,11 @@ export function SearchModal({ open, onClose, onSelectApp }: { open: boolean; onC
       if (!q.trim()) { setHits(null); setLoading(false); return; }
       setLoading(true);
       timer.current = setTimeout(() => {
-        api.search(q).then((r) => { setHits(r.hits); setLoading(false); }).catch(() => { setHits([]); setLoading(false); });
+        const opts = {
+          since: windowMs != null && windowMs > 0 ? Date.now() - windowMs : undefined,
+          provider: provider || undefined,
+        };
+        api.search(q, opts).then((r) => { setHits(r.hits); setLoading(false); }).catch(() => { setHits([]); setLoading(false); });
       }, 220);
     } else if (repo && q.trim()) {
       setLoading(true); setGErr("");
@@ -110,7 +124,7 @@ export function SearchModal({ open, onClose, onSelectApp }: { open: boolean; onC
       }, 220);
     } else { setCommits(null); setGreps(null); setGErr(""); setLoading(false); }
     return () => { if (timer.current) clearTimeout(timer.current); };
-  }, [q, mode, repo]);
+  }, [q, mode, repo, windowMs, provider]);
 
   /** Open a commit's diff, or a working-tree file's diff when it exists. */
   const openDiff = async (root: string, hash: string, subject: string) => {
@@ -173,7 +187,7 @@ export function SearchModal({ open, onClose, onSelectApp }: { open: boolean; onC
                   {gErr && <div className="t-dim2 text-center py-10 text-[12px]" style={{ color: "var(--error)" }}>{gErr}</div>}
                   {mode === "fleet" && (
                     <>
-                      {hits === null && <div className="t-dim2 text-center py-14 text-[12px]">Search every event ever captured — 12k+ prompts, commands and outputs.</div>}
+                      {hits === null && <div className="t-dim2 text-center py-14 text-[12px]">Search the fleet in the current window — prompts, commands, outputs, errors…</div>}
                       {hits && hits.length === 0 && !loading && <div className="t-dim2 text-center py-14 text-[12px]">Nothing matches “{q}”</div>}
                       {hits && hits.map((h) => {
                         const f = friendly({ hook_event_type: h.hook_event_type } as any);

@@ -877,7 +877,12 @@ const realApi = {
    *  send to this without interrupting it" — see server/src/chat.ts. */
   chatActive: () => get<{ ids: string[] }>(`/chat/active`),
   insights: () => get<{ insights: Insight[] }>(`/insights`),
-  search: (q: string) => get<{ hits: SearchHit[] }>(`/search?q=${encodeURIComponent(q)}`),
+  search: (q: string, opts?: { since?: number; provider?: string }) => {
+    const p = new URLSearchParams({ q });
+    if (opts?.since != null && Number.isFinite(opts.since)) p.set("since", String(opts.since));
+    if (opts?.provider) p.set("provider", opts.provider);
+    return get<{ hits: SearchHit[] }>(`/search?${p}`);
+  },
   gatePending: () => get<{ gates: PendingGate[] }>(`/gate/pending`),
   gateHistory: (limit = 25) => get<{ gates: GateRecord[] }>(`/gate/history?limit=${limit}`),
   // Unscoped, unlike every other metric call: "who merged that" is at its most
@@ -2090,7 +2095,7 @@ const demoApi: typeof realApi = {
   // Nothing spawns anything in the demo, so nothing is ever mid-turn.
   chatActive: () => D({ ids: [] as string[] }),
   insights: () => D(demo.insights()),
-  search: (q: string) => D(demo.search(q)),
+  search: (q: string, opts?: { since?: number; provider?: string }) => D(demo.search(q, opts)),
   gatePending: () => D(demo.gatePending()),
   gateHistory: () => D({ gates: [] as GateRecord[] }),
   actions: () => D(demo.actions()),
