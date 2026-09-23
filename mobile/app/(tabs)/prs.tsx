@@ -18,7 +18,7 @@
  * the checks as chips, with the size; and whose it is, how old, and its
  * number. The words and tones are decided in model/prLook.ts.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FlatList, Pressable, RefreshControl, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import type { GitRepoRef, PrSummary } from "../../../shared/types.ts";
@@ -173,12 +173,19 @@ export default function PrsScreen(): React.ReactNode {
     [repos, pick],
   );
 
+  /* Which read is the latest. A tap on a chip or a filter starts a new read
+     while the last one may still be out, and eight repositories answer in
+     whatever order GitHub does: without this, a slow answer to the filter you
+     left could land after the one you are on and paint the wrong list. */
+  const asked = useRef(0);
   const load = useCallback(async (): Promise<void> => {
     if (!host || !shown.length) return;
+    const mine = ++asked.current;
     const answers = await Promise.all(shown.map(async (repo) => ({
       repo,
       answer: await ask<PrList>(host, `/prs/list?root=${encodeURIComponent(repo.root)}&filter=${filter}&state=open`),
     })));
+    if (mine !== asked.current) return;
     const good = answers.filter((a) => a.answer.ok && a.answer.value.ok);
     // Said only when NOTHING answered: one repository without a GitHub remote
     // among eight is not a reason to hide the other seven.

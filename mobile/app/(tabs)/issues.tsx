@@ -17,7 +17,7 @@
  * on the detail, so the row uses what it has — an assignee is the cheapest
  * honest proxy for it.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FlatList, Pressable, RefreshControl, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import type { GitRepoRef, IssueRow, IssuesReport } from "../../../shared/types.ts";
@@ -111,13 +111,20 @@ export default function IssuesScreen(): React.ReactNode {
     [repos, pick],
   );
 
+  /* Which read is the latest. A tap on a chip or a filter starts a new read
+     while the last one may still be out, and eight repositories answer in
+     whatever order GitHub does: without this, a slow answer to the filter you
+     left could land after the one you are on and paint the wrong list. */
+  const asked = useRef(0);
   const load = useCallback(async (): Promise<void> => {
     if (!host || !shown.length) return;
+    const mine = ++asked.current;
     const query = filter === "mine" ? "&assignee=%40me&state=open" : filter === "all" ? "&state=all" : "&state=open";
     const answers = await Promise.all(shown.map(async (repo) => ({
       repo,
       answer: await ask<IssuesReport>(host, `/issues/list?root=${encodeURIComponent(repo.root)}${query}`),
     })));
+    if (mine !== asked.current) return;
     const good = answers.filter((a) => a.answer.ok && a.answer.value.ok);
     // Said only when NOTHING answered: one repository without a GitHub remote
     // among eight is not a reason to hide the other seven.
