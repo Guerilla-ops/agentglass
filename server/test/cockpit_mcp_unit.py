@@ -10,6 +10,7 @@ import sys
 import threading
 import types
 import unittest
+from unittest import mock
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -140,7 +141,12 @@ class SessionSpendHttpTests(unittest.TestCase):
         self.assertTrue(any(h.startswith("/session?") for h in self.hits))
 
     def test_spend_missing_session(self):
-        out = self.m.session_spend({})
+        # The id falls back to the environment, and a suite run from inside an
+        # agent session has one: without clearing it this asked for that
+        # session instead of reporting the missing argument.
+        ids = ("AGENTGLASS_SESSION_ID", "CLAUDE_SESSION_ID", "CLAUDE_CODE_SESSION_ID", "CODEX_SESSION_ID")
+        with mock.patch.dict(os.environ, {k: "" for k in ids}):
+            out = self.m.session_spend({})
         self.assertFalse(out["ok"])
         self.assertIn("session_id", out["error"])
 
