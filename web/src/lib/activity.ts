@@ -58,6 +58,9 @@ export function gateLine(g: GateRecord): { verb: string; note: string } {
   const did = g.decision === "deny" ? "denied" : "approved";
   if (g.resolution === "human") return { verb: did, note: "" };
   const passive = g.decision === "deny" ? "denied" : "allowed";
+  // A rule decided on purpose — not "nobody looked". Past tense matches human.
+  if (g.resolution === "rule")
+    return { verb: did, note: "matched a tool allow/deny rule" };
   if (g.resolution === "restart")
     return { verb: passive, note: "the window closed while the server was down — nobody saw this" };
   return { verb: passive, note: "nobody answered before the timeout" };

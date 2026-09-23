@@ -696,7 +696,8 @@ export function actionLog(limit = 200, before?: number): ActionRow[] {
 // the queue and every outcome — including the ones nobody decided — has a row.
 //
 // `decision` NULL means still pending. `resolution` records *who* decided:
-// human, timeout, or restart (expired while the server was down).
+// human, timeout, restart (expired while the server was down), or rule
+// (a tool allow/deny policy that answered without waiting).
 /**
  * What survives the prune.
  *
@@ -1633,10 +1634,10 @@ export interface GateRow {
   expires: number;
   decision: "allow" | "deny" | null;
   reason: string | null;
-  resolution: "human" | "timeout" | "restart" | null;
+  resolution: "human" | "timeout" | "restart" | "rule" | null;
   decided_at: number | null;
-  /** Who, when a person decided. NULL for a timeout, a restart, and for every
-   *  row written before this column existed — an absent actor is not `local`. */
+  /** Who, when a person decided. NULL for a timeout, a restart, a rule, and for
+   *  every row written before this column existed — an absent actor is not `local`. */
   decided_by: string | null;
 }
 
@@ -1668,7 +1669,7 @@ export function resolveGateRow(
   id: string,
   decision: "allow" | "deny",
   reason: string,
-  resolution: "human" | "timeout" | "restart",
+  resolution: "human" | "timeout" | "restart" | "rule",
   decided_at = Date.now(),
   /** Only ever set for a human. The clock is not an actor. */
   decided_by: string | null = null,

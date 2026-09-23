@@ -6,7 +6,7 @@
 // find. Environment variables still win, so a one-off `AGENTGLASS_…=x bun run`
 // overrides the file without editing it.
 
-import type { Budget } from "../../shared/types.ts";
+import type { Budget, GateToolsPolicy } from "../../shared/types.ts";
 import { existsSync, readFileSync, writeFileSync, mkdirSync, statSync, realpathSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve, dirname, sep, delimiter } from "node:path";
@@ -81,6 +81,8 @@ interface Config {
   /** Spending limits somebody set. See budget.ts. Hand-edited freely like the
    *  rest of this file, so every field is checked on read. */
   budgets?: Budget[];
+  /** Tool allow/deny rules for the gate. See gateTools.ts and #109. */
+  gateTools?: GateToolsPolicy[];
   /** Projects the picker should stop offering. Absolute paths. See
    *  hiddenProjects(). */
   hiddenProjects?: string[];
@@ -249,6 +251,56 @@ export function hiddenProjects(): string[] {
   for (const p of raw) {
     if (typeof p !== "string" || !p.trim()) continue;
     out.push(resolve(expand(p.trim())));
+  }
+  return out;
+}
+
+/**
+ * Tool allow/deny rules on disk, with anything unusable dropped.
+ *
+ * Same discipline as budgets: this file is hand-edited, and a rule is a *brake*.
+ * A non-array, a row that is not an object, or tool names that are not strings
+ * are skipped and said about — never coerced into something plausible. An empty
+ * allow and an empty deny together is a no-op row and is dropped, so a half-
+ * filled stub cannot change what the gate does.
+ *
+ * `root` expands `~` the same way budgets do. Matching against a session's cwd
+ * is gateTools.ts's job (via inScope), not this reader's.
+ */
+export function readGateTools(): GateToolsPolicy[] {
+  const raw = config().gateTools;
+  if (raw === undefined) return [];
+  if (!Array.isArray(raw)) {
+    console.error(`[config] ignoring "gateTools" in ${configPath()}: expected an array`);
+    return [];
+  }
+  const out: GateToolsPolicy[] = [];
+  for (const row of raw) {
+    if (!row || typeof row !== "object" || Array.isArray(row)) continue;
+    const r = row as Partial<GateToolsPolicy>;
+    if (r.allow !== undefined && !Array.isArray(r.allow)) {
+      console.error(`[config] ignoring a gateTools row whose allow is not an array`);
+      continue;
+    }
+    if (r.deny !== undefined && !Array.isArray(r.deny)) {
+      console.error(`[config] ignoring a gateTools row whose deny is not an array`);
+      continue;
+    }
+    const allow = (Array.isArray(r.allow) ? r.allow : [])
+      .filter((t): t is string => typeof t === "string" && !!t.trim())
+      .map((t) => t.trim());
+    const deny = (Array.isArray(r.deny) ? r.deny : [])
+      .filter((t): t is string => typeof t === "string" && !!t.trim())
+      .map((t) => t.trim());
+    if (!allow.length && !deny.length) {
+      console.error(`[config] ignoring a gateTools row with neither allow nor deny`);
+      continue;
+    }
+    out.push({
+      root: typeof r.root === "string" ? expand(r.root) : "",
+      allow,
+      deny,
+    });
   }
   return out;
 }
