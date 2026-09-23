@@ -179,6 +179,12 @@ Prefer a file over env vars? Drop a `~/.config/agentglass/config.json` (or
 matter for a desktop-launched app, which inherits no shell environment and so
 cannot be configured by `export` at all.
 
+`gateTools` is file-only (no env var): an array of `{ root, allow, deny }`
+rules the PreToolUse gate evaluates before asking a human — denylist hard-
+denies, allowlist auto-allows, anything else on a non-empty allowlist soft-
+holds. See [INSTALL.md](INSTALL.md#tool-allowlist--denylist-rule-based-gate).
+`budgets` is the spend side of the same idea (annotates a hold when over).
+
 > **Pricing is a user-editable default.** Numbers in `pricing.ts` are per 1M
 > tokens and matched against `model_name` by substring. Set
 > `AGENTGLASS_PRICING_REFRESH=1` to prefer validated exact-model rates from

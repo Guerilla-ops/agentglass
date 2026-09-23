@@ -366,6 +366,33 @@ an unreachable control plane **denies** instead of allows — the fleet stops
 until you decide. Off by default; turn it on only when blocking is safer than
 proceeding, and remember agentglass being down then blocks every gated call.
 
+### Tool allowlist / denylist (rule-based gate)
+
+Beyond "hold until a human clicks", you can let the gate decide some tools by
+rule. In `~/.config/agentglass/config.json`:
+
+```jsonc
+{
+  "gateTools": [
+    {
+      "root": "",                    // empty = whole machine; or "~/code/prod"
+      "allow": ["Read", "Glob", "Grep", "Edit"],
+      "deny": ["Bash"]
+    }
+  ]
+}
+```
+
+- **deny** — hard deny with a reason, no wait (surfaces only in history)
+- **allow** — auto-allow listed tools (skips the local permission prompt)
+- tool **not** on a non-empty allowlist — soft hold in "What needs you"
+- a deny-only list leaves unlisted tools on the normal human path
+- `root` scopes like a spend budget; longest match wins when several apply
+
+The spend-threshold annotation (over-budget holds) is separate and already
+worked; this is the tool-list half of [#109](https://github.com/SirAllap/agentglass/issues/109).
+Per-project governance beyond this list shape is [#14](https://github.com/SirAllap/agentglass/issues/14).
+
 ---
 
 ## Any provider — Kimi, OpenAI, Gemini, Bedrock, …

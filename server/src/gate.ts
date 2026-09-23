@@ -106,9 +106,9 @@ export const validGateId = (id: unknown): id is string => typeof id === "string"
 function finish(
   id: string,
   out: GateOutcome,
-  resolution: "human" | "timeout" | "restart",
-  /** Who, when a person decided. The timeout path leaves this null on purpose:
-   *  an outcome nobody chose must not arrive carrying an actor. */
+  resolution: "human" | "timeout" | "restart" | "rule",
+  /** Who, when a person decided. The timeout / rule paths leave this null on
+   *  purpose: an outcome nobody chose must not arrive carrying an actor. */
   by: string | null = null,
 ): void {
   const w = waiters.get(id);
@@ -227,12 +227,48 @@ export function submitGate(
 }
 
 /**
- * Re-attach to a request whose connection dropped (a server restart, a proxy
- * hanging up). Returns the recorded outcome if it has already been decided, a
- * promise that resolves when it is if it's still pending, or null when the id
- * is unknown — which the hook must treat as "no answer" rather than as a
- * decision.
+ * Record a gate outcome decided by a tool allow/deny rule, with no human wait.
+ *
+ * The hold path (`submitGate`) is for things a person still has to see. A
+ * denylist hit and an allowlist hit are already answered — putting them in
+ * "What needs you" would only add a card nobody needs to click. They still get
+ * a row in history, with `resolution: "rule"`, so the activity log can say why
+ * the call never appeared in the queue.
+ *
+ * Idempotent on a hook-supplied id: a reconnect that already has an outcome
+ * replays it. The route calls this *before* submitGate, so a still-pending id
+ * is not the expected path; if one exists, the rule finishes it rather than
+ * stranding the waiter.
  */
+export function resolveByRule(
+  req: { source_app: string; session_id: string; tool_name: string; summary: string; id?: string },
+  out: GateOutcome,
+): GateOutcome {
+  if (validGateId(req.id)) {
+    const row = getGate(req.id);
+    if (row?.decision) return { decision: row.decision, reason: row.reason || "" };
+    if (row) {
+      finish(req.id, out, "rule");
+      return out;
+    }
+  }
+  const id = validGateId(req.id) ? req.id! : crypto.randomUUID();
+  const created = Date.now();
+  // expires == created: there is no window to wait out; the decision is now.
+  recordGate({
+    id,
+    source_app: req.source_app,
+    session_id: req.session_id,
+    tool_name: req.tool_name,
+    summary: req.summary,
+    created,
+    expires: created,
+  });
+  resolveGateRow(id, out.decision, out.reason, "rule", created);
+  onChange();
+  return out;
+}
+
 export function awaitGate(id: string): Promise<GateOutcome> | GateOutcome | null {
   if (!validGateId(id)) return null;
   const w = waiters.get(id);

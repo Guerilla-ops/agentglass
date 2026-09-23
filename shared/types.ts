@@ -744,14 +744,15 @@ export interface PendingGate {
 }
 
 /** A gate request that has been resolved. `resolution` is who resolved it:
- *  a human from the dashboard, the timeout, or a restart that found the window
- *  already closed. The last one is why this record exists — an outcome nobody
- *  chose is exactly the one that must not disappear. */
+ *  a human from the dashboard, the timeout, a restart that found the window
+ *  already closed, or a tool allow/deny rule that decided without waiting. The
+ *  ones nobody chose are why this record exists — an outcome that must not
+ *  disappear. */
 export interface GateRecord extends PendingGate {
   expires: number;
   decision: "allow" | "deny";
   reason: string | null;
-  resolution: "human" | "timeout" | "restart" | null;
+  resolution: "human" | "timeout" | "restart" | "rule" | null;
   decided_at: number | null;
   /** *Which* human — a paired device's name, or the address the answer came
    *  from. NULL when nobody decided: a timeout is not an actor, and neither is
@@ -3683,6 +3684,27 @@ export interface AgentProbe extends KnownAgent {
 
 /** How often a budget resets. Calendar periods, not trailing windows — the
  *  reset is what makes a number feel like a budget rather than an average. */
+/**
+ * A tool allow/deny rule for the gate (#109).
+ *
+ * Evaluated when a PreToolUse hook POSTs /gate — before a human is asked. A
+ * denylist entry hard-denies; an allowlist auto-allows listed tools and soft-
+ * holds anything else (surfaces in What needs you). Empty lists mean "no rule
+ * of that kind". `root` scopes like a budget: empty is the whole machine.
+ *
+ * Deliberately a flat array rather than the per-root `policies` map proposed
+ * in #14: same longest-root matching, room to grow into that shape later,
+ * without boiling the broader governance work.
+ */
+export interface GateToolsPolicy {
+  /** Project root this applies to. Empty means the whole machine. */
+  root: string;
+  /** Tools that may proceed without a human. Non-empty → anything else holds. */
+  allow: string[];
+  /** Tools that are denied outright, with a reason, without waiting. */
+  deny: string[];
+}
+
 export type BudgetPeriod = "day" | "week" | "month";
 
 /**
