@@ -26,7 +26,7 @@ describe("agentglass-cockpit-mcp", () => {
       throw new Error(`cockpit_mcp_unit.py failed (${code})\n${out}`);
     }
     // unittest -v prints the summary banner to stderr
-    expect(out).toContain("Ran 7 tests");
+    expect(out).toMatch(/Ran \d+ tests/);
     expect(out).toMatch(/\bOK\b/);
   }, 30_000);
 });

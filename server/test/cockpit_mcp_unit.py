@@ -209,6 +209,23 @@ class McpStdioTests(unittest.TestCase):
             self.assertEqual(init["result"]["serverInfo"]["name"], "agentglass-cockpit")
             tools = rpc({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
             self.assertEqual([t["name"] for t in tools["result"]["tools"]], ["cockpit_session_spend"])
+            # Neither a bad argument nor a line that is not an object may end
+            # the process: both used to raise, and the agent lost the tool.
+            p.stdin.write("[1]\n")
+            p.stdin.flush()
+            bad = rpc(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 4,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "cockpit_session_spend",
+                        "arguments": {"session_id": "sess-1", "max_bytes": "big"},
+                    },
+                }
+            )
+            self.assertEqual(bad["id"], 4)
+            self.assertTrue(bad["result"]["isError"])
             called = rpc(
                 {
                     "jsonrpc": "2.0",

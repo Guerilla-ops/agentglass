@@ -206,7 +206,11 @@ def resolve_session_id(explicit: str | None) -> str | None:
 def session_spend(args: dict) -> dict:
     """Read-only spend snapshot for one session (issue #296 first tool)."""
     session_id = resolve_session_id(args.get("session_id"))
-    max_bytes = int(args.get("max_bytes") or DEFAULT_MAX_BYTES)
+    try:
+        max_bytes = int(args.get("max_bytes") or DEFAULT_MAX_BYTES)
+    except (TypeError, ValueError):
+        # An answer the model can correct, not a traceback that ends the server.
+        return {"ok": False, "error": "max_bytes must be an integer", "truncated": False, "omitted": []}
     if max_bytes < 256:
         max_bytes = 256
     if max_bytes > 64_000:
@@ -356,6 +360,33 @@ def reply(msg_id, result=None, error=None):
     sys.stdout.flush()
 
 
+def handle(method, msg_id, msg: dict) -> None:
+    if method == "initialize":
+        reply(
+            msg_id,
+            {
+                "protocolVersion": PROTOCOL,
+                "capabilities": {"tools": {}},
+                "serverInfo": {"name": NAME, "version": VERSION},
+                "instructions": (
+                    "Read-only agentglass cockpit. Start with cockpit_session_spend "
+                    "to see what the current session has cost. Respect truncated=true: "
+                    "fields in omitted were dropped for size — ask more narrowly next."
+                ),
+            },
+        )
+    elif method == "tools/list":
+        reply(msg_id, {"tools": TOOLS})
+    elif method == "tools/call":
+        params = msg.get("params")
+        params = params if isinstance(params, dict) else {}
+        reply(msg_id, run(params.get("name", ""), params.get("arguments") or {}))
+    elif method == "ping":
+        reply(msg_id, {})
+    else:
+        reply(msg_id, error={"code": -32601, "message": f"method not found: {method}"})
+
+
 def main() -> int:
     for line in sys.stdin:
         line = line.strip()
@@ -365,34 +396,20 @@ def main() -> int:
             msg = json.loads(line)
         except json.JSONDecodeError:
             continue
+        # A batch or a bare value has no id to answer; skipping it keeps the
+        # server up, where `.get` on a list ended the process and the tool
+        # with it until the client restarted it.
+        if not isinstance(msg, dict):
+            continue
         method = msg.get("method")
         msg_id = msg.get("id")
         # Notifications have no id and must not be answered.
         if msg_id is None:
             continue
-        if method == "initialize":
-            reply(
-                msg_id,
-                {
-                    "protocolVersion": PROTOCOL,
-                    "capabilities": {"tools": {}},
-                    "serverInfo": {"name": NAME, "version": VERSION},
-                    "instructions": (
-                        "Read-only agentglass cockpit. Start with cockpit_session_spend "
-                        "to see what the current session has cost. Respect truncated=true: "
-                        "fields in omitted were dropped for size — ask more narrowly next."
-                    ),
-                },
-            )
-        elif method == "tools/list":
-            reply(msg_id, {"tools": TOOLS})
-        elif method == "tools/call":
-            params = msg.get("params") or {}
-            reply(msg_id, run(params.get("name", ""), params.get("arguments") or {}))
-        elif method == "ping":
-            reply(msg_id, {})
-        else:
-            reply(msg_id, error={"code": -32601, "message": f"method not found: {method}"})
+        try:
+            handle(method, msg_id, msg)
+        except Exception as e:  # noqa: BLE001 — one bad call must not end the server
+            reply(msg_id, error={"code": -32603, "message": f"internal error: {type(e).__name__}"})
     return 0
 
 
