@@ -46,7 +46,7 @@ export interface PaneRow {
 
 /** Process names the agent CLIs run under. `comm` is capped at 15 chars by the
  *  kernel, so these are compared whole against what /proc actually reports. */
-const AGENT_COMMS = new Set(["claude", "codex", "gemini", "amp", "opencode", "crush", "antigravity"]);
+const AGENT_COMMS = new Set(["claude", "codex", "gemini", "amp", "opencode", "crush", "antigravity", "hermes"]);
 
 /** How far down a pane's tree to look. A shell, a wrapper or two, the agent —
  *  deeper than that and we are walking somebody's build. */

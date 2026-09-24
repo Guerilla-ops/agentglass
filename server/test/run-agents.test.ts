@@ -281,6 +281,16 @@ describe("the default path, when nobody names an agent", () => {
     expect(launch.launchArgv("codex", CODEX, { prompt: "", yolo: false, title: "" })).toEqual([CODEX]);
   });
 
+  test("starts Hermes as an interactive chat, not a one-shot positional", () => {
+    // `hermes <prompt>` is parsed as a subcommand name. The interactive form
+    // is `hermes chat -q`, which is the same argv the phone menu builds.
+    const req = { prompt: "compare these", yolo: true, title: "" };
+    expect(launch.launchArgv("hermes", "/bin/hermes", req))
+      .toEqual(["/bin/hermes", "chat", "--yolo", "-q", "compare these"]);
+    expect(launch.launchArgv("hermes", "/bin/hermes", { prompt: "", yolo: false, title: "" }))
+      .toEqual(["/bin/hermes", "chat"]);
+  });
+
   test("opens nothing rather than a bare binary when there is none", () => {
     for (const id of ["", "claude-code", "codex", "gemini", "antigravity"]) {
       expect(launch.launchArgv(id, null, { prompt: "x", yolo: true, title: "" })).toEqual([]);

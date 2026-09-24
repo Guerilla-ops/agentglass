@@ -12,6 +12,7 @@ import { paneStillAsking } from "./paneScreen.ts";
 import { mergeReplayed } from "./chatReplay.ts";
 import { applyCodexFrame } from "./codexFrames.ts";
 import { applyAntigravityFrame } from "./antigravityFrames.ts";
+import { applyHermesFrame } from "./hermesFrames.ts";
 import type { ChatImage, WatchEvent, ChatEngine, ChatEffort, SessionDetail } from "../../../shared/types.ts";
 
 /** A pasted image waiting in the composer. `url` is an object URL for the
@@ -126,6 +127,7 @@ export {
   AGENTS, asAgent,
   DEFAULT_MODEL, DEFAULT_MODE, DEFAULT_CODEX_MODEL, DEFAULT_CODEX_MODE,
   DEFAULT_ANTIGRAVITY_MODEL, DEFAULT_ANTIGRAVITY_MODE,
+  DEFAULT_HERMES_MODEL, DEFAULT_HERMES_MODE,
 } from "./agents.ts";
 export type { AgentKind, AgentSpec } from "./agents.ts";
 
@@ -459,8 +461,13 @@ async function hydrate(chatId: string, sessionId: string) {
     // somewhere else must not ask Claude's endpoint about it.
     const agent = chats.get(chatId)?.agent ?? "claude";
     if (!AGENTS[agent].hasTranscript) return;
-    const s: { timeline?: SessionDetail["timeline"]; conversation?: SessionDetail["conversation"] } | null =
-      agent === "codex" ? await api.codexTranscript(sessionId) : await api.session(sessionId);
+    // Claude's history is in this app's store. Codex and Hermes keep their own,
+    // and asking Claude's endpoint about either id returns nothing useful.
+    const transcriptFor: Partial<Record<AgentKind, (id: string) => Promise<{ timeline?: SessionDetail["timeline"]; conversation?: SessionDetail["conversation"] } | null>>> = {
+      codex: (id) => api.codexTranscript(id),
+      hermes: (id) => api.hermesTranscript(id),
+    };
+    const s = await (transcriptFor[agent] ?? ((id: string) => api.session(id)))(sessionId);
     if (!s) return;
     /*
      * The same timeline the session modal renders — messages *and* the tools
@@ -937,6 +944,7 @@ export async function send(id: string, text: string, isActive: () => boolean, al
   };
   const onCodexEvent = framed(applyCodexFrame);
   const onAntigravityEvent = framed(applyAntigravityFrame);
+  const onHermesEvent = framed(applyHermesFrame);
 
   const toolNames = new Map<string, string>();
   const onEvent = (o: Record<string, unknown>) => {
@@ -1096,6 +1104,8 @@ export async function send(id: string, text: string, isActive: () => boolean, al
       await api.codexStream(turn, onCodexEvent, ac.signal);
     } else if (chat.agent === "antigravity") {
       await api.antigravityStream(turn, onAntigravityEvent, ac.signal);
+    } else if (chat.agent === "hermes") {
+      await api.hermesStream(turn, onHermesEvent, ac.signal);
     } else {
       await api.chatStream({ ...turn, effort: chat.effort, allowedTools, images, engine }, onEvent, ac.signal);
     }

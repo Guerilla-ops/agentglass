@@ -92,11 +92,19 @@ const ANTIGRAVITY_MODES = [
   { id: "always-proceed", label: "Bypass (runs all)" },
 ];
 
+// Hermes's one-shot path has no dialog to approve a tool in, so the default
+// denies those prompts. `--yolo` is the opt-in that runs them. Keep in step
+// with hermesMode in server/src/hermes.ts.
+const HERMES_MODES = [
+  { id: "default", label: "Ask (denies prompts)" },
+  { id: "yolo", label: "Bypass (runs all)" },
+];
+
 /** Before the server has answered, and for a CLI that is not installed. */
 const CLI_OFF: AgentCliStatus = { enabled: false, models: [] };
 
 const MODES_BY_AGENT: Record<AgentKind, Array<{ id: string; label: string }>> = {
-  claude: MODES, codex: CODEX_MODES, antigravity: ANTIGRAVITY_MODES,
+  claude: MODES, codex: CODEX_MODES, antigravity: ANTIGRAVITY_MODES, hermes: HERMES_MODES,
 };
 const modesFor = (agent: AgentKind) => MODES_BY_AGENT[agent];
 const bypassMode = (agent: AgentKind) => AGENTS[agent].bypassMode;
@@ -115,6 +123,9 @@ const agentLabel = (agent: AgentKind) => AGENTS[agent].label;
 function modelsFor(agent: AgentKind, status: AgentCliStatus): Array<{ id: string; label: string }> {
   if (status.models.length) return status.models;
   const fallback = AGENTS[agent].defaultModel;
+  // Hermes's default is "whatever the CLI configured", which is an empty id
+  // until /hermes/enabled answers. A blank option reads as a broken dropdown.
+  if (!fallback) return [{ id: "", label: "Hermes default" }];
   return [{ id: fallback, label: fallback }];
 }
 const CWD_KEY = "agentglass.chatCwd";
@@ -718,11 +729,15 @@ export function ChatView({ active: visible, focusId, onClose = () => {} }: { act
   const [claudeModels, setClaudeModels] = useState<AgentModel[]>(MODELS_PENDING);
   const [codex, setCodex] = useState<AgentCliStatus>(CLI_OFF);
   const [antigravity, setAntigravity] = useState<AgentCliStatus>(CLI_OFF);
+  const [hermes, setHermes] = useState<AgentCliStatus>(CLI_OFF);
   /** One lookup for "what does the server say about this agent?", so the
    *  dropdowns and the gates below stop naming CLIs one at a time. Claude's
    *  enabled/bypass are separate pieces of state for historical reasons. */
-  const statusOf = (a: AgentKind): AgentCliStatus =>
-    a === "codex" ? codex : a === "antigravity" ? antigravity : { enabled, bypass: bypassAllowed, models: claudeModels };
+  const statusByAgent: Record<AgentKind, AgentCliStatus> = {
+    claude: { enabled, bypass: bypassAllowed, models: claudeModels },
+    codex, antigravity, hermes,
+  };
+  const statusOf = (a: AgentKind): AgentCliStatus => statusByAgent[a];
   // Shared by every chat and remembered across launches: the set of tools you
   // trust is a property of how you work, not of one conversation.
   const [allowed, setAllowed] = useState(() => {
@@ -842,6 +857,7 @@ export function ChatView({ active: visible, focusId, onClose = () => {} }: { act
     }).catch(() => {});
     api.codexEnabled().then(setCodex).catch(() => {});
     api.antigravityEnabled().then(setAntigravity).catch(() => {});
+    api.hermesEnabled().then(setHermes).catch(() => {});
     // Which project this instance is scoped to, if any. A failure here means we
     // never learn of a scope, so nothing is hidden, which is the safe direction.
     api.projects()
@@ -1367,7 +1383,7 @@ export function ChatView({ active: visible, focusId, onClose = () => {} }: { act
                         <Select value={active.model} onChange={(v) => update(active.id, (c) => { c.model = v; })}
                           className={selCls} style={selStyle} options={modelsFor(active.agent, statusOf(active.agent)).map((m) => ({ value: m.id, label: m.label }))} />
                         <Select value={active.mode} onChange={(v) => update(active.id, (c) => { c.mode = v; })}
-                          className={selCls} style={selStyle} title={active.agent === "codex" ? "How much codex may touch without asking" : "Permission mode for tool use"}
+                          className={selCls} style={selStyle} title={AGENTS[active.agent].modeHint}
                           options={modesFor(active.agent)
                             .filter((m) => statusOf(active.agent).bypass || m.id !== bypassMode(active.agent))
                             .map((m) => ({ value: m.id, label: m.label }))} />
@@ -1761,8 +1777,8 @@ export function ChatView({ active: visible, focusId, onClose = () => {} }: { act
                           if (active && picked.length) setHint(await addAttachments(active.id, picked));
                         }} />
                       <button onClick={() => fileRef.current?.click()} disabled={!canAttach || !active}
-                        title={active?.agent === "codex"
-                          ? "codex chats can't take attachments — start a Claude chat for that"
+                        title={active && !AGENTS[active.agent].canAttach
+                          ? `${AGENTS[active.agent].label} chats can't take attachments — start a Claude chat for that`
                           : "Attach a file — images are sent as images, text files are quoted into the message"}
                         aria-label="Attach a file"
                         className="shrink-0 grid place-items-center rounded-lg px-3 self-stretch"

@@ -107,6 +107,16 @@ describe("the command line an agent request becomes", () => {
       .toEqual(["/bin/claude", "--name", "T", "--dangerously-skip-permissions", "go"]);
   });
 
+  it("starts Hermes as `hermes chat -q`, with bypass only when asked", () => {
+    const p = "a `weird` prompt\nwith 'quotes'";
+    expect(agentArgv("/bin/hermes", { prompt: p, yolo: false, title: "", kind: "hermes" }, false))
+      .toEqual(["/bin/hermes", "chat", "-q", p]);
+    expect(agentArgv("/bin/hermes", { prompt: "go", yolo: true, title: "ignored", kind: "hermes" }, true))
+      .toEqual(["/bin/hermes", "chat", "--yolo", "-q", "go"]);
+    expect(agentArgv("/bin/hermes", { prompt: "", yolo: false, title: "", kind: "hermes" }, false))
+      .toEqual(["/bin/hermes", "chat"]);
+  });
+
   it("is empty with no agent binary, which callers read as “open a shell”", () => {
     // No agent available is not a reason to open nothing: a shell in the right
     // worktree is still most of what was asked for.

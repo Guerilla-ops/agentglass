@@ -97,6 +97,19 @@ export const ROSTER: Roster[] = [
     install: "https://antigravity.google/docs/cli",
     connects: "the chat panel, which turns its own turns into events",
   },
+  {
+    // Nous Research's agent. Same reporting shape as Antigravity: it exports
+    // neither hooks nor OpenTelemetry, so only a chat this panel starts shows
+    // up, and only because the server turns those frames into events.
+    id: "hermes",
+    label: "Hermes",
+    bin: "hermes",
+    via: "chat",
+    configPath: () => "",
+    match: "hermes",
+    install: "https://hermes-agent.nousresearch.com",
+    connects: "the chat panel, which turns its own turns into events",
+  },
 ];
 
 /**

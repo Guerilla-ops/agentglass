@@ -9,8 +9,8 @@
 /**
  * Which CLI is behind a conversation.
  *
- * A chat is bound to one for life. All three are driven the same way — spawn
- * the binary non-interactively, stream its JSONL back — and all three land in
+ * A chat is bound to one for life. All four are driven the same way — spawn
+ * the binary non-interactively, stream its JSONL back — and all four land in
  * the same `ChatMsg` / `ChatTool` shapes, which is what lets the panel render
  * any of them without knowing. What it changes is the endpoint, the model list,
  * and what the mode dropdown even means, so it is settled when the chat is
@@ -18,7 +18,7 @@
  * minted it, and there is no such thing as handing a thread from one to
  * another.
  */
-export type AgentKind = "claude" | "codex" | "antigravity";
+export type AgentKind = "claude" | "codex" | "antigravity" | "hermes";
 
 /**
  * Everything that differs between the CLIs, in one table.
@@ -37,9 +37,11 @@ export type AgentSpec = {
   defaultModel: string;
   defaultMode: string;
   /** The unattended mode — the one the server refuses to honour unless the
-   *  operator opted in. One name for three spellings, so the mode dropdown and
+   *  operator opted in. One name for every spelling, so the mode dropdown and
    *  the warnings do not each need the branch. */
   bypassMode: string;
+  /** Tooltip on the mode dropdown. Each CLI's modes mean a different thing. */
+  modeHint: string;
   /** Whether this CLI takes pasted or dropped images. Only Claude does: the
    *  other two take images as file paths, so there is nowhere for pasted bytes
    *  to go without staging them on disk first. */
@@ -73,24 +75,38 @@ export const DEFAULT_CODEX_MODE = "read-only";
  *  DEFAULT_MODE in server/src/antigravity.ts. */
 export const DEFAULT_ANTIGRAVITY_MODEL = "gemini-3.6-flash-medium";
 export const DEFAULT_ANTIGRAVITY_MODE = "request-review";
+/** Empty means "whatever `hermes model` configured". The server reads that
+ *  value into the dropdown; this is the fallback before that answer arrives. */
+export const DEFAULT_HERMES_MODEL = "";
+export const DEFAULT_HERMES_MODE = "default";
 
 export const AGENTS: Record<AgentKind, AgentSpec> = {
   claude: {
     label: "Claude", cli: "claude",
     defaultModel: DEFAULT_MODEL, defaultMode: DEFAULT_MODE,
-    bypassMode: "bypassPermissions", canAttach: true, hasTranscript: true,
+    bypassMode: "bypassPermissions", modeHint: "Permission mode for tool use",
+    canAttach: true, hasTranscript: true,
     hasEffort: true, canPane: true,
   },
   codex: {
     label: "Codex", cli: "codex",
     defaultModel: DEFAULT_CODEX_MODEL, defaultMode: DEFAULT_CODEX_MODE,
-    bypassMode: "full-access", canAttach: false, hasTranscript: true,
+    bypassMode: "full-access", modeHint: "How much Codex may touch without asking",
+    canAttach: false, hasTranscript: true,
     hasEffort: false, canPane: false,
   },
   antigravity: {
     label: "Antigravity", cli: "agy",
     defaultModel: DEFAULT_ANTIGRAVITY_MODEL, defaultMode: DEFAULT_ANTIGRAVITY_MODE,
-    bypassMode: "always-proceed", canAttach: false, hasTranscript: false,
+    bypassMode: "always-proceed", modeHint: "Permission mode for tool use",
+    canAttach: false, hasTranscript: false,
+    hasEffort: false, canPane: false,
+  },
+  hermes: {
+    label: "Hermes", cli: "hermes",
+    defaultModel: DEFAULT_HERMES_MODEL, defaultMode: DEFAULT_HERMES_MODE,
+    bypassMode: "yolo", modeHint: "Single-query Hermes denies approval prompts it cannot show. Bypass runs them.",
+    canAttach: false, hasTranscript: true,
     hasEffort: false, canPane: false,
   },
 };
@@ -100,4 +116,4 @@ export const AGENTS: Record<AgentKind, AgentSpec> = {
  *  so a missing field is an older payload saying what it knew rather than
  *  corruption — and it is the recoverable direction either way. */
 export const asAgent = (v: unknown): AgentKind =>
-  v === "codex" || v === "antigravity" ? v : "claude";
+  v === "codex" || v === "antigravity" || v === "hermes" ? v : "claude";

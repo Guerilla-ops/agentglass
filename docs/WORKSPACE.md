@@ -286,6 +286,29 @@ Install and authenticate the CLI separately, and make sure `agy` is on the
 server's `PATH` when agentglass starts. To turn it off while leaving the other
 two, set `AGENTGLASS_ANTIGRAVITY_DISABLED=1`.
 
+#### A fourth agent: Hermes
+
+The panel drives **`hermes`** the same way: one non-interactive process per
+turn, JSONL streamed back, frames translated in the browser. The command is
+`hermes chat --query-file - --format stream-json`. The prompt is stdin.
+
+Two modes. **Ask** is the default: a one-shot Hermes has nowhere to show an
+approval prompt, so it denies those calls. **Bypass** is `--yolo`, and it is
+off unless `AGENTGLASS_CHAT_BYPASS=1`, the same opt-in as the other unattended
+modes. The model dropdown is the model in `~/.hermes/config.yaml` (`model.default`),
+not a catalogue this repo keeps. An empty choice means "leave Hermes on that
+default".
+
+Hermes does keep a readable transcript, in `~/.hermes/state.db`, so **↩ resume**
+can replay one. The chat shows tokens and does not show a price: the stream
+does not carry one. When that database has a dollar figure for the turn, the
+fleet uses it. A model the price table has never heard of is recorded at $0
+rather than guessed.
+
+Only chats started here appear in the fleet. A `hermes` you ran in a terminal
+exports neither hooks nor OpenTelemetry, so it stays invisible. To turn the
+integration off, set `AGENTGLASS_HERMES_DISABLED=1`.
+
 **↩ resume** picks up a session that already exists — including one you started
 in a terminal — with its full context intact, and opens it against the CLI that
 created it. Sessions that are still running are listed but can't be picked: a

@@ -14,7 +14,8 @@
  * turned off for good.
  */
 import * as Work from "./understudy-work.ts";
-import { activeTurns } from "./chat.ts";
+import { activeTurns as claudeTurns } from "./chat.ts";
+import { hermesActiveTurns } from "./hermes.ts";
 import { recentPaneAgents } from "./panewt.ts";
 import { FRESH_MS } from "./agentboard.ts";
 import { reconcile as namedAlive } from "./agentops.ts";
@@ -39,7 +40,7 @@ export interface AgentWorkingDeps {
 }
 
 const LIVE_DEPS: AgentWorkingDeps = {
-  activeTurns,
+  activeTurns: () => [...claudeTurns(), ...hermesActiveTurns()],
   runningRuns: Work.runningRuns,
   hookedWorking: (now) => recentPaneAgents({ sinceMs: FRESH_MS, now }).length,
   namedAlive: () => namedAlive().then((a) => a.length).catch(() => 0),

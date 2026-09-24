@@ -14,6 +14,8 @@ describe("providerInContext", () => {
     expect(providerInContext("codex", "Anthropic")).toBe("codex");
     expect(providerInContext("antigravity", "Anthropic")).toBe("antigravity");
     expect(providerInContext("claude", "OpenAI")).toBe("anthropic");
+    // Hermes has no quota gauge of its own, and must not borrow one.
+    expect(providerInContext("hermes", "Anthropic")).toBe(null);
   });
 
   test("falls back to the filter when no chat is focused", () => {

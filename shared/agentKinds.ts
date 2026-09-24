@@ -45,6 +45,11 @@ export interface AgentKind {
   /** The executable. */
   bin: string;
   mode: PromptMode;
+  /** Arguments between the binary and the flags. Hermes's interactive command
+   *  is `hermes chat`, not `hermes` itself. */
+  lead?: string[];
+  /** Prompt flag when `mode` is `flag`. Defaults to `--prompt`. */
+  promptFlag?: string;
   /** The flag that skips permission prompts, where the CLI has one. Absent
    *  means it has none, and a phone must not offer the choice for it. */
   yoloFlag?: string;
@@ -83,6 +88,16 @@ export const AGENT_KINDS: AgentKind[] = [
     what: "Google's CLI. Opens with the prompt seeded rather than answered.",
     bin: "gemini",
     mode: "flag-interactive",
+  },
+  {
+    id: "hermes",
+    title: "Hermes",
+    what: "Nous Research's agent. A prompt seeds an interactive chat in this checkout.",
+    bin: "hermes",
+    mode: "flag",
+    lead: ["chat"],
+    promptFlag: "-q",
+    yoloFlag: "--yolo",
   },
   {
     id: "opencode",

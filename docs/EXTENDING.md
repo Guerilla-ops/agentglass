@@ -197,6 +197,19 @@ changed is worth knowing before you add a fourth:
   window, so there is no resume route and the cost and context rows stay hidden
   rather than being filled from a table in this repo.
 
+Hermes is the fourth, and it follows that shape: `server/src/hermes.ts`,
+`web/src/lib/hermesFrames.ts`, and an entry in `AGENTS`. The CLI is
+`hermes chat --query-file - --format stream-json` — the prompt is stdin, because
+that flag exists and argv does not need to carry it. Its session ids look like
+`YYYYMMDD_HHMMSS_<hex>` and its model ids carry slashes, so they are not run
+through the Claude validators. The stream's token counts are per turn and are
+added. It publishes no price; when the active profile's `state.db` has a dollar delta for
+the turn, that figure is `reported_cost_usd`, and a model the price table has
+never heard of is recorded at $0 rather than at the Sonnet fallback. Hermes
+does keep a readable transcript, so resume replays it. Like Antigravity, a
+Hermes you started in a terminal is not on the radar: only a chat this panel
+starts is teed into the store. Turn it off with `AGENTGLASS_HERMES_DISABLED=1`.
+
 ## 2. Use the gate in your own harness
 
 `POST /gate` is a generic approval primitive: hold an action until a human

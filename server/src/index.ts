@@ -161,6 +161,7 @@ import { tmuxConfMode, tmuxOverride, tmuxRestoreEnabled, tmuxResume, tmuxSource,
 import { claudeModels } from "./claudemodels.ts";
 import { codexStream, codexModels, codexTranscript, codexCwd, CODEX_ENABLED, CODEX_BYPASS_ALLOWED } from "./codex.ts";
 import { antigravityStream, antigravityModels, ANTIGRAVITY_ENABLED, ANTIGRAVITY_BYPASS_ALLOWED } from "./antigravity.ts";
+import { hermesStream, hermesModels, hermesTranscript, HERMES_ENABLED, HERMES_BYPASS_ALLOWED, hermesActiveTurns } from "./hermes.ts";
 import { paneAlive, killPane, forgetPane, startPaneSweeper, sendKey, sendableKey, capture as capturePane, pinPane, panes, classifyPanes, idleEvictMs, reloadEngineConf, tmuxCapability, engineWindowRunning, tmux } from "./tmuxpane.ts";
 import { takeLease, endLease, leaseHeld, reapLeases } from "./panelease.ts";
 import { runAgentInteractivePane } from "./understudy-pane.ts";
@@ -7847,6 +7848,25 @@ const server = Bun.serve<WsData>({
       return antigravityStream(b.cwd, b.message, b.model, b.resumeId, b.mode, b.images, ingestBody);
     }
 
+    // --- multi-chat: the same panel, driving Hermes ---
+    // No hooks and no OpenTelemetry. The frames of a turn started here are the
+    // fleet record, and state.db is the transcript a resumed chat replays.
+    if (pathname === "/hermes/enabled") {
+      return json({ enabled: HERMES_ENABLED(), bypass: HERMES_BYPASS_ALLOWED, models: HERMES_ENABLED() ? hermesModels() : [] });
+    }
+    if (pathname === "/hermes/send" && req.method === "POST") {
+      if (!trustedCaller(req, from)) return csrfBlocked();
+      let b: any = {};
+      try { b = await req.json(); } catch { return json({ error: "invalid json" }, 400); }
+      noteAction(clientIp, "/hermes/send",
+        { root: b.cwd, name: b.model }, { ok: true }, asActor(caller));
+      return hermesStream(b.cwd, b.message, b.model, b.resumeId, b.mode, b.images, ingestBody);
+    }
+    if (pathname === "/hermes/transcript") {
+      const id = url.searchParams.get("id") || "";
+      return body(await singleFlight(`hermes:${id}`, async () => JSON.stringify({ timeline: hermesTranscript(id) })));
+    }
+
     // --- LLM walkthrough: AI-authored review itinerary for the changes ---
     if (pathname === "/walkthrough" && req.method === "POST") {
       // Spawns the `claude` CLI, or spends an API key. It executes and it
@@ -7869,7 +7889,7 @@ const server = Bun.serve<WsData>({
     // arrives late and "seen recently" is equally true of a session that
     // finished ten seconds ago. Deliberately outside the session cache: it
     // changes on process lifetimes, not on events.
-    if (pathname === "/chat/active") return json({ ids: activeTurns() });
+    if (pathname === "/chat/active") return json({ ids: [...new Set([...activeTurns(), ...hermesActiveTurns()])] });
     // Whether an agent is working right now, anywhere — what the desktop
     // shell's "keep the machine awake while an agent works" mode polls.
     if (pathname === "/agents/working") return json({ working: agentIsWorking() });

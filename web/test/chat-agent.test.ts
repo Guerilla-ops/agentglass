@@ -30,6 +30,12 @@ describe("agentOf", () => {
     expect(derive.agentOf({ source_app: "my-project", model_name: "claude-opus-5" })).toBe("claude");
   });
 
+  test("recognises hermes by its exporter name, even when the model looks like Codex", () => {
+    expect(derive.agentOf({ source_app: "hermes", model_name: "gpt-5.5" })).toBe("hermes");
+    expect(derive.agentOf({ source_app: "hermes", model_name: "deepseek/deepseek-v4-flash" })).toBe("hermes");
+    expect(derive.resumableAgent({ source_app: "hermes", model_name: "gpt-5.5" })).toBe("hermes");
+  });
+
   test("recognises antigravity, and only by its exporter name", () => {
     // This is the one agent whose events this server mints itself, so the name
     // is exact rather than a guess. The model is no help at all: `agy` runs
@@ -100,6 +106,15 @@ describe("switchAgent", () => {
     store.switchAgent(c.id, "codex");
     const after = store.getChat(c.id)!;
     expect([after.agent, after.model, after.mode]).toEqual(["codex", store.DEFAULT_CODEX_MODEL, store.DEFAULT_CODEX_MODE]);
+    store.closeChat(c.id);
+  });
+
+  test("carries Hermes's own defaults too", () => {
+    const c = store.newChat("/tmp/repo");
+    store.switchAgent(c.id, "hermes");
+    const after = store.getChat(c.id)!;
+    expect([after.agent, after.model, after.mode])
+      .toEqual(["hermes", store.DEFAULT_HERMES_MODEL, store.DEFAULT_HERMES_MODE]);
     store.closeChat(c.id);
   });
 

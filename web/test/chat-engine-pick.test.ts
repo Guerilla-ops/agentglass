@@ -70,13 +70,13 @@ test("no preference means the server decides, which is a real answer", () => {
 });
 
 // The pane engine is Claude's. The preference that selects it is global, and
-// the send path has always ignored it for the other two CLIs — so before this,
-// turning tmux on made every Codex and Antigravity chat claim a pane in the
-// header that the turn was never going to open: an attach command to copy for
-// a pane that did not exist, and a "⧉ tmux on send" chip that was just wrong.
+// the send path ignores it for every other CLI — so before this, turning tmux
+// on made a Codex or Antigravity chat claim a pane in the header that the turn
+// was never going to open: an attach command to copy for a pane that did not
+// exist, and a "⧉ tmux on send" chip that was just wrong.
 test("an agent that cannot run in a pane ignores the preference entirely", () => {
   setChatEnginePref("tmux");
-  for (const agent of ["codex", "antigravity"] as const) {
+  for (const agent of ["codex", "antigravity", "hermes"] as const) {
     // Both states a chat can be in: not yet started, and already holding a
     // thread. Neither may come back as "tmux".
     expect(engineFor({ agent, sessionId: "", engine: undefined }), agent).toBe("process");

@@ -174,6 +174,10 @@ export function launchArgv(
   // title and a run's legs have none, so asking would spend a `--help` per leg
   // to decide a flag that is not going to be passed either way.
   if (id === CLAUDE_CODE) return agentArgv(bin, req, req.title ? supportsSessionName(bin) : false);
+  // Hermes's interactive command is `hermes chat -q`, which agentArgv already
+  // spells from the shared kind table. A positional here would be read as a
+  // subcommand name and the window would exit on the usage line.
+  if (id === "hermes") return agentArgv(bin, { ...req, kind: "hermes" }, false);
   const spell = SPELLINGS[id];
   // A roster entry with no spelling written down yet. It still gets a window in
   // the right checkout and the run's question, positionally — but no permission

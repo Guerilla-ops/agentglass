@@ -168,6 +168,7 @@ export function agentArgv(
   // is an unknown option and an immediate exit.
   const named = req.title && canName && kind.nameFlag ? [kind.nameFlag, req.title] : [];
   const skip = req.yolo && kind.yoloFlag ? [kind.yoloFlag] : [];
+  const head = [bin, ...(kind.lead ?? [])];
 
   // The prompt is LAST and is one element. Never split, never through a shell:
   // a review brief contains quotes, newlines and backticks, and every one of
@@ -177,10 +178,10 @@ export function agentArgv(
   // it, which some of these answer and others sit on; a menu entry that opens a
   // CLI to work in has no prompt by definition, and that has to mean "just
   // start" rather than "start and say nothing".
-  if (!req.prompt) return [bin, ...named, ...skip];
-  if (kind.mode === "flag") return [bin, ...named, ...skip, "--prompt", req.prompt];
+  if (!req.prompt) return [...head, ...named, ...skip];
+  if (kind.mode === "flag") return [...head, ...named, ...skip, kind.promptFlag ?? "--prompt", req.prompt];
   if (kind.mode === "flag-interactive") {
-    return [bin, ...named, ...skip, "--prompt-interactive", req.prompt];
+    return [...head, ...named, ...skip, "--prompt-interactive", req.prompt];
   }
-  return [bin, ...named, ...skip, req.prompt];
+  return [...head, ...named, ...skip, req.prompt];
 }
