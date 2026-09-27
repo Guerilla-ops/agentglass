@@ -5,7 +5,7 @@ import "./cookieentry.ts";
 // app started this process with and closes it, before any import below can
 // spawn a child that would inherit the descriptor (desk.ts).
 import "./desk.ts";
-import type { ServerWebSocket } from "bun";
+import type { ServerWebSocket, Server } from "bun";
 import type { IngestBody, WsFrame, MarkKind, WorkingTree, PanesResponse, AgentSessionRow, GitRepoRef, TreeAuthorsInfo, ChangeRow } from "../../shared/types.ts";
 import { slackReachable } from "./slackreach.ts";
 import { normalize, detectError, clampIngestTimestamp, externalIngestError } from "./ingest.ts";
@@ -98,7 +98,7 @@ function headOf(root: string): string {
   const dir = gitDir(root);
   try { return dir ? fsRead(joinPath(dir, "HEAD"), "utf8").trim() : ""; } catch { return ""; }
 }
-import { watchLoop, entered, stalls, backoff } from "./loopwatch.ts";
+import { watchLoop, entered, finished, stalls, backoff } from "./loopwatch.ts";
 import { spawnPoolStats } from "./spawnpool.ts";
 import { singleFlight, inflightCount } from "./singleflight.ts";
 import { openInEditor, editorTarget, editorCapability, HAS_NVIM } from "./editor.ts";
@@ -155,6 +155,7 @@ import { generateWalkthrough, WALKTHROUGH_ENABLED } from "./walkthrough.ts";
 import { ptyOpen, ptyMessage, ptyClose, projectCommands, shutdownTerminals, lastTmuxTarget, sessionTitle, TERMINAL_ENABLED, PTY_BACKEND, type PtyWsData } from "./terminal.ts";
 import { agentBinFor, mintAgentTicket } from "./agentticket.ts";
 import { makeViewTempDir } from "./viewtemp.ts";
+import { decodeImage } from "./imageUpload.ts";
 import { transcribe, transcriberOn } from "./dictate.ts";
 import { AGENT_KINDS, agentKind } from "../../shared/agentKinds.ts";
 /* Both sides' imports: main added five, this branch still uses `panesWithPids`
@@ -1412,6 +1413,8 @@ import { nudgeText, nudgeChannel, sendNudge } from "./prnudge.ts";
 import * as Schedule from "./agentschedule.ts";
 import { handoffBrief } from "./handoff.ts";
 import { startLanternWatch, restartLanternWatch, lastLook } from "./lanternwatch.ts";
+import { installServerLog, readEntries } from "./serverlog.ts";
+import { digest as logDigest } from "./logdigest.ts";
 import { mintTicket, claimTicket, pending as pendingPairings, acceptTicket, rejectTicket, collect as collectPairing, dropTicket, getTicket, MAX_ATTEMPTS } from "./pairing.ts";
 import { updateStatus, viewerStatus, startUpdate, updateLog, releaseNotes } from "./selfupdate.ts";
 import { rateOk } from "./ratelimit.ts";
@@ -1424,6 +1427,10 @@ import { withEvidence } from "./evidence.ts";
 
 import { tidyReport } from "./tidy.ts";
 const PORT = Number(process.env.AGENTGLASS_PORT || 4000);
+// Before anything can log: the errors this server recovers from are the ones
+// nobody was watching stderr for.
+const SERVER_LOG = installServerLog();
+let logDigestCache: { at: number; value: ReturnType<typeof logDigest> } | null = null;
 /** When this process came up. /stats ships it so the dashboard's uptime is
  *  the server's, not the age of the oldest event in the database. */
 const STARTED_AT = Date.now() - Math.round(process.uptime() * 1000);
@@ -2402,27 +2409,24 @@ function buildStamp(): string {
   return stampCache;
 }
 
-const server = Bun.serve<WsData>({
-  port: PORT,
-  hostname: BIND,
-  // A frame is a control message or a keystroke; nothing legitimate is large.
-  // Unset, Bun allows 16MB per frame, which is a cheap way to exhaust memory.
-  maxRequestBodySize: 32 * 1024 * 1024,
-  // Bun closes a connection that has been quiet for `idleTimeout` seconds, and
-  // the default is 10 — which counts the gaps *inside* a streaming response, not
-  // just an idle socket. A chat turn is silent for as long as the model thinks
-  // or a tool runs, so the default cut `/chat/send` off mid-turn and the browser
-  // reported only a generic fetch failure. 255 is the maximum Bun accepts; it is
-  // still not long enough on its own for a slow turn, so `chat.ts` also sends a
-  // periodic keepalive to keep the gaps under it.
-  idleTimeout: 255,
-  async fetch(req, srv) {
+/**
+ * The main server's whole request handler, factored out of `Bun.serve`'s
+ * own `fetch` so the plugin socket (plugin-socket.ts) can hand it a request
+ * too — a boxed `network: "agentglass"` plugin's bridge dials that socket,
+ * never this port, and everything below still has to answer it exactly the
+ * way it would answer a stranger on the tailnet. `srv` is typed loosely
+ * enough (`Server<WsData>`) that the plugin socket's own fake one — no
+ * address, no real port, `upgrade` that always fails — satisfies it without
+ * this function ever knowing which caller it is talking to.
+ */
+async function handleServerRequest(req: Request, srv: Server<WsData>): Promise<Response> {
     const url = new URL(req.url);
     const { pathname } = url;
     // Name this request for the loop watchdog: if the loop stalls in the next
     // moment, the stall is reported against this path instead of being one more
     // anonymous freeze in a terminal. See loopwatch.ts.
-    entered(`${req.method} ${pathname}`);
+    const mark = entered(`${req.method} ${pathname}`);
+    try { return await (async () => {
 
     // Who is actually on the other end.
     //
@@ -2576,7 +2580,12 @@ const server = Bun.serve<WsData>({
     // the whole tailnet. This refuses instead. Loopback is untouched, so his
     // hooks and the desk keep their zero-config UX; /health and the pairing
     // handshake stay exempt so the phone still gets an answer it can act on.
-    if (!AUTH_TOKEN && from === "remote" && !isAuthExempt(pathname, from)) {
+    //
+    // A live plugin token is the one exception: `pluginOfRequest` only ever
+    // answers for a token this process itself minted, so this widens nothing
+    // an attacker could hand it; it only stops a rule about ANONYMOUS remote
+    // callers from also catching a credentialed one.
+    if (!AUTH_TOKEN && from === "remote" && !isAuthExempt(pathname, from) && !pluginOfRequest(req, url)) {
       return json({ ok: false, error: "unauthorized — this server has no token configured and only answers local callers" }, 401);
     }
     if (AUTH_TOKEN && !isAuthExempt(pathname, from)) {
@@ -3196,6 +3205,17 @@ const server = Bun.serve<WsData>({
      * screen you read, and this is the one thing about it that costs a session
      * something (one line of attention every interval).
      */
+    // What the server's own error log says: recurring errors, crash loops, spikes.
+    // Read-only, and the badge that shows it is quiet by design — never a notification.
+    if (pathname === "/logs/digest" && req.method === "GET") {
+      // Cached for 10 s: the Settings window asks on every open, and the answer
+      // is a fold of up to 2 MB of JSON lines.
+      const t = Date.now();
+      if (!logDigestCache || t - logDigestCache.at > 10_000) {
+        logDigestCache = { at: t, value: logDigest(SERVER_LOG ? readEntries(SERVER_LOG) : [], t) };
+      }
+      return json(logDigestCache.value);
+    }
     if (pathname === "/lantern/settings" && req.method === "GET") {
       return json({ ok: true, nudge: lanternNudge(), minutes: lanternNudgeMinutes(), watch: lanternWatch(), watchMinutes: lanternWatchMinutes(), cacheTtlMinutes: cacheTtlMinutes(), min: LANTERN_NUDGE_MIN_MIN, max: LANTERN_NUDGE_MAX_MIN });
     }
@@ -7377,17 +7397,14 @@ const server = Bun.serve<WsData>({
       let b: { data?: unknown; name?: unknown };
       try { b = (await req.json()) as typeof b; } catch { return json({ ok: false, error: "invalid json" }, 400); }
       const data = typeof b.data === "string" ? b.data : "";
-      if (!data) return json({ ok: false, error: "no image" }, 400);
-      let bytes: Buffer;
-      try { bytes = Buffer.from(data, "base64"); } catch { return json({ ok: false, error: "not base64" }, 400); }
-      if (!bytes.length) return json({ ok: false, error: "empty image" }, 400);
-      if (bytes.length > 8 * 1024 * 1024) return json({ ok: false, error: "that image is over 8MB" }, 413);
-      /* The name is the CLIENT's and only its extension is kept, lowercased and
-         from a fixed set. A filename off the wire reaches a path here, and the
-         basename is the whole of what is worth carrying anyway — what the agent
-         is told is a path this server chose. */
-      const asked = typeof b.name === "string" ? b.name.toLowerCase() : "";
-      const ext = /\.(png|jpe?g|gif|webp|heic)$/.exec(asked)?.[0] ?? ".png";
+      /* `b.name` is the client's and is never consulted here, for path or for
+         extension: a filename off the wire used to buy whatever extension it
+         claimed, so a payload could be labelled ".png" and be anything at
+         all. The extension written to disk now comes only from the bytes
+         themselves — see imageUpload.ts. */
+      const decoded = decodeImage(data);
+      if (!decoded.ok) return json({ ok: false, error: decoded.error }, decoded.status);
+      const { bytes, ext } = decoded;
       const file = joinPath(makeViewTempDir("image"), `image${ext}`);
       try { fsWrite(file, bytes); } catch (e) {
         return json({ ok: false, error: failed("view/image", e, "the image could not be saved") }, 500);
@@ -8565,7 +8582,24 @@ const server = Bun.serve<WsData>({
     }
 
     return json({ error: "not found" }, 404);
-  },
+    })(); } finally { finished(mark); }
+}
+
+const server = Bun.serve<WsData>({
+  port: PORT,
+  hostname: BIND,
+  // A frame is a control message or a keystroke; nothing legitimate is large.
+  // Unset, Bun allows 16MB per frame, which is a cheap way to exhaust memory.
+  maxRequestBodySize: 32 * 1024 * 1024,
+  // Bun closes a connection that has been quiet for `idleTimeout` seconds, and
+  // the default is 10 — which counts the gaps *inside* a streaming response, not
+  // just an idle socket. A chat turn is silent for as long as the model thinks
+  // or a tool runs, so the default cut `/chat/send` off mid-turn and the browser
+  // reported only a generic fetch failure. 255 is the maximum Bun accepts; it is
+  // still not long enough on its own for a slow turn, so `chat.ts` also sends a
+  // periodic keepalive to keep the gaps under it.
+  idleTimeout: 255,
+  fetch: handleServerRequest,
 
   websocket: {
     open(ws: ServerWebSocket<WsData>) {
