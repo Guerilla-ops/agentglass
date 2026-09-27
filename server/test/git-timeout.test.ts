@@ -31,6 +31,7 @@ import { join } from "node:path";
 
 const dir = realpathSync(mkdtempSync(join(tmpdir(), "agx-git-timeout-")));
 const REPO = join(dir, "repo");
+const HELD = join(dir, "held");
 
 process.env.XDG_CONFIG_HOME = dir; // never inherit the developer's own scope
 process.env.AGENTGLASS_DB = join(dir, "t.db");
@@ -52,11 +53,20 @@ beforeAll(async () => {
   sh(REPO, "remote", "add", "origin", "ssh://nowhere.invalid/repo.git");
   // Reaches git through the repo, not through our environment — see the header.
   sh(REPO, "config", "core.sshCommand", "sh -c 'sleep 30'");
+  // The same sleeping remote, reached without git's `-G` probe. The probe runs
+  // with its output on /dev/null; the transport shares git's own stderr, so
+  // here the sleeper still holds that pipe after git is killed.
+  sh(dir, "init", "-q", "held");
+  sh(HELD, "remote", "add", "origin", "ssh://nowhere.invalid/repo.git");
+  sh(HELD, "config", "core.sshCommand", "sh -c 'sleep 30'");
+  sh(HELD, "config", "ssh.variant", "simple");
   g = await import("../src/git.ts");
   pool = await import("../src/spawnpool.ts");
 });
 
 afterAll(() => {
+  // Whatever this file failed to hand back is its failure, not the next file's.
+  pool.__resetSpawnPoolForTest();
   if (saved.budget === undefined) delete process.env.AGENTGLASS_GIT_TIMEOUT_SECONDS;
   else process.env.AGENTGLASS_GIT_TIMEOUT_SECONDS = saved.budget;
 });
@@ -94,6 +104,21 @@ describe("a git that never answers", () => {
     expect(ok.code).toBe(0);
     expect(ok.stdout.trim()).toBe("true");
   });
+
+  test("gives its slot back even while a child it started still holds its stderr", async () => {
+    process.env.AGENTGLASS_GIT_TIMEOUT_SECONDS = "1";
+
+    // git is killed at the budget, but the ssh it started is not, and that ssh
+    // holds the write end of git's stderr. Waiting for the pipe to close was
+    // waiting for the ssh — 30 s here, a TCP timeout against a real dead
+    // remote — with the slot held the whole time. No timing is asserted: the
+    // sleeper outlives this test's own limit, so returning at all is the proof.
+    const r = await g.gitAsync(HELD, ["fetch", "origin"]);
+
+    expect(r.code).not.toBe(0);
+    expect(r.stderr.trim().length).toBeGreaterThan(0);
+    expect(pool.spawnPoolStats().inflight).toBe(0);
+  }, 15_000); // under the sleeper's 30 s whatever `--timeout` the run was given
 
   test("says something, because prs.ts shows stderr to the user verbatim", async () => {
     process.env.AGENTGLASS_GIT_TIMEOUT_SECONDS = "1";
