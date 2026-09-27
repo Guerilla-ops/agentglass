@@ -4,15 +4,27 @@
 // different failure: nothing bounded the fan-out. Driven hard — several cold
 // panels at once, each spawning dozens — the sidecar stopped answering
 // entirely. Not slow: gone. These pin the two properties that prevent it.
-import { beforeAll, describe, expect, it } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "bun:test";
 
 let pool: typeof import("../src/spawnpool.ts");
+const saved = { limit: process.env.AGENTGLASS_SPAWN_LIMIT, guard: process.env.AGENTGLASS_SPAWN_GUARD_MS };
 
 beforeAll(async () => {
   process.env.AGENTGLASS_SPAWN_LIMIT = "4";
   // A short guard so the "stuck spawn" test doesn't wait five real minutes.
   process.env.AGENTGLASS_SPAWN_GUARD_MS = "80";
   pool = await import("../src/spawnpool.ts");
+});
+
+// These count from zero, and the pool is one per process: a slot some earlier
+// file never got back read here as "Expected: 0, Received: 1".
+beforeEach(() => pool.__resetSpawnPoolForTest());
+
+afterAll(() => {
+  if (saved.limit === undefined) delete process.env.AGENTGLASS_SPAWN_LIMIT;
+  else process.env.AGENTGLASS_SPAWN_LIMIT = saved.limit;
+  if (saved.guard === undefined) delete process.env.AGENTGLASS_SPAWN_GUARD_MS;
+  else process.env.AGENTGLASS_SPAWN_GUARD_MS = saved.guard;
 });
 
 describe("spawn pool", () => {

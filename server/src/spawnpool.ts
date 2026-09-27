@@ -69,6 +69,8 @@ const guardMs = () => {
 };
 
 let inflight = 0;
+/** Bumped by the test reset, so a slot taken before it is not handed back after. */
+let generation = 0;
 const waiting: (() => void)[] = [];
 /** High-water marks, so `/api/loopwatch` can say whether the cap is biting. */
 let peakInflight = 0;
@@ -94,10 +96,12 @@ export async function withSpawnSlot<T>(fn: () => Promise<T>): Promise<T> {
   // path) or when the guard timeout fires because fn() never will. Double
   // release would corrupt the counter and, through the waiter it wakes, hand
   // out one more slot than the limit permits.
+  const gen = generation;
   let released = false;
   const release = () => {
     if (released) return;
     released = true;
+    if (gen !== generation) return;
     inflight--;
     waiting.shift()?.();
   };
@@ -113,4 +117,19 @@ export async function withSpawnSlot<T>(fn: () => Promise<T>): Promise<T> {
 
 export function spawnPoolStats(): { limit: number; inflight: number; waiting: number; peakInflight: number; peakWaiting: number } {
   return { limit: limit(), inflight, waiting: waiting.length, peakInflight, peakWaiting };
+}
+
+/**
+ * Test seam: an empty pool, whatever an earlier test left in it.
+ *
+ * `bun test` runs every file in one process and this counter is module state,
+ * so a slot one file never got back failed the pool's own tests in another.
+ * Slots taken before the reset are forgotten rather than returned later —
+ * handing one back would drive the count below zero and fail the next file
+ * the other way. Waiters are let go so no test hangs on an old queue.
+ */
+export function __resetSpawnPoolForTest(): void {
+  generation++;
+  inflight = 0;
+  for (const go of waiting.splice(0)) go();
 }
