@@ -79,6 +79,7 @@ import base64
 import json
 import os
 import re
+import stat
 import sys
 import time
 import urllib.error
@@ -132,8 +133,12 @@ def _write_private(path, data, binary=False):
     every account on the box could read the cookies `session save` had just
     pulled out of the browser. Created with the mode rather than chmod-ed
     after (the gap between the two is the same gap), and re-tightened when the
-    file already existed, since O_CREAT's mode only applies to a new file."""
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    file already existed, since O_CREAT's mode only applies to a new file.
+    `O_NOFOLLOW` too: a symlink planted at PATH by another account on a shared
+    box must not turn this into "write my cookies wherever that link points"."""
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    flags |= getattr(os, "O_NOFOLLOW", 0)  # not on every platform; skip rather than fail there
+    fd = os.open(path, flags, 0o600)
     try:
         os.fchmod(fd, 0o600)
     except OSError:
@@ -1040,7 +1045,17 @@ def stamped(a, body, who=None):
     if who is None:
         who = acting_as(a)
     body = dict(body)
-    if who:
+    # `--shared` sends no `as`: the person's own container is not a name the
+    # panel can compare a tab's container against — the tab's container is
+    # already `default`, said as a container, and SHARED_KEY is an identity
+    # key, not one. Stamping it here anyway made every second `open --shared`
+    # into its own remembered tab read as a foreign container ("default" is
+    # not "(default)") and refuse itself — a refusal that is REAL if it ships,
+    # so the panel's cross-container check treats the two as it was always
+    # meant to: unverifiable, and allowed. Measured end to end: an `open
+    # --shared` against the tab the previous `open --shared` minted hung for
+    # the full 45s browser-answer timeout instead of navigating.
+    if who and who != SHARED_KEY:
         body.setdefault("as", who)
     if getattr(a, "page", None):
         body["pageExplicit"] = True
@@ -1351,6 +1366,32 @@ def screencast_watch(a, page=""):
     return 0
 
 
+def _capture_state(page, a):
+    """Cookies + localStorage + sessionStorage off PAGE, in the shape both
+    `session save` and `template save` write. CDP for the cookies (httpOnly
+    ones a page can never read back through `document.cookie`), `eval` for
+    storage. Returns `(state, None)`, or `(None, message)` for a page that
+    would not answer either read."""
+    cookies_res = call("cdp", stamped(a, _at(page, {"method": "Network.getCookies"})))
+    if not cookies_res.get("ok"):
+        return None, cookies_res.get("error") or "could not read cookies"
+    cookies = ((cookies_res.get("value") or {}).get("result") or {}).get("cookies", [])
+    storage_res = call("eval", stamped(a, _at(page, {"js": STORAGE_READ_JS, "await": False})))
+    if not storage_res.get("ok"):
+        return None, storage_res.get("error") or "could not read storage"
+    storage = (storage_res.get("value") or {}).get("value") or {}
+    origin = storage.get("origin", "")
+    state = {
+        "cookies": cookies,
+        "origins": [{
+            "origin": origin,
+            "localStorage": [{"name": k, "value": v} for k, v in (storage.get("localStorage") or {}).items()],
+            "sessionStorage": [{"name": k, "value": v} for k, v in (storage.get("sessionStorage") or {}).items()],
+        }],
+    }
+    return state, None
+
+
 def session_save(path, page="", a=None):
     """The 40-minute magic-link dance, replaced by one file. Cookies come
     through CDP (`Network.getCookies`), not `document.cookie` — the session
@@ -1372,28 +1413,307 @@ def session_save(path, page="", a=None):
     own container) and `--page <tab id>` are the escape hatch for that, and
     `--active` for the old meaning exactly.
     """
-    cookies_res = call("cdp", stamped(a, _at(page, {"method": "Network.getCookies"})))
-    if not cookies_res.get("ok"):
-        print(cookies_res.get("error") or "could not read cookies", file=sys.stderr)
+    state, err = _capture_state(page, a)
+    if err:
+        print(err, file=sys.stderr)
         return 1
-    cookies = ((cookies_res.get("value") or {}).get("result") or {}).get("cookies", [])
-    storage_res = call("eval", stamped(a, _at(page, {"js": STORAGE_READ_JS, "await": False})))
-    if not storage_res.get("ok"):
-        print(storage_res.get("error") or "could not read storage", file=sys.stderr)
-        return 1
-    storage = (storage_res.get("value") or {}).get("value") or {}
-    origin = storage.get("origin", "")
-    state = {
-        "cookies": cookies,
-        "origins": [{
-            "origin": origin,
-            "localStorage": [{"name": k, "value": v} for k, v in (storage.get("localStorage") or {}).items()],
-            "sessionStorage": [{"name": k, "value": v} for k, v in (storage.get("sessionStorage") or {}).items()],
-        }],
-    }
+    cookies = state["cookies"]
     _write_private(path, json.dumps(state, indent=2))
     print(f"{path}: {len(cookies)} cookies, {len(state['origins'][0]['localStorage'])} localStorage keys, "
-          f"{len(state['origins'][0]['sessionStorage'])} sessionStorage keys, from {origin or '(no page open)'}")
+          f"{len(state['origins'][0]['sessionStorage'])} sessionStorage keys, "
+          f"from {state['origins'][0]['origin'] or '(no page open)'}")
+    return 0
+
+
+# --- The template store (item 16, part 1) ------------------------------------
+#
+# A template is `session save`'s own state shape, kept under a NAME instead of
+# a path the caller has to remember, so `lane new --from-template T` (S6) can
+# seed a fresh partition from it.
+#
+# CLI-only, like `session import`: there is no MCP tool for any of the three
+# verbs below (browser-template-store.test.ts asserts it by reading the MCP
+# source), and no route reads the FILE back — an agent cannot ask for T's
+# cookies by name. What "CLI-only" does NOT buy: once `lane --from-template`
+# has seeded a lane, that lane is an ordinary lane, and every verb that can
+# read a lane's cookies or storage today (`cdp`, `eval`, `storage`, `session
+# save --lane`, the MCP's own `storage_state`) can read them there, the same
+# as it could read them out of any other signed-in lane. The boundary this
+# buys is "the template file is not a thing an agent can name and dump" —
+# never "a page this seeds cannot be read by whatever is driving it", which
+# is not a promise a browser-automation tool can make or would want to: the
+# whole point of the fork is to hand the agent a working, signed-in tab.
+
+TEMPLATE_NAME_RE = re.compile(r"^[a-z0-9-]{1,32}$")
+
+
+def _template_dir():
+    """`$XDG_DATA_HOME/agentglass/browser-templates`, 0700, made — and
+    re-tightened — on first use. `_write_private` does the same thing one
+    level down for the file; `os.makedirs`' `mode` is as subject to the
+    umask as `open`'s always was, so the explicit `chmod` is not optional.
+
+    Refuses (one line, exit 2, same shape as `_server_or_die`) rather than
+    write a credential into a directory this account does not own outright —
+    a symlink, or a directory another uid controls, on a shared or oddly
+    configured `XDG_DATA_HOME`. `chmod`ing it first and then checking is not
+    a race that matters here: the check is "did I actually get 0700 on
+    something I own", not a guard something else could slip past between
+    the two calls."""
+    base = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+    path = os.path.join(base, "agentglass", "browser-templates")
+    os.makedirs(path, mode=0o700, exist_ok=True)
+    try:
+        os.chmod(path, 0o700)
+    except OSError:
+        pass
+    st = os.lstat(path)
+    if not stat.S_ISDIR(st.st_mode) or st.st_uid != os.getuid() or st.st_mode & 0o077:
+        print(f"agentglass: {path} is not a private directory I own (symlink, foreign owner, "
+              "or a mode chmod could not narrow) — refusing to write a credential into it", file=sys.stderr)
+        sys.exit(2)
+    return path
+
+
+def _template_path(name):
+    return os.path.join(_template_dir(), f"{name}.json")
+
+
+def _bad_template_name(name):
+    if TEMPLATE_NAME_RE.match(name or ""):
+        return None
+    return f"{name!r}: template names are a-z, 0-9, - only, 1-32 characters (see `template list`)"
+
+
+def _earliest_expiry(cookies):
+    """The soonest this template goes stale, or `None` when every cookie in it
+    is a session cookie (no `expires`, or CDP's `-1` for "until the browser
+    closes") — never a cookie among expiries that never end this session."""
+    exp = [c["expires"] for c in cookies if isinstance(c.get("expires"), (int, float)) and c["expires"] > 0]
+    return min(exp) if exp else None
+
+
+def template_save(name, page, a):
+    """A template is a credential, not a snapshot of a tab: a name the caller
+    will type again later, holding whatever this page's cookies can log into
+    next. Reuses `_capture_state` — the same CDP + eval reads `session save`
+    makes — and writes through `_write_private`, so it is 0600 the same way."""
+    bad = _bad_template_name(name)
+    if bad:
+        print(bad, file=sys.stderr)
+        return 2
+    state, err = _capture_state(page, a)
+    if err:
+        print(err, file=sys.stderr)
+        return 1
+    # `_capture_state` always hands back exactly one origin (it reads one tab).
+    origin = state["origins"][0]["origin"]
+    record = dict(state, meta={
+        "origins": [origin] if origin else [],
+        "createdAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "earliestExpiry": _earliest_expiry(state["cookies"]),
+    })
+    _write_private(_template_path(name), json.dumps(record, indent=2))
+    print(f"{name}: {len(state['cookies'])} cookies from {origin or '(no page open)'}")
+    return 0
+
+
+def template_list():
+    """Origins and expiry — what a template is FOR — never a cookie or storage
+    value. The one thing `template save` wrote that this is allowed to print
+    back."""
+    names = sorted(f[:-5] for f in os.listdir(_template_dir()) if f.endswith(".json"))
+    if not names:
+        print("no templates saved (see `template save`)")
+        return 0
+    for name in names:
+        try:
+            with open(_template_path(name)) as f:
+                meta = json.load(f).get("meta") or {}
+        except (OSError, ValueError) as e:
+            print(f"{name}: unreadable ({e})", file=sys.stderr)
+            continue
+        expiry = meta.get("earliestExpiry")
+        when = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(expiry)) if expiry else "no expiry (session cookies only)"
+        print(f"{name}: {', '.join(meta.get('origins') or []) or '(no origin)'}, "
+              f"saved {meta.get('createdAt', '?')}, expires {when}")
+    return 0
+
+
+def template_rm(name):
+    bad = _bad_template_name(name)
+    if bad:
+        print(bad, file=sys.stderr)
+        return 2
+    try:
+        os.remove(_template_path(name))
+    except FileNotFoundError:
+        print(f"no template called {name} (see `template list`)", file=sys.stderr)
+        return 1
+    print(f"{name}: removed")
+    return 0
+
+
+def lane_new_from_template(name, a):
+    """`lane new --from-template NAME`: an ephemeral lane (in-memory jar, gone
+    the moment it closes) with NAME's cookies and storage already in it, so a
+    task starts on a signed-in page instead of a login screen.
+
+    Order matters here in a way `session load` never had to think about.
+    `session load` writes onto a page the caller already opened themselves, so
+    it is already on the right origin; this OPENS the page itself, and a site
+    that redirects on an empty jar (a login wall, an IdP bounce) is normal, not
+    an edge case. Cookies go on first — `Network.setCookie` carries its own
+    `url` and needs no page loaded at all, so a redirect cannot touch them.
+    Storage does not have that luxury: it is written by the page itself, so it
+    can only ever land on whatever origin is actually loaded when it runs. So
+    `open` happens AFTER the cookies, and storage is written only once this
+    reads back the origin it actually landed on and confirms it is the
+    template's own — never into whatever the tab redirected to instead, which
+    is how a bearer token in localStorage would end up handed to a login
+    origin's scripts instead of seeding the site it was for.
+
+    The template is read and validated FIRST, before any lane opens — a name
+    that does not exist must not cost a lane the 15-minute sweep then has to
+    notice. And a lane that opened but could not be navigated to the origin is
+    closed again rather than left for that sweep: nothing useful can come of a
+    fork with no origin loaded, and "opened" is not "usable". A redirect is
+    not that fatal — cookies are seeded either way — so that case is a warning
+    and a lane the caller can still use, not a refusal.
+    """
+    bad = _bad_template_name(name)
+    if bad:
+        print(bad, file=sys.stderr)
+        return 2
+    try:
+        with open(_template_path(name)) as f:
+            state = json.load(f)
+    except (OSError, ValueError) as e:
+        print(f"no template called {name} ({e})", file=sys.stderr)
+        return 1
+    origin = ((state.get("origins") or [{}])[0]).get("origin")
+    if not origin:
+        print(f"{name}: no origin to open (see `template list`)", file=sys.stderr)
+        return 1
+
+    opened = call("lane", stamped(a, {"action": "new", "ephemeral": True}))
+    if not opened.get("ok"):
+        print(opened.get("error") or "the lane could not open", file=sys.stderr)
+        return 1
+    lane_id = ((opened.get("value") or {}).get("lane") or {}).get("id")
+    if not lane_id:
+        print("the lane opened without an id", file=sys.stderr)
+        return 1
+    a.lane = lane_id  # every call below rides `stamped`'s own lane-addressing
+
+    cookie_failures = _write_cookies(a, "", state.get("cookies") or [])
+    for f in cookie_failures:
+        print(f"cookie {f}", file=sys.stderr)
+
+    nav = call("open", stamped(a, {"url": origin}))
+    if not nav.get("ok"):
+        call("lane", stamped(a, {"action": "close", "id": lane_id}))
+        print(nav.get("error") or f"could not open {origin} in the new lane", file=sys.stderr)
+        return 1
+
+    landed = call("eval", stamped(a, _at("", {"js": "location.origin", "await": False})))
+    landed_origin = (landed.get("value") or {}).get("value") if landed.get("ok") else None
+    storage_failures = []
+    if landed_origin != origin:
+        print(f"lane {lane_id}: landed on {landed_origin or '(unreadable)'} instead of {origin} — "
+              "a redirect. Cookies are seeded; storage is not, rather than write it into the wrong origin.",
+              file=sys.stderr)
+    else:
+        for o in state.get("origins") or []:
+            n, f = _write_storage(a, "", "local", {e["name"]: e["value"] for e in o.get("localStorage") or []})
+            storage_failures += f
+            n, f = _write_storage(a, "", "session", {e["name"]: e["value"] for e in o.get("sessionStorage") or []})
+            storage_failures += f
+        for f in storage_failures:
+            print(f"storage {f}", file=sys.stderr)
+
+    if cookie_failures or storage_failures:
+        # The lane still exists and holds SOME of the state — closing it here
+        # would throw away a partial success nobody asked to inspect could
+        # recover.
+        print(f"lane {lane_id}: opened and partly seeded from {name} (see the errors above)", file=sys.stderr)
+        return 1
+    print(f"lane {lane_id}: seeded from {name} ({origin})")
+    return 0
+
+
+def newtab_from_template(name, a):
+    """`newtab --from-template NAME`: the visible-tab twin of `lane
+    new --from-template` above — same in-memory jar, same seeding order
+    (cookies before navigation, storage only once the landed origin is
+    confirmed; see that function's docstring for why), but the fork is a TAB
+    in the person's own window instead of a hidden lane, for a task that
+    wants to be watched rather than run out of sight.
+
+    The one real difference is addressing. A lane owns its single page
+    implicitly (`a.lane = lane_id`, read by `stamped` on every call below); a
+    window can hold many tabs, so this names the new one explicitly
+    (`a.page = tab_id`, threaded through `_at` at each call) — the same way
+    `--page` already lets any verb act on a tab that is not the caller's own.
+    """
+    bad = _bad_template_name(name)
+    if bad:
+        print(bad, file=sys.stderr)
+        return 2
+    try:
+        with open(_template_path(name)) as f:
+            state = json.load(f)
+    except (OSError, ValueError) as e:
+        print(f"no template called {name} ({e})", file=sys.stderr)
+        return 1
+    origin = ((state.get("origins") or [{}])[0]).get("origin")
+    if not origin:
+        print(f"{name}: no origin to open (see `template list`)", file=sys.stderr)
+        return 1
+
+    opened = call("newtab", stamped(a, {"url": "about:blank", "ephemeral": True}))
+    if not opened.get("ok"):
+        print(opened.get("error") or "the tab could not open", file=sys.stderr)
+        return 1
+    tab_id = (opened.get("value") or {}).get("id")
+    if not tab_id:
+        print("the tab opened without an id", file=sys.stderr)
+        return 1
+    a.page = tab_id  # every call below addresses this tab explicitly
+
+    cookie_failures = _write_cookies(a, tab_id, state.get("cookies") or [])
+    for f in cookie_failures:
+        print(f"cookie {f}", file=sys.stderr)
+
+    nav = call("open", stamped(a, _at(tab_id, {"url": origin})))
+    if not nav.get("ok"):
+        call("closetab", stamped(a, {"id": tab_id}))
+        print(nav.get("error") or f"could not open {origin} in the new tab", file=sys.stderr)
+        return 1
+
+    landed = call("eval", stamped(a, _at(tab_id, {"js": "location.origin", "await": False})))
+    landed_origin = (landed.get("value") or {}).get("value") if landed.get("ok") else None
+    storage_failures = []
+    if landed_origin != origin:
+        print(f"tab {tab_id}: landed on {landed_origin or '(unreadable)'} instead of {origin} — "
+              "a redirect. Cookies are seeded; storage is not, rather than write it into the wrong origin.",
+              file=sys.stderr)
+    else:
+        for o in state.get("origins") or []:
+            n, f = _write_storage(a, tab_id, "local", {e["name"]: e["value"] for e in o.get("localStorage") or []})
+            storage_failures += f
+            n, f = _write_storage(a, tab_id, "session", {e["name"]: e["value"] for e in o.get("sessionStorage") or []})
+            storage_failures += f
+        for f in storage_failures:
+            print(f"storage {f}", file=sys.stderr)
+
+    if cookie_failures or storage_failures:
+        # The tab still exists and holds SOME of the state — closing it here
+        # would throw away a partial success nobody asked to inspect could
+        # recover.
+        print(f"tab {tab_id}: opened and partly seeded from {name} (see the errors above)", file=sys.stderr)
+        return 1
+    print(f"tab {tab_id}: seeded from {name} ({origin})")
     return 0
 
 
@@ -1421,6 +1741,29 @@ def _write_storage(a, page, where, entries):
     return written, failures
 
 
+def _write_cookies(a, page, cookies):
+    """Restore COOKIES via CDP `Network.setCookie`, which needs no page loaded
+    at all — a cookie is scoped to its `url`, not to whatever the tab is
+    currently showing, so this is safe to call before any navigation. Returns
+    the "name: error" failures, if any; a cookie the site refuses does not
+    stop the ones after it."""
+    failures = []
+    for c in cookies:
+        params = {k: v for k, v in c.items()
+                 if k in ("name", "value", "url", "domain", "path", "secure", "httpOnly", "sameSite", "expires")}
+        if "domain" in params and "url" not in params:
+            # `Network.setCookie` needs a url when there is no domain+path pair
+            # CDP itself would accept unambiguously; getCookies' own answer
+            # never carries one, only domain — build it rather than fail every
+            # cookie this reads back.
+            scheme = "https" if params.get("secure") else "http"
+            params["url"] = f"{scheme}://{str(params['domain']).lstrip('.')}{params.get('path', '/')}"
+        r = call("cdp", stamped(a, _at(page, {"method": "Network.setCookie", "params": params})))
+        if not r.get("ok"):
+            failures.append(f"{c.get('name')}: {r.get('error')}")
+    return failures
+
+
 def session_load(path, page="", a=None):
     """The reverse of `session save`. Cookies go back through CDP so they
     keep httpOnly and Secure; storage is written by the page itself, which
@@ -1435,19 +1778,8 @@ def session_load(path, page="", a=None):
         print(f"could not read {path}: {e}", file=sys.stderr)
         return 1
     cookies = state.get("cookies") or []
-    for c in cookies:
-        params = {k: v for k, v in c.items()
-                 if k in ("name", "value", "url", "domain", "path", "secure", "httpOnly", "sameSite", "expires")}
-        if "domain" in params and "url" not in params:
-            # `Network.setCookie` needs a url when there is no domain+path pair
-            # CDP itself would accept unambiguously; getCookies' own answer
-            # never carries one, only domain — build it rather than fail every
-            # cookie this reads back.
-            scheme = "https" if params.get("secure") else "http"
-            params["url"] = f"{scheme}://{str(params['domain']).lstrip('.')}{params.get('path', '/')}"
-        r = call("cdp", stamped(a, _at(page, {"method": "Network.setCookie", "params": params})))
-        if not r.get("ok"):
-            print(f"cookie {c.get('name')}: {r.get('error')}", file=sys.stderr)
+    for f in _write_cookies(a, page, cookies):
+        print(f"cookie {f}", file=sys.stderr)
     ls_count = ss_count = 0
     failures = []
     for o in state.get("origins") or []:
@@ -2096,9 +2428,13 @@ def main():
     p = sub.add_parser("tab", help="switch to a tab by index or id")
     p.add_argument("which", help="index from `tabs`, or a tab id")
     p = sub.add_parser("newtab", help="open a url in a NEW tab, leaving this one where it is")
-    p.add_argument("url")
+    p.add_argument("url", nargs="?", default=None, help="omit it with --from-template, which supplies its own")
     p.add_argument("--wait-slot", dest="waitSlot", type=float, default=None, metavar="SECONDS",
                    help="when 12 pages are already awake, queue for a free slot this long instead of refusing")
+    p.add_argument("--from-template", dest="fromTemplate", metavar="NAME",
+                   help="the visible-tab twin of `lane new --from-template`: an ephemeral tab "
+                        "(in-memory jar, wiped when it closes) with NAME's cookies and storage "
+                        "already in it, instead of `url` (see `template save`)")
     p = sub.add_parser("closetab", help="close a tab by index or id")
     p.add_argument("which")
 
@@ -2290,6 +2626,10 @@ def main():
     p.add_argument("--timeout", type=int, default=300, help="give up after this many seconds (default 300, max 3600)")
     p = sub.add_parser("vitals", help="LCP, CLS, INP, TTFB, FCP of this page, each rated good / needs-improvement / poor")
     p = sub.add_parser("a11y", help="what a screen reader would miss: unlabelled controls, images without alt, heading jumps, no lang — with ids to act on")
+    p = sub.add_parser("tools", help="the tools the PAGE offers an agent (WebMCP), marked page-supplied; needs AGENTGLASS_BROWSER_WEBMCP=1 on the server")
+    p = sub.add_parser("call-tool", help="run one tool the page offers, by name (see `tools`); acts, so read-only mode refuses it")
+    p.add_argument("name", help="the tool's name, as `tools` printed it")
+    p.add_argument("--args", dest="toolArgs", default="{}", metavar="JSON", help="the tool's arguments as a JSON object (default {})")
     p = sub.add_parser("region", help="the tree of ONE subtree — a modal is 15 nodes inside 300")
     p.add_argument("selector", help="an id from an observation, a locator (role=dialog) or CSS")
     p = sub.add_parser("throttle", help="make the machine slow — the bug that never reproduces locally")
@@ -2383,12 +2723,18 @@ def main():
                     "`--as NAME` opens it in a container `profiles` lists. At most a few lanes "
                     "exist at once and one left idle for 15 minutes is closed. A lane that is "
                     "closed, or never was, is REFUSED by name — it never falls back to the "
-                    "person's tab.")
+                    "person's tab. `--from-template NAME` (`template save` made it) forks a lane "
+                    "with a signed-in page already loaded, seeded in an in-memory jar that never "
+                    "touches disk — a task-scoped fork, not the shared private jar `new` alone "
+                    "gives you.")
     p.add_argument("action", choices=["new", "list", "close"])
     p.add_argument("id", nargs="?", help="the lane to close (from `lane new` or `lane list`)")
     p.add_argument("--force", action="store_true",
                    help="list every agent's lanes, or close one somebody else opened. "
                         "Read `lane list` first: it is their work")
+    p.add_argument("--from-template", dest="fromTemplate", metavar="NAME",
+                   help="with `new`: an in-memory lane seeded from this template (see `template save`) "
+                        "instead of an empty jar")
     p = sub.add_parser(
         "whoami",
         help="who you are, whether you still hold a tab, and which container owns the "
@@ -2443,6 +2789,22 @@ def main():
                     "the action (or with --url to open one first): it reports whether the browser "
                     "landed on such a wall, with the site's own reason when it gave one.")
     sp4.add_argument("--url", default=None, help="open this first, then verify (default: verify the page already in front)")
+    p = sub.add_parser(
+        "template",
+        help="save/list/remove a named signed-in state for `lane new --from-template` to seed a fork from",
+        description="`template save NAME` is `session save` under a name instead of a path — the same "
+                    "cookies-through-CDP, storage-through-eval read, addressed the same way (`--as`, "
+                    "`--lane`, `--page`, `--shared`, `--active`). `template list` shows what each one is "
+                    "FOR (origins, when it was made, when it goes stale) and never a cookie or storage "
+                    "value. There is no MCP tool for any of the three, and no route hands the FILE back "
+                    "to an agent by name — it only spends a template through `lane new --from-template`. "
+                    "That lane is then an ordinary lane: whatever can read a lane's cookies today "
+                    "(`cdp`, `eval`, `storage`, `session save --lane`) reads them there too.",
+    )
+    tsp = p.add_subparsers(dest="templateCmd", required=True)
+    tsp.add_parser("save", help="capture the addressed page's state under NAME").add_argument("name")
+    tsp.add_parser("list", help="every saved template: origins, created, expiry — never a value")
+    tsp.add_parser("rm", help="delete a saved template").add_argument("name")
     p = sub.add_parser(
         "permissions",
         help="grant camera/mic/clipboard/geolocation for an origin, by API — instead "
@@ -2630,6 +2992,19 @@ def main():
             return session_verify(a, page)
         return session_save(a.file, page, a) if a.sessionCmd == "save" else session_load(a.file, page, a)
 
+    if a.cmd == "template":
+        # `list` and `rm` are about the store, not a page — no tab to address,
+        # same reasoning as `whoami`/`profiles`/`lane`. Only `save` reads one.
+        if a.templateCmd == "list":
+            return template_list()
+        if a.templateCmd == "rm":
+            return template_rm(a.name)
+        page, refusal = addressed(a, "template")
+        if refusal:
+            print(refusal, file=sys.stderr)
+            return 1
+        return template_save(a.name, page, a)
+
     if a.cmd == "permissions":
         page, refusal = addressed(a, "permissions")
         if refusal:
@@ -2767,15 +3142,6 @@ def main():
                 return 2
             if a.internalPage:
                 body["page"] = a.internalPage
-    elif a.cmd in ("newtab", "open"):
-        # Both verbs, one meaning. They took different flag names — `newtab
-        # --profile` and `open --as` — for the same thing, and an agent that
-        # learned one checked the other's help, did not find it, and reasonably
-        # concluded the second could not take an identity. It then used a bare
-        # `open` to resume after a restart, which is the shared profile. A
-        # naming difference is not worth an hour of somebody's work in the
-        # wrong cookie jar.
-        body = {"url": a.url}
     elif a.cmd == "listeners":
         body = {"selector": a.selector}
     elif a.cmd == "coverage":
@@ -2792,6 +3158,26 @@ def main():
         body = {"action": a.action}
         if a.action == "start":
             body.update({"quality": a.quality, "maxWidth": a.maxWidth, "maxHeight": a.maxHeight, "everyNth": a.everyNth})
+    elif a.cmd in ("newtab", "open"):
+        if a.cmd == "newtab" and getattr(a, "fromTemplate", None):
+            # Its own function, not a body this dispatcher's one final `call`
+            # can send — same reason `lane new --from-template` returns early
+            # from its own branch below: three requests in order (open the
+            # tab, navigate it, seed it), not one. Nothing here to `addressed`:
+            # like `lane new`, this MINTS a target rather than acting on one
+            # the caller already has.
+            return newtab_from_template(a.fromTemplate, a)
+        if a.cmd == "newtab" and not a.url:
+            print("newtab needs a url, or --from-template NAME", file=sys.stderr)
+            return 2
+        # Both verbs, one meaning. They took different flag names — `newtab
+        # --profile` and `open --as` — for the same thing, and an agent that
+        # learned one checked the other's help, did not find it, and reasonably
+        # concluded the second could not take an identity. It then used a bare
+        # `open` to resume after a restart, which is the shared profile. A
+        # naming difference is not worth an hour of somebody's work in the
+        # wrong cookie jar.
+        body = {"url": a.url}
     elif a.cmd == "inspect":
         body = {"action": a.action}
         if a.action == "panel":
@@ -2858,6 +3244,16 @@ def main():
             body["max"] = a.max
     elif a.cmd == "addInitScript":
         body = {"name": a.name, "js": a.js}
+    elif a.cmd == "call-tool":
+        try:
+            tool_args = json.loads(a.toolArgs)
+        except ValueError as e:
+            print(f"--args is not JSON: {e}", file=sys.stderr)
+            return 2
+        if not isinstance(tool_args, dict):
+            print("--args must be a JSON object", file=sys.stderr)
+            return 2
+        body = {"name": a.name, "args": tool_args}
     elif a.cmd == "expose":
         body = {"name": a.name}
     elif a.cmd == "exposed":
@@ -2969,6 +3365,15 @@ def main():
             if a.reason is not None:
                 body["reason"] = a.reason
     elif a.cmd == "lane":
+        if a.action == "new" and getattr(a, "fromTemplate", None):
+            # Its own function, not a body this dispatcher's one final `call`
+            # can send: three requests in order (open the lane, navigate it,
+            # seed it), not one. `lane new` on its own mints a jar with nothing
+            # to address either — no `addressed(a` call belongs on this branch
+            # any more than it does on the other two `lane new` shapes beside
+            # it, which is why this lives down here with them and not up with
+            # `session`/`template`/`permissions`/`cdp`/`do`.
+            return lane_new_from_template(a.fromTemplate, a)
         # Explicit flags only: the identity derived from the environment must
         # not decide which cookie jar a lane opens in.
         # The owner is the identity the caller works as, which `stamped` writes;

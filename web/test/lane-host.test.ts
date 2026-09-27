@@ -6,7 +6,7 @@
 import { describe, expect, test } from "bun:test";
 import { laneSlug } from "../src/lib/laneManager.ts";
 import { lanesLabel } from "../src/components/LanesRow.tsx";
-import { laneFromHash, laneProfileFromHash } from "../src/lib/lane.ts";
+import { laneFromHash, laneIsEphemeral, laneProfileFromHash } from "../src/lib/lane.ts";
 
 const HOST = await Bun.file(new URL("../src/components/LaneHost.tsx", import.meta.url)).text();
 const BUS = await Bun.file(new URL("../src/lib/browserBus.ts", import.meta.url)).text();
@@ -34,13 +34,27 @@ describe("laneFromHash", () => {
       expect(laneFromHash(h)).toBeNull();
     }
   });
+
+  test("S6: &t=eph marks an ephemeral lane instead of &p=", () => {
+    expect(laneFromHash("#lane=l1a2b3c4d&t=eph")).toBe("l1a2b3c4d");
+    expect(laneIsEphemeral("#lane=l1a2b3c4d&t=eph")).toBe(true);
+    expect(laneProfileFromHash("#lane=l1a2b3c4d&t=eph")).toBe("");
+    expect(laneIsEphemeral("#lane=l1a2b3c4d")).toBe(false);
+    expect(laneIsEphemeral("#lane=l1a2b3c4d&p=orbit1")).toBe(false);
+    // Not a value to spell any other way — refused, not quietly true.
+    expect(laneFromHash("#lane=l1a2b3c4d&t=EPH")).toBeNull();
+    expect(laneFromHash("#lane=l1a2b3c4d&t=other")).toBeNull();
+  });
 });
 
 describe("the lane host page", () => {
   test("main.tsx mounts it before the app when the hash names a lane", () => {
     const at = code(MAIN);
     expect(at).toContain("const lane = laneFromHash(location.hash);");
-    expect(at).toContain("if (lane) {\n  mount(<LaneHost id={lane} profile={laneProfileFromHash(location.hash)} />);\n} else if (invitation) {");
+    expect(at).toContain(
+      "if (lane) {\n  mount(<LaneHost id={lane} profile={laneProfileFromHash(location.hash)} "
+      + "ephemeral={laneIsEphemeral(location.hash)} />);\n} else if (invitation) {",
+    );
     expect(at.indexOf("mount(<LaneHost id={lane}")).toBeLessThan(at.indexOf("<PairScreen"));
   });
 
@@ -59,10 +73,19 @@ describe("the lane host page", () => {
     expect(at).toContain('if (asked && asked !== "default") return { error:');
     // The refusal of another tab must carry the window's name, or the server drops it and the ask hangs.
     expect(at).toContain("api.browserResult({ client: clientId(), id: ask.id, ok: false,");
-    expect(at).toContain("partition={partitionFor(BROWSER_PARTITION, profile)}");
+    expect(at).toContain("const partition = ephemeral ? `agentglass-browser-eph-${id}` : partitionFor(BROWSER_PARTITION, profile);");
+    expect(at).toContain("partition={partition}");
     expect(at).toContain("const to = !url || url === BLANK ? BLANK : normalizeNavigationUrl(url);");
     expect(at).toContain('if (!to) return { error:');
     expect(at).toContain("loadURL(to)");
+  });
+
+  test("S6: an ephemeral lane's webview attaches on the in-memory jar, never the persisted profile family", () => {
+    const at = code(HOST);
+    expect(at).toContain("ephemeral?: boolean");
+    // Checked BEFORE the profile fallback: an ephemeral lane must never fall
+    // through to a persisted partition just because `profile` came through as "".
+    expect(at.indexOf("ephemeral ?")).toBeLessThan(at.indexOf("partitionFor(BROWSER_PARTITION, profile)"));
   });
 
   test("it registers as a window that can answer, and unregisters", () => {
@@ -84,6 +107,11 @@ describe("the app window as the lane manager", () => {
     // Never quietly the person's jar for something it did not recognise.
     expect("error" in laneSlug("l1a2b3c4d", "named", undefined, profiles)).toBe(true);
     expect(laneSlug("l1a2b3c4d", "surprise", undefined, profiles)).toEqual({ slug: "l1a2b3c4d" });
+  });
+
+  test("S6: an ephemeral lane gets no slug at all — it is not in the profile family, it is its own in-memory jar", () => {
+    const profiles = [{ id: "orbit1", name: "orbit-qa" }];
+    expect(laneSlug("l1a2b3c4d", "ephemeral", undefined, profiles)).toEqual({ slug: "", ephemeral: true });
   });
 
   test("a lane ask is the app's, panel or no panel, and an unhandled one is answered", () => {

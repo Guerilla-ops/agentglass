@@ -29,9 +29,12 @@ const os = require("os");
 // The `<webview>` boundary, in its own file so it can be read and tested on its
 // own. Shipped inside the asar with this one — see build.files in package.json.
 const {
-  BROWSER_PARTITION, isBrowserPartition, safeGuestUrl, applyGuestGuard, permissionVerdict, permissionPrompt, uniqueSavePath,
+  BROWSER_PARTITION, isBrowserPartition, ephemeralPartition, safeGuestUrl, applyGuestGuard, mayAttachOnMainWindow, permissionVerdict, permissionPrompt, uniqueSavePath,
 } = require("./guest-guard.js");
 const { startEgressProxy, literalRefusal, EGRESS_ENV } = require("./egress-guard.js");
+/* S9: the honest "an agent is driving this" header — see identify-header.js
+   for the decision and browser-phase3-plan-2026-09-25.md §S9/D8 for why. */
+const { IDENTIFY_HEADER, shouldIdentify, sanitizeAgentName } = require("./identify-header.js");
 
 /**
  * The browser's egress guard, once it is listening — see egress-guard.js for
@@ -47,6 +50,18 @@ let egress = null;
 const egressArmed = new WeakSet();
 /** Sessions whose permission handlers are set. @type {WeakSet<Electron.Session>} */
 const permissionArmed = new WeakSet();
+/** S9: whether a session sends `X-Agentglass-Agent` to a dev origin. Absent
+ *  means off — a session nobody has touched must stay silent, and a `Map`
+ *  keyed by string would need a separate "does this partition exist yet"
+ *  check this does not.
+ *  @type {WeakMap<Electron.Session, boolean>} */
+const identifyEnabled = new WeakMap();
+/** Sessions whose `onBeforeSendHeaders` dispatcher is installed. One per
+ *  session, same reason as `egressArmed`: a second `onBeforeSendHeaders`
+ *  would replace the first rather than run alongside it, so a future header
+ *  feature belongs INSIDE the one dispatcher below, not a second listener.
+ *  @type {WeakSet<Electron.Session>} */
+const identifyHeaderArmed = new WeakSet();
 
 /** Where each tab's armed download is meant to land, set by the `download`
  *  verb and consumed by the first download that tab starts. Module scope
@@ -2425,7 +2440,15 @@ function registerIpc(win) {
        These are process-level and go through the Electron session API, not through CDP.
        Everything here is optional: if a setting cannot be applied, we report plainly
        what happened rather than silently failing. */
-    const ses = session.fromPartition(BROWSER_PARTITION);
+    /* S9's `identify` is the one setting here that is per-profile rather than
+       session-wide: every other branch below has always applied to the
+       default partition regardless of which tab asked, and changing that for
+       proxy/cookies/dns is a separate change nobody has asked for. `identify`
+       alone reads `req.partition`, refusing anything outside the browser's
+       own family the same way `will-attach-webview` does. */
+    const partition = typeof req?.partition === "string" && isBrowserPartition(req.partition)
+      ? req.partition : BROWSER_PARTITION;
+    const ses = session.fromPartition(partition);
     if (!ses) return { ok: false, error: "no browser session is available" };
     const applied = [];
     try {
@@ -2445,7 +2468,20 @@ function registerIpc(win) {
         } else {
           await ses.setProxy({ proxyRules: rules, proxyBypassRules: bypass });
           applied.push("proxy");
-          if (egress) applied.push("egress guard: its connect-time check is off while this proxy is set");
+          if (egress) {
+            applied.push("egress guard: its connect-time check is off while this proxy is set");
+            // The reply above reaches the calling agent; nothing put this in
+            // front of the person until now. `rules` is agent-supplied text:
+            // stripped of control characters (a newline forges a second log
+            // line), credentials redacted (Chromium's proxy-rules grammar
+            // allows `user:pass@host`, even if this app never sets one), and
+            // capped, so a large value cannot flood the app's own log.
+            const safeRules = rules
+              .replace(/[\r\n]+/g, " ")
+              .replace(/\/\/[^/@]*@/g, "//<redacted>@")
+              .slice(0, 200);
+            console.warn(`[egress] guard replaced by a custom proxy: ${safeRules}`);
+          }
         }
       }
       if (req?.cookies && typeof req.cookies === "object") {
@@ -2524,10 +2560,38 @@ function registerIpc(win) {
            rather than silently accepting a request we cannot fulfill. */
         return { ok: false, error: "DNS remapping must be set at launch with --host-resolver-rules, not at runtime" };
       }
+      if (typeof req?.identify === "boolean") {
+        /* The flag alone. The dispatcher that reads it is armed once, in
+           `did-attach-webview` — see the comment there — the first time a
+           guest attaches on this session, which for a partition already
+           holding a tab has already happened by the time this runs. */
+        identifyEnabled.set(ses, req.identify);
+        applied.push(req.identify ? "identify:on" : "identify:off");
+      }
       return { ok: true, applied };
     } catch (e) {
       return { ok: false, error: String(e instanceof Error ? e.message : e) };
     }
+  });
+
+  /*
+   * S9: which agent's `--as` a guest's requests should carry, pushed here by
+   * the renderer whenever it addresses one — `web/src/lib/browserBus.ts`,
+   * where an ask already resolves the guest id to talk to it. `send`, not
+   * `invoke`: this is fire-and-forget bookkeeping, not something a caller
+   * waits on, and the same reason `ag:browser-active` is a `send`.
+   *
+   * Sanitised here, once, so `guestOwner` is a map the header dispatcher can
+   * read without checking it again — a page that supplied a value would be
+   * an argument to the RENDERER's IPC bridge, not to the page, but the value
+   * still travels through a renderer this process must not trust.
+   */
+  ipcMain.on("ag:browserGuestOwner", (_e, req) => {
+    const guestId = Number(req && req.guestId);
+    if (!Number.isInteger(guestId) || guestId <= 0) return;
+    const owner = sanitizeAgentName(req && req.owner);
+    if (owner) guestOwner.set(guestId, owner);
+    else guestOwner.delete(guestId);
   });
 
   /*
@@ -3315,6 +3379,14 @@ const guestFavicons = new WeakMap();
  *  that rewrites it in a loop to grow this without end. */
 const FAVICON_URL_CAP = 16;
 
+/** S9: which agent's name to send in `X-Agentglass-Agent`, by webContents id.
+ *  A plain `Map`, not a `WeakMap`, because the key the header dispatcher has
+ *  at request time (`details.webContentsId`) is a number, not the guest
+ *  itself — cleared on `destroyed` below, same as `guestFavicons`. Already
+ *  sanitised on the way in, so the dispatcher can use it without checking
+ *  again. @type {Map<number, string>} */
+const guestOwner = new Map();
+
 /** Windows opened as popups from a guest — a sign-in, in practice. The
  *  Cross-Origin-Opener-Policy header is dropped for these and only these; see
  *  where it is done for the measurement that justifies it. */
@@ -3464,12 +3536,39 @@ function canNav(guest, dir) {
   } catch { return false; }
 }
 
-/** @param {AppWindow} win @param {{ lane?: boolean }} [opts] */
+/** @param {AppWindow} win @param {{ lane?: boolean, laneId?: string }} [opts] */
 function guardWebviews(win, opts = {}) {
   // The decision itself lives in guest-guard.js so a test can call it — see the
   // header there. This is only the wiring: the guard says yes or no, and no
   // means the guest never exists.
   win.webContents.on("will-attach-webview", (e, webPreferences, params) => {
+    // `applyGuestGuard` alone accepts ANY family member on ANY window — it has
+    // no notion of which lane, or that a non-lane window should never carry
+    // an ephemeral one at all. Pin it here, where `laneHosts` is:
+    //   - the app's own window (and any webview that is not a lane's) never
+    //     gets an ephemeral partition, full stop — that string names a live
+    //     fork's in-memory session, and nothing outside that fork's own host
+    //     window has business sharing it;
+    //   - a lane's host gets exactly the ONE partition its own table entry
+    //     says it should — never "any family member", which is what let a
+    //     renderer bug attach a private lane's guest on the app's own jar and
+    //     have `destroyLaneHost` wipe the wrong name on close.
+    if (!opts.lane) {
+      // S6 refused the app's own window ANY ephemeral partition, full stop —
+      // nothing here could tell one fork's jar from another's. `newtab
+      // --from-template` (below, `tabEphemerals`) is the one exception: the
+      // window's own mint, for its own new tab, and nothing else — see
+      // `mayAttachOnMainWindow`'s comment in guest-guard.js.
+      if (!mayAttachOnMainWindow(webPreferences.partition, tabEphemerals)) { e.preventDefault(); return; }
+    } else {
+      const laneId = opts.laneId;
+      const entry = laneId ? laneHosts.get(laneId) : undefined;
+      const expected = !entry || !laneId ? null
+        : entry.ephemeral ? ephemeralPartition(laneId)
+        : entry.slug ? `persist:agentglass-browser-${entry.slug}`
+        : BROWSER_PARTITION;
+      if (webPreferences.partition !== expected) { e.preventDefault(); return; }
+    }
     if (!applyGuestGuard(webPreferences, params)) e.preventDefault();
     else armEgress(webPreferences.partition);
   });
@@ -3652,6 +3751,7 @@ function guardWebviews(win, opts = {}) {
     guest.once("destroyed", () => {
       browserGuests.delete(guest);
       guestFavicons.delete(guest);
+      guestOwner.delete(guest.id);
       if (browserGuest === guest) browserGuest = [...browserGuests].pop() ?? null;
     });
 
@@ -3853,6 +3953,29 @@ function guardWebviews(win, opts = {}) {
       });
     }
 
+    /*
+     * S9: `X-Agentglass-Agent`, self-asserted and sent only to a dev origin —
+     * see identify-header.js for what counts as one, and browser-phase3-plan
+     * -2026-09-25.md §S9 for why (D8). Off until `ag:browserSessionSettings`
+     * turns it on for THIS session; nothing here reaches the switch.
+     *
+     * ONE dispatcher per session, same rule the COOP filter just above is
+     * arming for the same reason: Electron keeps only the last
+     * `onBeforeSendHeaders` a session was given, so a second header feature
+     * does not get a second listener — it gets a branch inside this one.
+     */
+    if (!identifyHeaderArmed.has(session)) {
+      identifyHeaderArmed.add(session);
+      session.webRequest.onBeforeSendHeaders((details, callback) => {
+        const owner = identifyEnabled.get(session) && shouldIdentify(details.url) && details.webContentsId != null
+          ? guestOwner.get(details.webContentsId)
+          : undefined;
+        callback(owner
+          ? { requestHeaders: { ...details.requestHeaders, [IDENTIFY_HEADER]: owner } }
+          : {});
+      });
+    }
+
     guest.on("did-create-window", (child, details) => {
       // Which windows the rule above applies to: the ones this handler made.
       const id = child.webContents.id;
@@ -3969,8 +4092,36 @@ const LANE_MAX = 4;
  *  plus a guest; software paint makes an animated page dear. */
 const LANE_RSS_MB = Number(process.env.AGENTGLASS_LANE_RSS_MB) || 2048;
 /** id -> its window, its guest, and its container. Ids are what the server minted.
- *  @type {Map<string, { host: Electron.BrowserWindow, guest: Electron.WebContents | null, slug: string, private: boolean }>} */
+ *  @type {Map<string, { host: Electron.BrowserWindow, guest: Electron.WebContents | null, slug: string, private: boolean, ephemeral: boolean }>} */
 const laneHosts = new Map();
+
+/** Clear an in-memory ephemeral partition's storage and cache — a lane's fork
+ *  (`destroyLaneHost`, below) and a tab's (`ag:tabEphemeralClose`, further
+ *  down) share this rather than each clearing it their own way: same shape,
+ *  same reason. Nothing was ever on disk — the partition carries no
+ *  `persist:` prefix — but the cookies/storage the fork wrote, and anything
+ *  it fetched, are still live in this process's memory under that name until
+ *  this runs.
+ *  @param {string} partition */
+function wipeEphemeralPartition(partition) {
+  const ses = session.fromPartition(partition);
+  void ses.clearStorageData().then(() => ses.clearCache()).catch(() => { /* already gone with the window */ });
+}
+
+/**
+ * Ephemeral TAB partitions the app's OWN window may attach a guest on right
+ * now — `newtab --from-template`'s visible-tab twin of a lane's ephemeral
+ * fork. Minted one at a time by `ag:tabEphemeralOpen`, held until
+ * `ag:tabEphemeralClose` wipes it and drops the entry.
+ *
+ * A lane's ephemeral partition is never in here, and that is the point of two
+ * tables rather than one shared set: the app's own window still cannot
+ * attach on a LANE's fork by guessing its id, only on one it minted for
+ * itself. See `mayAttachOnMainWindow` in guest-guard.js, which reads this.
+ * @type {Set<string>} */
+const tabEphemerals = new Set();
+/** Generous next to `LANE_MAX` (4): a tab costs no hidden window, just a jar. */
+const TAB_EPHEMERAL_MAX = 8;
 
 /** Combined working set of the lanes' processes, in MB. */
 /* CEILING: this is checked when a lane opens, not while it runs. A lane on a
@@ -3992,9 +4143,14 @@ function laneRssMb() {
 /**
  * @param {string} id
  * @param {string} slug the container the lane browses in: a profile id, "" for
- *   the person's own, or the lane's own id for a private one.
+ *   the person's own, or the lane's own id for a private one. Meaningless
+ *   (and always "") when `ephemeral` is true.
+ * @param {boolean} [ephemeral] S6: a `lane new --from-template` fork. Its
+ *   partition carries no `persist:` prefix at all — Electron keeps such a
+ *   session in memory only, so unlike a private lane there is nothing on disk
+ *   to wipe when it closes, only a crash that leaves nothing behind either.
  */
-function createLaneHost(id, slug) {
+function createLaneHost(id, slug, ephemeral) {
   const host = new BrowserWindow({
     show: false,
     width: 1280,
@@ -4008,12 +4164,13 @@ function createLaneHost(id, slug) {
     },
   });
   host.webContents.setFrameRate(LANE_FRAME_RATE);
-  guardWebviews(host, { lane: true });
-  const entry = /** @type {NonNullable<ReturnType<typeof laneHosts.get>>} */ ({ host, guest: null, slug, private: slug === id });
+  guardWebviews(host, { lane: true, laneId: id });
+  const entry = /** @type {NonNullable<ReturnType<typeof laneHosts.get>>} */
+    ({ host, guest: null, slug, private: !ephemeral && slug === id, ephemeral: !!ephemeral });
   host.webContents.on("did-attach-webview", (_e, guest) => { entry.guest = guest; });
   laneHosts.set(id, entry);
   host.once("closed", () => { laneHosts.delete(id); });
-  host.loadURL(`${APP_ORIGIN}/#lane=${encodeURIComponent(id)}${slug ? `&p=${slug}` : ""}`);
+  host.loadURL(`${APP_ORIGIN}/#lane=${encodeURIComponent(id)}${ephemeral ? "&t=eph" : slug ? `&p=${slug}` : ""}`);
   return host;
 }
 
@@ -4027,7 +4184,12 @@ function destroyLaneHost(id) {
   if (!l) return false;
   laneHosts.delete(id);
   if (!l.host.isDestroyed()) l.host.destroy();
-  if (l.private) {
+  if (l.ephemeral) {
+    // See `wipeEphemeralPartition`: nothing on disk to begin with, but the
+    // template's cookies/storage/cache are still live in this process's
+    // memory under that name until this runs.
+    wipeEphemeralPartition(ephemeralPartition(id));
+  } else if (l.private) {
     /* A private lane's jar is its own and nobody can come back to it: wiped, not
        left on disk under a name that says nothing. */
     const ses = session.fromPartition(`persist:agentglass-browser-${l.slug}`);
@@ -4111,6 +4273,17 @@ function createWindow() {
   win.loadURL(`${APP_ORIGIN}/`);
   mainWindow = win;
 
+  /* A reload starts the renderer's tab list over from `saveSession` — which
+     never carries `partition` — so every ephemeral tab this window still had
+     is orphaned the instant the page reloads: `tabEphemerals` still names
+     them, but nothing in the new renderer can ever ask to close one. Wiped
+     here rather than left for the process to exit; harmless on the FIRST
+     load too, since the Set starts empty. */
+  win.webContents.on("did-finish-load", () => {
+    for (const p of tabEphemerals) wipeEphemeralPartition(p);
+    tabEphemerals.clear();
+  });
+
   // Saved on every settle rather than only on close: a crash, a kill or a
   // reboot are exactly the times you would most like the window to come back
   // where it was. Debounced, because a drag or a resize fires continuously.
@@ -4181,6 +4354,10 @@ function createWindow() {
     /* A lane host is a window too: left alive, closing the app's window would
        not end the app, which would keep running with nothing on screen. */
     for (const id of Array.from(laneHosts.keys())) destroyLaneHost(id);
+    // Every ephemeral tab this window held goes with it — the same reason a
+    // reload wipes them above, and the window is not coming back with them.
+    for (const p of tabEphemerals) wipeEphemeralPartition(p);
+    tabEphemerals.clear();
   });
 }
 
@@ -4374,15 +4551,16 @@ app.whenReady().then(async () => {
   /* Lanes are made and destroyed by the app's own renderer, at the server's
      request (server/src/browserdrive.ts, the lane manager). Only that window
      may: a lane host or a guest asking for another window is not a thing. */
-  ipcMain.handle("ag:laneOpen", (e, id, slug) => {
+  ipcMain.handle("ag:laneOpen", (e, id, slug, ephemeral) => {
     if (!mainWindow || e.sender !== mainWindow.webContents) return { ok: false, error: "only the app window opens lanes" };
     if (typeof id !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(id)) return { ok: false, error: "bad lane id" };
     if (typeof slug !== "string" || !/^[a-z0-9]{0,16}$/.test(slug)) return { ok: false, error: "bad container" };
+    if (ephemeral !== undefined && typeof ephemeral !== "boolean") return { ok: false, error: "bad ephemeral flag" };
     if (laneHosts.has(id)) return { ok: false, error: "that lane exists" };
     if (laneHosts.size >= LANE_MAX) return { ok: false, error: `${LANE_MAX} lanes are already open` };
     const used = laneRssMb();
     if (used > LANE_RSS_MB) return { ok: false, error: `the lanes hold ${Math.round(used)} MB (the cap is ${LANE_RSS_MB}); close one` };
-    createLaneHost(id, slug);
+    createLaneHost(id, slug, ephemeral === true);
     return { ok: true };
   });
   /* The server's own list of lanes, on every manager heartbeat: a host it no
@@ -4397,6 +4575,27 @@ app.whenReady().then(async () => {
   ipcMain.handle("ag:laneClose", (e, id) => {
     if (!mainWindow || e.sender !== mainWindow.webContents) return { ok: false, error: "only the app window closes lanes" };
     return { ok: typeof id === "string" && destroyLaneHost(id) };
+  });
+  /* `newtab --from-template`: the visible-tab twin of a lane's ephemeral fork.
+     Minted BEFORE the renderer creates the `<webview>`, because `partition`
+     has to be right the first time a guest attaches — `guardWebviews` checks
+     `tabEphemerals` at that exact moment (above) and there is no second
+     chance to widen it after. */
+  ipcMain.handle("ag:tabEphemeralOpen", (e) => {
+    if (!mainWindow || e.sender !== mainWindow.webContents) return { ok: false, error: "only the app window opens tabs" };
+    if (tabEphemerals.size >= TAB_EPHEMERAL_MAX) {
+      return { ok: false, error: `${TAB_EPHEMERAL_MAX} ephemeral tabs are already open — close one first` };
+    }
+    const partition = ephemeralPartition(require("crypto").randomUUID().slice(0, 8));
+    tabEphemerals.add(partition);
+    return { ok: true, partition };
+  });
+  ipcMain.handle("ag:tabEphemeralClose", (e, partition) => {
+    if (!mainWindow || e.sender !== mainWindow.webContents) return { ok: false, error: "only the app window closes tabs" };
+    if (typeof partition !== "string" || !tabEphemerals.has(partition)) return { ok: false };
+    tabEphemerals.delete(partition);
+    wipeEphemeralPartition(partition);
+    return { ok: true };
   });
   /* An offscreen window's contents are typed "offscreen", not "window", so a
      lane host would be handed nothing and could never register: it is our own

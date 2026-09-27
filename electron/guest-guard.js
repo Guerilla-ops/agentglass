@@ -41,7 +41,26 @@ const BROWSER_PARTITION = "persist:agentglass-browser";
  * only have one of them".
  */
 const BROWSER_PARTITION_RE = /^persist:agentglass-browser(-[a-z0-9]{1,16})?$/;
-const isBrowserPartition = (p) => typeof p === "string" && BROWSER_PARTITION_RE.test(p);
+
+/**
+ * S6: a lane forked from a template (`lane new --from-template`). No
+ * `persist:` prefix at all, on purpose — Electron keeps an unprefixed
+ * partition in memory only, so a crash leaves nothing on disk for the
+ * template's cookies to leak from. D6 rejected `persist:` + delete-on-close:
+ * that leaks on a crash, which is exactly the failure this whole feature
+ * exists to remove. The suffix is the lane id `lane new` mints, never
+ * renderer-chosen, but it is the same `{1,16}` lowercase-and-digits alphabet
+ * as `BROWSER_PARTITION_RE`'s suffix above — one lane-id shape, not two.
+ */
+const EPHEMERAL_PARTITION_RE = /^agentglass-browser-eph-[a-z0-9]{1,16}$/;
+const isEphemeralPartition = (p) => typeof p === "string" && EPHEMERAL_PARTITION_RE.test(p);
+/** The one place this string is built in the main process; main.js's
+ *  `destroyLaneHost` calls this rather than holding its own copy of the
+ *  literal. web/src/components/LaneHost.tsx builds the same string again on
+ *  the renderer side, which cannot require() this CommonJS file — a copy
+ *  with a comment pointing back here, same as `shared/csp.ts`'s. */
+const ephemeralPartition = (id) => `agentglass-browser-eph-${id}`;
+const isBrowserPartition = (p) => (typeof p === "string" && BROWSER_PARTITION_RE.test(p)) || isEphemeralPartition(p);
 
 /** http(s) only, and no credentials in the URL.
  *
@@ -87,6 +106,30 @@ function safeGuestUrl(src) {
  * @returns true if the guest may attach (webPreferences has been hardened in
  *          place), false if the caller must preventDefault.
  */
+/**
+ * Whether the app's OWN window (never a lane's) may attach a guest on
+ * PARTITION, given the tab-ephemeral partitions it currently holds a jar
+ * open for.
+ *
+ * S6 shipped lanes only: the app's own window was refused ANY ephemeral
+ * partition, full stop, because nothing there could tell one fork's jar from
+ * another's or from a lane's. `newtab --from-template` needs exactly one
+ * exception to that "full stop" — the app's window minting its OWN fork for
+ * its OWN new tab — so this is the one new door, and it is still fail-closed:
+ * an ordinary (non-ephemeral) partition is unaffected, and an ephemeral one
+ * this window did not itself mint (a lane's, or a guess) is still refused.
+ *
+ * A plain function so a test can hand it a `Set` without importing
+ * `electron/main.js` — see the header comment for why that file cannot be
+ * imported at all.
+ * @param {unknown} partition
+ * @param {Set<string> | ReadonlySet<string>} tabEphemerals
+ */
+function mayAttachOnMainWindow(partition, tabEphemerals) {
+  if (!isEphemeralPartition(partition)) return true;
+  return tabEphemerals.has(/** @type {string} */ (partition));
+}
+
 function applyGuestGuard(webPreferences, params) {
   const src = safeGuestUrl(params && params.src);
   if (!src || !isBrowserPartition(webPreferences.partition)) return false;
@@ -202,8 +245,12 @@ function uniqueSavePath(dir, name, exists) {
 module.exports = {
   BROWSER_PARTITION,
   BROWSER_PARTITION_RE,
+  EPHEMERAL_PARTITION_RE,
   isBrowserPartition,
+  isEphemeralPartition,
+  ephemeralPartition,
   safeGuestUrl,
+  mayAttachOnMainWindow,
   applyGuestGuard,
   permissionAllowed,
   permissionVerdict,

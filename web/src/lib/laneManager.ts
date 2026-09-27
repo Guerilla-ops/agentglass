@@ -9,9 +9,12 @@ import { CAN_MAKE_LANES, closeLaneWindow, keepLaneWindows, openLaneWindow } from
  * The container slug a new lane's window is given: what `&p=` in its hash
  * says, and so which cookie jar its webview attaches on.
  *
- *   private  the lane's own id, so the jar is its alone (the app wipes it on close)
- *   shared   "", the person's own container
- *   named    the id of a container `profiles` lists, found by name
+ *   private    the lane's own id, so the jar is its alone (the app wipes it on close)
+ *   shared     "", the person's own container
+ *   named      the id of a container `profiles` lists, found by name
+ *   ephemeral  no slug at all (S6): the lane's window builds an in-memory
+ *              partition of its own, outside the persisted profile family
+ *              entirely — see LaneHost.tsx.
  *
  * A name nobody made is an error and is not made here: minting a container is
  * the Browser panel's, and one written from behind its back would be
@@ -19,8 +22,9 @@ import { CAN_MAKE_LANES, closeLaneWindow, keepLaneWindows, openLaneWindow } from
  */
 export function laneSlug(
   id: string, container: unknown, name: unknown, profiles: ReadonlyArray<{ id: string; name: string }>,
-): { slug: string } | { error: string } {
+): { slug: string; ephemeral?: boolean } | { error: string } {
   if (container === "shared") return { slug: "" };
+  if (container === "ephemeral") return { slug: "", ephemeral: true };
   if (container === "named") {
     const hit = typeof name === "string" ? profiles.find((p) => p.name === name || p.id === name) : undefined;
     return hit && hit.id ? { slug: hit.id } : { error: `no container called ${String(name)} — \`profiles\` lists them` };
@@ -34,7 +38,7 @@ async function serveLaneAsk(ask: BrowserAskFrame): Promise<void> {
     let store: Storage | null = null;
     try { store = window.localStorage; } catch { /* blocked */ }
     const chosen = laneSlug(ask.args.make, ask.args.container, ask.args.name, loadProfiles(store));
-    reply = "error" in chosen ? { ok: false, error: chosen.error } : await openLaneWindow(ask.args.make, chosen.slug);
+    reply = "error" in chosen ? { ok: false, error: chosen.error } : await openLaneWindow(ask.args.make, chosen.slug, chosen.ephemeral === true);
   } else if (typeof ask.args.drop === "string") {
     reply = await closeLaneWindow(ask.args.drop);
   } else {

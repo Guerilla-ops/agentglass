@@ -18,8 +18,18 @@ import { useLive } from "../lib/useLive.ts";
  * person's own, a named one, or one that is this lane's alone). The tab verbs
  * see exactly one tab, so `open` lands in it, and an ask naming any other tab
  * is refused rather than served from this one.
+ *
+ * `ephemeral` (S6, `lane new --from-template`): an in-memory jar of its own,
+ * checked before `profile` so a lane with no profile string still never falls
+ * through to `partitionFor`'s empty-string case, which is the person's own
+ * cookies. Its partition string is built again here rather than imported: it
+ * is CommonJS in electron/guest-guard.js (`ephemeralPartition`), which this
+ * renderer bundle cannot require() — the same reason `shared/csp.ts`'s list
+ * is a documented copy in main.js rather than an import. Keep the two in
+ * sync by hand if the shape in guest-guard.js's `EPHEMERAL_PARTITION_RE` ever
+ * changes.
  */
-export function LaneHost({ id, profile }: { id: string; profile: string }) {
+export function LaneHost({ id, profile, ephemeral = false }: { id: string; profile: string; ephemeral?: boolean }) {
   // The live socket is what carries the asks; its data is not used here.
   useLive();
   const view = useRef<HTMLElement | null>(null);
@@ -69,12 +79,13 @@ export function LaneHost({ id, profile }: { id: string; profile: string }) {
     };
   }, [id]);
 
+  const partition = ephemeral ? `agentglass-browser-eph-${id}` : partitionFor(BROWSER_PARTITION, profile);
   return (
     <webview
       ref={view as unknown as React.Ref<HTMLElement>}
       data-lane={id}
       src={BLANK}
-      partition={partitionFor(BROWSER_PARTITION, profile)}
+      partition={partition}
       style={{ width: "100vw", height: "100vh", display: "inline-flex" }}
     />
   );

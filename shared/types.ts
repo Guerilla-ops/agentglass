@@ -1185,7 +1185,7 @@ export interface LaneRow {
   id: string;
   /** Who opened it — self-asserted, like every `as`. */
   as?: string;
-  container: "private" | "shared" | "named";
+  container: "private" | "shared" | "named" | "ephemeral";
   name?: string;
   created: number;
   lastAsk: number;
@@ -1286,6 +1286,9 @@ export interface BrowserAskFrame {
     | "handoff"
     /* Measurement as data: web vitals with ratings, and an accessibility scan. */
     | "vitals" | "a11y"
+    /* What a page offers an agent (WebMCP), and running one of its tools.
+       Behind AGENTGLASS_BROWSER_WEBMCP=1 on the server. */
+    | "tools" | "call-tool"
     /* §11: the clipboard through the route that works, and the page as one
        file that still renders offline. */
     | "clipboard" | "save"
@@ -4888,6 +4891,23 @@ export interface PublicPlugin {
   sandbox?: import("./pluginSandbox.ts").PluginSandbox;
   running: boolean;
   pid: number | null;
+  /** Whether the running process is actually inside a bwrap box, and why not
+   *  when it isn't — see `BoxState` in server/src/plugins.ts. Absent when the
+   *  plugin is not running: a stopped plugin has no box to report on.
+   *  `refused` on the boxed variant: a grant or program that resolved but was
+   *  still turned away (a symlink, a live socket dir) — boxed either way, but
+   *  worth a red line rather than silence. */
+  boxState?:
+    | { kind: "boxed"; refused?: { path: string; why: string }[] }
+    | { kind: "unboxed"; reason: "no-block" | "missing" | "userns-blocked" | "failed"; detail?: string };
+  /** Whether THIS HOST can build a box at all, present only when `sandbox` is
+   *  declared — see `PublicSandboxProbe` in server/src/plugins.ts. Checked
+   *  before a start is ever attempted, so the approval screen can say a box
+   *  cannot be built before the person switches the plugin on. */
+  sandboxProbe?: { ok: true } | { ok: false; reason: "missing" | "userns-blocked" | "failed"; detail: string };
+  /** The first line bwrap wrote to stderr the last time this plugin's box
+   *  died in its opening instant. Set only while nothing is running. */
+  lastBoxFailure?: string;
 }
 
 export interface PluginsStatus {
@@ -4921,4 +4941,17 @@ export interface Catalogue {
   /** What the document listed, which is more than `plugins` when it listed
    *  more than the server's cap. */
   total: number;
+}
+
+/** What the server's own error log says, folded into what is worth a look. */
+export interface LogDigest {
+  since: number;
+  total: number;
+  /** `sig` is the grouping key with placeholders; `example` is the latest real
+   *  line of the group, emoji stripped, and is what gets shown. */
+  groups: { sig: string; example: string; level: "error" | "warn"; count: number; first: number; last: number }[];
+  crashLoops: { sig: string; example: string; count: number; at: number }[];
+  spikes: { sig: string; example: string; recent: number; perHourBefore: number }[];
+  /** Nothing worth a look; the badge is drawn only when this is false. */
+  quiet: boolean;
 }
