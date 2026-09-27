@@ -28,8 +28,22 @@ describe("re-consent reads as its own thing", () => {
   });
 
   test("its own warning colour, not the ordinary disabled styling", () => {
-    expect(pane).toMatch(/reconsent && \(/);
+    expect(pane).toMatch(/reconsent && manifestChanged && \(/);
     expect(pane).toContain('tone="warning"');
+  });
+});
+
+describe("a re-consent that only re-hashed the code doesn't claim the manifest moved", () => {
+  test("manifestHash vs approvedHash decides which of the two boxes shows", () => {
+    // fingerprint (what gates needsReview/reconsent) folds in every byte on
+    // disk, so a README fix or a typo fix re-asks with nothing different in
+    // the declaration. manifestHash is the capability-only half of the same
+    // record, and comparing it to approvedHash is what tells the two apart.
+    expect(pane).toContain("plugin.approvedHash !== null && plugin.approvedHash !== plugin.manifestHash");
+    expect(pane).toMatch(/reconsent && manifestChanged && \(/);
+    expect(pane).toMatch(/reconsent && !manifestChanged && \(/);
+    expect(pane).toMatch(/the manifest changed since then/);
+    expect(pane).toMatch(/code changed since you approved it/);
   });
 });
 
@@ -140,5 +154,23 @@ describe("removing a plugin keeps what was typed into its settings", () => {
     // is only not a surprise if the dialog says so before the click.
     const label = pane.slice(pane.indexOf("{confirmRemove && hasSettings && ("));
     expect(label.slice(0, label.indexOf("</label>"))).toContain("kept on this machine for a reinstall");
+  });
+});
+
+describe("the declaration fold spans the card", () => {
+  test("its wrapper opens the narrow container query, not the page-wide control column", () => {
+    // Regression: a Fold with no control is the row's only grid item, and
+    // .agx-settings-row always reserves the wide control column's width for
+    // it even with nothing in it (see index.css). Without agx-settings-col
+    // opening the <588px container query, "What it can do" had ~70px to fit
+    // in inside a ~360px card and wrapped one word per line.
+    const foldAt = pane.indexOf('<Fold label="What it can do"');
+    const divAt = pane.lastIndexOf("<div", foldAt);
+    const wrap = pane.slice(divAt, foldAt);
+    expect(wrap).toMatch(/className="[^"]*\bagx-settings-col\b[^"]*"/);
+    // And it is full width: agx-settings-col is an inline-size container,
+    // whose intrinsic width is zero, so in the card's shrink-to-fit box it
+    // collapsed to its longest word and margin-inline:auto centred it.
+    expect(wrap).toMatch(/className="[^"]*\bw-full\b[^"]*"/);
   });
 });
