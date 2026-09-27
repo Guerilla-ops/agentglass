@@ -10,6 +10,7 @@
 import { describe, expect, test } from "bun:test";
 
 const SRC = await Bun.file(new URL("../src/components/plugins/PluginDeclaration.tsx", import.meta.url)).text();
+const BOX_SRC = await Bun.file(new URL("../src/lib/pluginBoxState.ts", import.meta.url)).text();
 const DOC = (await Bun.file(new URL("../../docs/PLUGINS.md", import.meta.url)).text()).replace(/\s+/g, " ");
 
 describe("approval screen", () => {
@@ -19,10 +20,11 @@ describe("approval screen", () => {
     expect(SRC).toMatch(/limits its access to this app, not to your machine/i);
   });
 
-  test("the warning is drawn in the component, not only defined", () => {
+  test("the warning is drawn in the component, not only defined — shown for an unboxed plugin, never a boxed one", () => {
     const i = SRC.indexOf("export function PluginDeclaration(");
     expect(i).toBeGreaterThan(0);
-    expect(SRC.slice(i)).toContain("{PROCESS_WARNING}");
+    expect(SRC.slice(i)).toContain("PROCESS_WARNING");
+    expect(SRC.slice(i)).toMatch(/box\??\.tone === "boxed"[^\n]*BOXED_PROCESS_NOTE[^\n]*:\s*PROCESS_WARNING/);
   });
 
   test("no scope sentence claims the plugin cannot write or touch the machine", () => {
@@ -51,20 +53,23 @@ describe("approval screen, sandbox grants", () => {
     expect(body).toMatch(/g\.secret[^\n]*var\(--error\)|var\(--error\)[^\n]*g\.secret/);
   });
 
-  test("says it is declared and not enforced, while nothing enforces it", () => {
-    expect(SRC).toMatch(/not enforced/i);
-    expect(SRC).toMatch(/still runs as you/i);
+  test("draws its box wording from the shared, testable helper, and that helper actually warns when the host cannot build one", () => {
+    expect(SRC).toContain("boxWording(plugin)");
+    expect(BOX_SRC).toMatch(/userns-blocked/);
+    expect(BOX_SRC).toMatch(/bubblewrap is not installed/i);
+    expect(BOX_SRC).toMatch(/box failed to start/i);
   });
 });
 
 describe("docs/PLUGINS.md", () => {
-  test("says a plugin runs as the user and scope limits only the token", () => {
+  test("says a plugin runs as the user unless a box is built, and scope limits only the token", () => {
     expect(DOC).toMatch(/runs as you/i);
     expect(DOC).toMatch(/scope limits the token, not the process/i);
   });
 
-  test("documents the sandbox block as declared and not enforced", () => {
-    expect(DOC).toMatch(/`sandbox` \|[^|]*Declared only for now: nothing enforces it yet/);
+  test("documents the sandbox block as enforced when the host can build a box, unboxed with a warning otherwise", () => {
+    expect(DOC).toMatch(/`sandbox` \|[^|]*Enforced when this host can build a `bwrap` box/);
+    expect(DOC).toMatch(/AppArmor user-namespace limit/);
   });
 
   test("no longer promises a read plugin cannot write", () => {

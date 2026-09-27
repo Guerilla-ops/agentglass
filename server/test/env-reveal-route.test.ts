@@ -27,12 +27,11 @@ const TOKEN = "env-reveal-route-token";
  *  be served under it, and a page cannot forge an Origin header. */
 const DESKTOP = "agentglass://app";
 
-let dir = "", base = "", ownPort = 0, proc: ReturnType<typeof Bun.spawn> | null = null;
+let dir = "", base = "", proc: ReturnType<typeof Bun.spawn> | null = null;
 
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "agx-envroute-"));
   const port = await freePort();
-  ownPort = port;
   base = `http://127.0.0.1:${port}`;
   proc = Bun.spawn(["bun", "run", new URL("../src/index.ts", import.meta.url).pathname], {
     // Named, never `...process.env`: this server must not read the developer's
@@ -74,21 +73,18 @@ afterAll(() => {
 
 const auth = { authorization: `Bearer ${TOKEN}` };
 /**
- * The test server's own pid.
+ * The test server's own pid: the one this file spawned.
  *
- * Found by its PORT, not by "the first one that is mine" — which is what this
- * did first, and `mine` is true of every port the developer running the suite
- * happens to have open. It picked their real agentglass on :4000, revealed
- * against the wrong process, and failed with "no such variable" while looking
- * exactly like a broken gate.
+ * Not looked up through `/machine/ports`, which is what this did first: that
+ * route runs `ss -ltnp`, which costs ~4 s of CPU on a machine with a few dozen
+ * sockets and is killed at the route's 5 s cap, so under a full `bun test` the
+ * list came back empty and the test failed with "should be listening on :N"
+ * looking exactly like a broken gate. The one before that took "the first port
+ * that is mine", which on a developer's machine is their real agentglass.
+ * The environment read below proves the pid is the right process: it holds the
+ * bait variables only this server was given.
  */
-const selfPid = async (): Promise<number> => {
-  const r = await fetch(`${base}/machine/ports`, { headers: auth });
-  const d = await r.json() as { ports: { pid: number | null; mine: boolean; port: number }[] };
-  const own = d.ports.find((p) => p.port === ownPort && p.pid);
-  expect(own, `the test server should be listening on :${ownPort}`).toBeDefined();
-  return own!.pid!;
-};
+const selfPid = async (): Promise<number> => proc!.pid;
 
 describe("reading a process", () => {
   test("the environment comes back with secrets masked and names intact", async () => {

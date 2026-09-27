@@ -142,7 +142,14 @@ describe("the forwarder script", () => {
   beforeEach(() => {
     posts = [];
     server?.stop(true);
-    server = Bun.serve({ port: 0, async fetch(req) { posts.push(await req.json()); return new Response("{}"); } });
+    server = Bun.serve({ port: 0, async fetch(req) {
+      // A POST with no body is somebody else's: a backgrounded curl from an
+      // earlier test that outlived its own server and found this port reused.
+      // Left to throw, its error surfaced inside whichever test was running.
+      const text = await req.text();
+      if (text) posts.push(JSON.parse(text));
+      return new Response("{}");
+    } });
     url = `http://127.0.0.1:${server.port}`;
     // Its own TMPDIR, so the throttle stamp is this test's and not the machine's.
     stampDir = mkdtempSync(join(tmpdir(), "agx-sl-stamp-"));
@@ -158,6 +165,10 @@ describe("the forwarder script", () => {
     await p.exited;
     // The POST is backgrounded so the status line never waits on a socket.
     await Bun.sleep(250);
+    // A loaded runner can take longer than that to start the background curl.
+    // Nothing to wait for when no post is due, so only a payload that carries
+    // rate_limits, to a server that is up, and with nothing arrived yet.
+    for (let i = 0; payload === WITH && chained && server && !posts.length && i < 25; i++) await Bun.sleep(100);
     return out;
   }
 

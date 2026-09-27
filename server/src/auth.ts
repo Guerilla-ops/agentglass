@@ -182,6 +182,23 @@ export function resolveToken(loopbackOnly: boolean): Auth {
   return { token: t, source: "generated", path: TOKEN_PATH };
 }
 
+/**
+ * Non-null on the one install this whole file is decoration for: loopback,
+ * no `AGENTGLASS_TOKEN`. `resolveToken` returns a null token there, and
+ * index.ts skips the entire `callerFor`/`allowed` block — see
+ * `understudyRequiresToken` above for the same fact from a different door.
+ * Printed at startup so the gap is loud rather than found later; it changes
+ * no behaviour, only whether anyone was told.
+ */
+export function tokenlessWarning(a: Auth): string | null {
+  if (a.source !== "none") return null;
+  return (
+    "⚠  no AGENTGLASS_TOKEN configured — any process on this machine, on any account, " +
+    "can drive the shell, git/docker writes and the fleet feed. Set AGENTGLASS_TOKEN " +
+    "to require a credential."
+  );
+}
+
 function readPersisted(): string | null {
   try {
     return existsSync(TOKEN_PATH) ? readFileSync(TOKEN_PATH, "utf8").trim() || null : null;
@@ -227,7 +244,10 @@ export function tokenOk(req: Request, url: URL, token: string): boolean {
 }
 
 /** The credential this request carries, however it carried it. */
-function presented(req: Request, url: URL): string {
+/** Exported for `plugin-socket.ts`'s own gate, which has to tell "no
+ *  credential at all" (401) from "a real credential of the wrong kind" (403)
+ *  before it ever calls `callerFor` — see the comment there. */
+export function presented(req: Request, url: URL): string {
   const auth = req.headers.get("authorization") || "";
   const bearer = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
   return bearer || url.searchParams.get("token") || "";

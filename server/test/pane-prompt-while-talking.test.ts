@@ -178,6 +178,10 @@ beforeAll(async () => {
       AGENTGLASS_TMUX_SOCKET: SOCKET,
       TMUX_TMPDIR: TMUX_TEST_TMPDIR,
       AGENTGLASS_CLAUDE_HOME: join(jail, "clone-claude"),
+      // Its own database: process.env may carry the path an earlier file made
+      // and removed, and a path under tmp is accepted as it stands, so the
+      // child died opening a file in a directory that was gone.
+      AGENTGLASS_DB: join(jail, "t.db"),
       // One second rather than eight: the behaviour under test is the SHAPE of
       // the wait, not its length, and a lock costing eight seconds a case is
       // one somebody eventually marks skip. Comfortably above the stub's 200ms

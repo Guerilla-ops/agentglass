@@ -105,20 +105,65 @@ describe("self-update", () => {
     expect(c).toMatch(/verify-tag/);
     expect(c).toMatch(/\^\{commit\}/);
   });
+
+  // R6: an unsigned tag used to be accepted (`if` around verify-tag). Now the
+  // signature is mandatory, and it has to verify against a key pinned beside
+  // this script — never the local machine's own gpg/ssh trust store, which a
+  // stray configured key answers just as well as the real signer.
+  test("a signature is mandatory, and verified against a pinned allowed-signers file, not the local trust store", () => {
+    const c = code(updater).join("\n");
+    expect(c).toMatch(/gpg\.ssh\.allowedSignersFile/);
+    expect(c).not.toMatch(/if git .* cat-file tag/); // no longer conditional
+  });
+
+  // H1: `gpg.format=ssh` alone does not stop `verify-tag` from picking a
+  // verifier by sniffing the signature's OWN format — it still shells out to
+  // gpg for a real PGP block regardless of that setting, and a grep for the
+  // marker text anywhere in the tag object was fooled by the same string
+  // sitting in the free-text message. Every non-SSH verifier program must be
+  // disabled outright so no format switch is left for an attacker to take.
+  test("every non-SSH verifier program is disabled, so PGP/x509 cannot be the format that verifies", () => {
+    const c = code(updater).join("\n");
+    expect(c).toMatch(/gpg\.program=false/);
+    expect(c).toMatch(/gpg\.openpgp\.program=false/);
+    expect(c).toMatch(/gpg\.x509\.program=false/);
+  });
+
+  // M3: the signed OBJECT's own name must match the ref it was fetched
+  // under, or an old signed release can be replayed under a new tag name.
+  test("the signed tag object's own name must match the ref it was fetched under", () => {
+    const c = code(updater).join("\n");
+    expect(c).toMatch(/GOT_NAME/);
+    expect(c).toMatch(/tag \$TAG/);
+  });
+
+  test("the pinned allowed-signers file ships beside the script, committed", () => {
+    expect(readFileSync(join(ROOT, "electron", "release-allowed-signers"), "utf8")).toMatch(/^release ssh-ed25519 /);
+  });
 });
 
 // The script itself, against a throwaway origin. It stops at the tag check, well
 // before any install, so nothing here touches the developer's app or clone.
 describe("self-update.sh on a fixture origin", () => {
-  /** `files` go into the tagged commit; `bin` holds executables put first on PATH. */
+  /**
+   * `files` go into the tagged commit; `bin` holds executables put first on
+   * PATH. `sign` defaults to the real signer for an annotated tag — every
+   * test below that expects the tag check to PASS relies on that default,
+   * since the check is now mandatory rather than conditional; the two tests
+   * that exist to prove the check itself pass `sign: false` or `"wrong-key"`.
+   */
   const run = (tagKind: "lightweight" | "annotated",
-    { files = {}, bin = {}, env = {} }: { files?: Record<string, string>; bin?: Record<string, string>; env?: Record<string, string> } = {}) => {
+    { files = {}, bin = {}, env = {}, sign = true }:
+      { files?: Record<string, string>; bin?: Record<string, string>; env?: Record<string, string>; sign?: boolean | "wrong-key" | "pgp-with-fake-marker" } = {}) => {
     const dir = mkdtempSync(join(tmpdir(), "agx-upd-"));
+    // Declared outside `try` so `finally` — a sibling block, not nested
+    // inside it — can still see them for cleanup.
+    let gnupgHome = "";
+    const origin = join(dir, "origin");
+    const home = join(dir, "home");
+    const binDir = join(dir, "bin");
+    const env0 = { PATH: `${binDir}:${process.env.PATH!}`, HOME: home };
     try {
-      const origin = join(dir, "origin");
-      const home = join(dir, "home");
-      const binDir = join(dir, "bin");
-      const env0 = { PATH: `${binDir}:${process.env.PATH!}`, HOME: home };
       const sh = (cwd: string, ...a: string[]) =>
         Bun.spawnSync(["git", "-C", cwd, "-c", "user.name=t", "-c", "user.email=t@example.com", ...a], { env: env0 });
       for (const d of [origin, home, binDir]) mkdirSync(d, { recursive: true });
@@ -130,8 +175,53 @@ describe("self-update.sh on a fixture origin", () => {
       sh(origin, "init", "-q");
       sh(origin, "add", "-A");
       sh(origin, "commit", "-q", "--allow-empty", "-m", "one");
-      if (tagKind === "annotated") sh(origin, "tag", "-a", "v9.9.9", "-m", "notes");
-      else sh(origin, "tag", "v9.9.9");
+
+      // A throwaway keypair per run — the "real" key (which lets the signer
+      // and the trusted list ever match) and, for the "wrong-key" case, a
+      // second one that signs while a DIFFERENT key is the one pinned.
+      const genKey = (name: string) => {
+        const priv = join(dir, name);
+        Bun.spawnSync(["ssh-keygen", "-t", "ed25519", "-N", "", "-C", name, "-f", priv], { env: env0 });
+        return { priv, pub: readFileSync(`${priv}.pub`, "utf8").trim() };
+      };
+      const signer = genKey("signer");
+      const allowedSigners = join(dir, "allowed-signers");
+      writeFileSync(allowedSigners, `release ${sign === "wrong-key" ? genKey("other").pub : signer.pub}\n`);
+
+      // H1's actual shape: a real signature of a DIFFERENT format (PGP), with
+      // the SSH marker text sitting harmlessly in the free-text message —
+      // this is what defeated a grep-for-the-marker-then-verify sequence.
+      if (tagKind === "annotated") {
+        if (sign === "pgp-with-fake-marker") {
+          gnupgHome = join(dir, "gnupg");
+          mkdirSync(gnupgHome, { recursive: true, mode: 0o700 });
+          const gpgEnv = { ...env0, GNUPGHOME: gnupgHome };
+          Bun.spawnSync(
+            ["gpg", "--batch", "--passphrase", "", "--quick-generate-key", "attacker@example.com", "default", "default", "0"],
+            { env: gpgEnv }
+          );
+          const listing = Bun.spawnSync(["gpg", "--list-secret-keys", "--with-colons"], { env: gpgEnv }).stdout.toString();
+          const fpr = /^fpr:+([0-9A-F]+):/m.exec(listing)?.[1];
+          const msg = "notes\n-----BEGIN SSH SIGNATURE-----\nnot a real signature — marker text living in the message body\n-----END SSH SIGNATURE-----\n";
+          Bun.spawnSync(
+            ["git", "-C", origin, "-c", "user.name=t", "-c", "user.email=t@example.com",
+              "-c", "gpg.program=gpg", "-c", `user.signingkey=${fpr}`,
+              "tag", "-s", "-a", "v9.9.9", "-m", msg],
+            { env: gpgEnv }
+          );
+        } else if (sign) {
+          Bun.spawnSync(
+            ["git", "-C", origin, "-c", "user.name=t", "-c", "user.email=t@example.com",
+              "-c", "gpg.format=ssh", "-c", `user.signingkey=${signer.priv}`,
+              "tag", "-s", "-a", "v9.9.9", "-m", "notes"],
+            { env: env0 }
+          );
+        } else {
+          sh(origin, "tag", "-a", "v9.9.9", "-m", "notes");
+        }
+      } else {
+        sh(origin, "tag", "v9.9.9");
+      }
       const r = Bun.spawnSync(["bash", join(ROOT, "electron", "self-update.sh")], {
         cwd: home,
         env: {
@@ -140,12 +230,16 @@ describe("self-update.sh on a fixture origin", () => {
           // With no files, the fixture has no web/ directory, so an accepted tag
           // fails at the install step instead of building anything.
           AGENTGLASS_UPDATE_SRC: join(home, "src"),
+          AGENTGLASS_UPDATE_ALLOWED_SIGNERS: allowedSigners,
           ...env,
         },
       });
       const log = join(home, ".cache", "agentglass", "update.log");
       return { status: r.exitCode, text: readFileSync(log, "utf8"), mode: statSync(log).mode & 0o777 };
-    } finally { rmSync(dir, { recursive: true, force: true }); }
+    } finally {
+      if (gnupgHome) Bun.spawnSync(["gpgconf", "--kill", "gpg-agent"], { env: { ...env0, GNUPGHOME: gnupgHome } });
+      rmSync(dir, { recursive: true, force: true });
+    }
   };
 
   test("a lightweight tag is refused before anything is built", () => {
@@ -175,10 +269,82 @@ describe("self-update.sh on a fixture origin", () => {
     expect(r.text).toContain("handed dist=unset tmp=unset cc=unset");
   });
 
-  test("an annotated tag passes the check and reaches the install, in a private log", () => {
+  test("a signed annotated tag passes the check and reaches the install, in a private log", () => {
     const r = run("annotated");
     expect(r.text).toContain("now at ");
     expect(r.text).toContain("installing dependencies");
     expect(r.mode).toBe(0o600);
+  });
+
+  test("an unsigned annotated tag is refused before anything is built", () => {
+    const r = run("annotated", { sign: false });
+    expect(r.status).toBe(1);
+    expect(r.text).toContain("no valid SSH signature");
+    expect(r.text).not.toContain("installing dependencies");
+  });
+
+  test("a tag signed by a key that is not the pinned one is refused before anything is built", () => {
+    const r = run("annotated", { sign: "wrong-key" });
+    expect(r.status).toBe(1);
+    expect(r.text).toContain("no valid SSH signature");
+    expect(r.text).not.toContain("installing dependencies");
+  });
+
+  // H1, reproduced: a real PGP signature used to verify fine (git picks the
+  // verifier from the signature's own format, not from `gpg.format=ssh`),
+  // regardless of a matching-looking SSH marker string sitting in the
+  // message. Disabling gpg/x509 as verifier programs closes this.
+  test("a real PGP signature is refused even with an SSH marker string in the tag message", () => {
+    const r = run("annotated", { sign: "pgp-with-fake-marker" });
+    expect(r.status).toBe(1);
+    expect(r.text).toContain("no valid SSH signature");
+    expect(r.text).not.toContain("installing dependencies");
+  }, 15000);
+
+  // M3, reproduced: the ref name alone was trusted; the signed object could
+  // have been cut for a different tag entirely.
+  test("a signed tag object republished under a different ref name is refused", () => {
+    const dir = mkdtempSync(join(tmpdir(), "agx-upd-replay-"));
+    try {
+      const origin = join(dir, "origin");
+      const home = join(dir, "home");
+      const binDir = join(dir, "bin");
+      const env0 = { PATH: `${binDir}:${process.env.PATH!}`, HOME: home };
+      const sh = (cwd: string, ...a: string[]) =>
+        Bun.spawnSync(["git", "-C", cwd, "-c", "user.name=t", "-c", "user.email=t@example.com", ...a], { env: env0 });
+      for (const d of [origin, home, binDir]) mkdirSync(d, { recursive: true });
+      sh(origin, "init", "-q");
+      sh(origin, "add", "-A");
+      sh(origin, "commit", "-q", "--allow-empty", "-m", "one");
+      const priv = join(dir, "signer");
+      Bun.spawnSync(["ssh-keygen", "-t", "ed25519", "-N", "", "-C", "signer", "-f", priv], { env: env0 });
+      const pub = readFileSync(`${priv}.pub`, "utf8").trim();
+      const allowedSigners = join(dir, "allowed-signers");
+      writeFileSync(allowedSigners, `release ${pub}\n`);
+      // The real, legitimately-signed tag — for v9.0.0, an OLDER release.
+      Bun.spawnSync(
+        ["git", "-C", origin, "-c", "user.name=t", "-c", "user.email=t@example.com",
+          "-c", "gpg.format=ssh", "-c", `user.signingkey=${priv}`,
+          "tag", "-s", "-a", "v9.0.0", "-m", "the real v9.0.0"],
+        { env: env0 }
+      );
+      // Republished under a newer name, no new signature: same object, new ref.
+      const commit = Bun.spawnSync(["git", "-C", origin, "rev-parse", "refs/tags/v9.0.0"], { env: env0 }).stdout.toString().trim();
+      sh(origin, "update-ref", "refs/tags/v9.9.9", commit);
+      const r = Bun.spawnSync(["bash", join(ROOT, "electron", "self-update.sh")], {
+        cwd: home,
+        env: {
+          ...env0,
+          AGENTGLASS_UPDATE_TAG: "v9.9.9", AGENTGLASS_UPDATE_ORIGIN: origin,
+          AGENTGLASS_UPDATE_SRC: join(home, "src"),
+          AGENTGLASS_UPDATE_ALLOWED_SIGNERS: allowedSigners,
+        },
+      });
+      const log = join(home, ".cache", "agentglass", "update.log");
+      const text = readFileSync(log, "utf8");
+      expect(r.exitCode).toBe(1);
+      expect(text).toContain("names \"v9.0.0\", not v9.9.9");
+      expect(text).not.toContain("installing dependencies");
+    } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });

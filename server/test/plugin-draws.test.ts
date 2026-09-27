@@ -93,6 +93,13 @@ async function boot(): Promise<void> {
       AGENTGLASS_DB: join(dir, "f.db"),
       AGENTGLASS_SCAN_DISABLED: "1",
       AGENTGLASS_PORT: String(port),
+      // A plugin with no sandbox block runs in the default box now, and this
+      // fixture writes and runs outside it; the stub bwrap fails the probe on
+      // purpose, so this needs the unboxed consent (R1) to still start it, as
+      // it did before boxes were the default.
+      NODE_ENV: "test",
+      AGENTGLASS_BWRAP: "/nonexistent/bwrap",
+      AGENTGLASS_PLUGINS_UNBOXED: "1",
     },
     stdout: "ignore", stderr: "pipe",
   });

@@ -116,8 +116,14 @@ async function talk(messages: unknown[], env: Record<string, string> = {}): Prom
   const w = p.stdin as { write: (s: string) => void; end: () => void };
   for (const m of messages) w.write(`${JSON.stringify(m)}\n`);
   w.end();
-  const [out] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text()]);
+  const [out, err] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text()]);
   await p.exited;
+  // One answer per request. A binary that answered fewer died mid-call, and
+  // its stderr is the only place that says why: it used to be read and dropped,
+  // which left a red run here with "r is undefined" and nothing to chase.
+  const answered = out.split("\n").filter(Boolean).length;
+  const asked = messages.filter((m) => (m as { id?: unknown }).id !== undefined).length;
+  if (answered < asked) throw new Error(`cockpit mcp answered ${answered} of ${asked} (exit ${p.exitCode}): ${err.slice(-600)}`);
   return out.split("\n").filter(Boolean).map((l) => JSON.parse(l) as Record<string, any>);
 }
 

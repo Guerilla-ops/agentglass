@@ -3,8 +3,10 @@
 # argument that run.sh reads from ci.yml, so the pin lives in one place.
 FROM ubuntu:24.04
 ARG BUN_VERSION
+# openssh-client and gnupg: the runner image ships ssh-keygen and gpg, and the signed-tag tests
+# in ci-and-update-hardening.test.ts generate their keys with them.
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-      tmux python3 git curl unzip ca-certificates bsdutils util-linux procps sqlite3 lsof psmisc sudo iproute2 gh \
+      tmux python3 git curl unzip ca-certificates bsdutils util-linux procps sqlite3 lsof psmisc sudo iproute2 gh openssh-client gnupg \
     && rm -rf /var/lib/apt/lists/*
 # The runner image has Node 20 on PATH; electron/build.mjs and mobile run under it.
 RUN curl -fsSL https://nodejs.org/dist/v20.19.5/node-v20.19.5-linux-x64.tar.gz | tar -xz -C /usr/local --strip-components=1

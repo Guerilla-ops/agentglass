@@ -196,11 +196,12 @@ import { join as joinPath, resolve as resolvePath, basename } from "node:path";
 import { hostname, tmpdir } from "node:os";
 import { privateHost, resolvePeer, originOf, guardedFetch, hostsOnly } from "./net.ts";
 import { DESK_HEADER, claimDesk, deskHeld } from "./desk.ts";
-import { resolveToken, healthProof, tokenOk, isIntake, isAuthExempt, callerFor, allowed, scopeNeeded, pluginOfRequest, answersFromADevice, deskKeyOk, understudyRequiresToken, UNDERSTUDY_NO_TOKEN_ERROR, mintUnderstudyToken, revokeUnderstudyToken, type Caller, type Origin } from "./auth.ts";
+import { resolveToken, healthProof, tokenOk, isIntake, isAuthExempt, callerFor, allowed, scopeNeeded, pluginOfRequest, answersFromADevice, deskKeyOk, understudyRequiresToken, UNDERSTUDY_NO_TOKEN_ERROR, mintUnderstudyToken, revokeUnderstudyToken, tokenlessWarning, type Caller, type Origin } from "./auth.ts";
 import {
-  listPlugins, masterEnabled, setMaster, installPlugin, installFromCatalogue, updatePlugin, enablePlugin, disablePlugin, removePlugin,
+  listPlugins, masterEnabled, setMaster, installPlugin, installFromCatalogue, updatePlugin, enablePlugin, disablePlugin, removePlugin, setPluginUnboxedConsent,
   contributesOf, isRunning, pluginSettings, setPluginSettings, resumeEnabledPlugins, stopAllPluginsSync, pluginIcon,
 } from "./plugins.ts";
+import { setPluginSocketHandler, viaPluginSocket } from "./plugin-socket.ts";
 import {
   setPluginUiHook, setPanel, panelState, setOptions, pushEvent, takeEvents, upsertRun, upsertNotes, notesFor, setNoteStatus, flushPluginNotes,
 } from "./plugin-ui.ts";
@@ -1418,7 +1419,7 @@ import { digest as logDigest } from "./logdigest.ts";
 import { mintTicket, claimTicket, pending as pendingPairings, acceptTicket, rejectTicket, collect as collectPairing, dropTicket, getTicket, MAX_ATTEMPTS } from "./pairing.ts";
 import { updateStatus, viewerStatus, startUpdate, updateLog, releaseNotes } from "./selfupdate.ts";
 import { rateOk } from "./ratelimit.ts";
-import { noteClient, noteSocket, isLoopback, isSelf, isBlocked, blockDevice, remoteStatus, tailnetNames, refreshTailscale, TAILNET_OK_MS, proxiedByTailscaled } from "./remote.ts";
+import { noteClient, noteSocket, isLoopback, isSelf, isBlocked, blockDevice, remoteStatus, tailnetNames, refreshTailscale, TAILNET_OK_MS, proxiedByTailscaled, loopbackPeerIsOtherUser } from "./remote.ts";
 import { parseWindowMs } from "./params.ts";
 import { serveWeb, serveIndex, WEB_UI_ENABLED, distPath } from "./webui.ts";
 import { notifyCapability, subscribeNotifications, notifyWatching, openNote } from "./notifications.ts";
@@ -2568,6 +2569,14 @@ async function handleServerRequest(req: Request, srv: Server<WsData>): Promise<R
     // callers" are different statements — and the gate below no longer assumes
     // one from the other.
     const from: Origin = originOf(peer);
+    // LOCAL_SINKS's exemption reasons on "same-user processes can already read
+    // the token file" — which is not true of another account, or a
+    // host-networked container under a different uid, dialing loopback. Only
+    // the sink exemption narrows on that; every other use of `from` (device
+    // list, Block, the network-bind warning) is unchanged, on purpose — see
+    // loopbackPeerIsOtherUser in remote.ts.
+    const sinkFrom: Origin =
+      from === "loopback" && loopbackPeerIsOtherUser(peerSock, srv.port ?? PORT) ? "remote" : from;
     let caller: Caller | null = null;
     // A remote caller is never tokenless, even on a box that decided it did not
     // need a token.
@@ -2581,15 +2590,31 @@ async function handleServerRequest(req: Request, srv: Server<WsData>): Promise<R
     // hooks and the desk keep their zero-config UX; /health and the pairing
     // handshake stay exempt so the phone still gets an answer it can act on.
     //
-    // A live plugin token is the one exception: `pluginOfRequest` only ever
-    // answers for a token this process itself minted, so this widens nothing
-    // an attacker could hand it; it only stops a rule about ANONYMOUS remote
-    // callers from also catching a credentialed one.
-    if (!AUTH_TOKEN && from === "remote" && !isAuthExempt(pathname, from) && !pluginOfRequest(req, url)) {
+    // A live plugin token over the plugin socket is the one exception, added
+    // for plugin-socket.ts: a boxed `network: "agentglass"` plugin's request
+    // always arrives as `from === "remote"` — the whole point of that socket
+    // is that it is never mistaken for this machine — even on a zero-config
+    // box with no `AGENTGLASS_TOKEN` set, where every plugin used to reach
+    // this route over REAL loopback instead. `pluginOfRequest` only ever
+    // answers for a token this process itself minted, so checking it alone
+    // widens nothing an attacker could hand it directly — but a plugin token
+    // travels as `?token=` too, and behind `tailscale serve` a leaked one used
+    // to work from the whole tailnet on this real TCP port, where before it
+    // got 401. `viaPluginSocket` is true only for the exact request object
+    // `plugin-socket.ts`'s own `socketFetch` built for THIS call, so the
+    // exemption now requires both: a real plugin credential AND the socket
+    // that is the only place this process ever hands one out to answer with.
+    if (!AUTH_TOKEN && from === "remote" && !isAuthExempt(pathname, sinkFrom) && !(viaPluginSocket(req) && pluginOfRequest(req, url))) {
       return json({ ok: false, error: "unauthorized — this server has no token configured and only answers local callers" }, 401);
     }
-    if (AUTH_TOKEN && !isAuthExempt(pathname, from)) {
-      caller = callerFor(req, url, AUTH_TOKEN);
+    // A plugin token gets a caller, and so the scope check below, even when no
+    // machine token is configured: `caller` left null reads everywhere
+    // downstream as "the machine", so on a zero-config server a read-scoped
+    // plugin over the plugin socket reached a full-scope route (measured:
+    // `POST /plugins/master` answered 200; with a machine token set the same
+    // call is 403).
+    if ((AUTH_TOKEN || pluginOfRequest(req, url)) && !isAuthExempt(pathname, sinkFrom)) {
+      caller = callerFor(req, url, AUTH_TOKEN ?? "");
       if (!caller) return json({ ok: false, error: "unauthorized — pass ?token= or Authorization: Bearer" }, 401);
       if (!allowed(caller, req.method, pathname)) {
         /*
@@ -5012,6 +5037,21 @@ async function handleServerRequest(req: Request, srv: Server<WsData>): Promise<R
       // always has; a script has to say so, and the CLI only says it for
       // `--approve`, which prints the declaration first.
       const r = await enablePlugin(b.name, (b as { approved?: unknown }).approved !== false);
+      return json(r, r.ok ? 200 : 400);
+    }
+
+    if (pathname === "/plugins/allow-unboxed" && req.method === "POST") {
+      if (!trustedCaller(req, from)) return csrfBlocked();
+      let b: { name?: unknown; allow?: unknown };
+      try { b = (await req.json()) as { name?: unknown; allow?: unknown }; } catch { return json({ ok: false, error: "invalid json" }, 400); }
+      if (typeof b.name !== "string" || !b.name) return json({ ok: false, error: "name is required" }, 400);
+      // A grant is one of the few things this file lets a caller ask for
+      // that widens what a process may reach — deliberately not "anything
+      // but a literal false", the way /plugins/enable's `approved` reads,
+      // because a missing or malformed field defaulting to GRANT is the
+      // wrong failure direction for exactly this switch.
+      if (typeof b.allow !== "boolean") return json({ ok: false, error: "allow must be true or false" }, 400);
+      const r = await setPluginUnboxedConsent(b.name, b.allow);
       return json(r, r.ok ? 200 : 400);
     }
 
@@ -8585,6 +8625,8 @@ async function handleServerRequest(req: Request, srv: Server<WsData>): Promise<R
     })(); } finally { finished(mark); }
 }
 
+setPluginSocketHandler(handleServerRequest as unknown as (req: Request, srv: any) => Promise<Response>);
+
 const server = Bun.serve<WsData>({
   port: PORT,
   hostname: BIND,
@@ -9325,7 +9367,20 @@ if (AUTH_TOKEN) {
   } else {
     console.log(`🔑 AGENTGLASS_TOKEN set — clients must pass ?token= or Authorization: Bearer`);
   }
+} else {
+  const w = tokenlessWarning(AUTH);
+  if (w) console.warn(w);
 }
+// Unconditional rather than gated on "is a gate hook actually installed":
+// this process has no way to see settings.json, and printing it either way
+// costs one line while an operator who never installed the hook never
+// notices it either way.
+console.log(
+  gateFailClosed()
+    ? "✋ gate: fail-closed — a timeout or an unreachable hook DENIES the tool call"
+    : "✋ gate: fail-open — a timeout or an unreachable hook ALLOWS the tool call; " +
+        "set AGENTGLASS_GATE_FAILCLOSED=1 to deny instead"
+);
 if (WEB_UI_ENABLED) console.log(`   Web UI      → http://localhost:${server.port}/ (serving ${distPath()})`);
 console.log(`   POST events → http://localhost:${server.port}/ingest`);
 console.log(`   WebSocket   → ws://localhost:${server.port}/stream`);

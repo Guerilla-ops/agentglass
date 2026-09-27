@@ -323,17 +323,20 @@ assertion.
 
 ![settings — preferences, shortcuts, and the About pane that offers a newer release](../.github/assets/settings.png)
 
-It tracks **tags**, never a branch tip. A tip is wherever development happened to stop — half a feature, a debugging commit — and tagging is the act of saying *this one is tested*. So nothing pushed after the last tag reaches an installed app until you tag it:
+It tracks **tags**, never a branch tip. A tip is wherever development happened to stop — half a feature, a debugging commit — and tagging is the act of saying *this one is tested*. So nothing pushed after the last tag reaches an installed app until you tag it — **signed**, with the release key (`ssh-keygen -t ed25519 -f ~/.config/agentglass-release/release_ed25519`, once; the public half is `electron/release-allowed-signers`, committed):
 
 ```bash
-git tag v0.3.0 && git push --tags     # now every install is offered it
+git -c gpg.format=ssh -c user.signingkey=~/.config/agentglass-release/release_ed25519 \
+  tag -s v0.3.0 -m "v0.3.0" && git push --tags     # now every install is offered it
 ```
+
+An unsigned tag, or one signed by any key but this one, is refused by every installed app before it builds anything — see SECURITY.md. The private half of the key never leaves this machine and is never printed or committed; losing it means generating a new one and re-pinning `release-allowed-signers` for the next release, not recovering the old one.
 
 The build happens in agentglass's **own clone** under `~/.cache/agentglass/source`, never in your checkout — so a convenience button can never move your `HEAD` or touch work in progress. It works out what it already has from `git describe` rather than a version field, so a `package.json` nobody remembered to bump cannot make an older tag look like an upgrade.
 
 The route that runs it is the strictest in the server: reachable from the desktop shell's own origin and nothing else — not from a browser, not from another machine on your network. It is the one endpoint that executes arbitrary code, so the ordinary "local network is fine" rule is not enough for it.
 
-> Updating this way compiles on your machine, which is only reasonable because your machine already has the toolchain. It is not a substitute for a signed release feed, and it is deliberately not automatic — nothing is downloaded or run until you press the button.
+> Updating this way compiles on your machine, which is only reasonable because your machine already has the toolchain. It is deliberately not automatic — nothing is downloaded or run until you press the button.
 ---
 
 ## Control plane — approve / deny tool calls remotely (opt-in)
@@ -355,7 +358,7 @@ On Windows, use `py` (or `python`) instead of `python3` in hand-written hook com
 Safe by design — it **never blocks your agents by accident**:
 
 - unreachable server or an error → **allow** (the hook exits 0, no decision)
-- no one decides within `AGENTGLASS_GATE_TIMEOUT` (default 60s) → **auto-allow**
+- no one decides within `AGENTGLASS_GATE_TIMEOUT` (default 300s) → **auto-allow**
 - only sessions wired to the gate are gated; everything else is untouched
 
 It also survives a restart. Pending requests are persisted, so restarting or

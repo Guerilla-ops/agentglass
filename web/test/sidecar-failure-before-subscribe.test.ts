@@ -16,7 +16,10 @@ const died: Failure = { reason: "exited", what: "The server started and stopped 
 
 (globalThis as any).location ??= { hostname: "127.0.0.1", origin: "http://127.0.0.1:4000", href: "http://127.0.0.1:4000/" };
 (globalThis as any).localStorage ??= { getItem: () => null, setItem: () => {}, removeItem: () => {} };
-const hadWindow = "window" in globalThis;
+// By value, not `"window" in globalThis`: a file that ran earlier and put its
+// stub back by assignment leaves the key behind holding undefined, and the
+// presence test then took that for a real window and never took ours away.
+const hadWindow = (globalThis as any).window !== undefined;
 const prevShell = (globalThis as any).window?.agentglass;
 (globalThis as any).window ??= globalThis;
 const shell: any = (globalThis as any).window.agentglass = {

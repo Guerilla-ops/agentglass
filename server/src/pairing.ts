@@ -35,11 +35,14 @@ import { issueDevice, type Scope, type Device } from "./devices.ts";
  * public keys — and still cannot read the credential, because it never travels
  * in the clear and the key that unwraps it never leaves the phone.
  *
- * What this does **not** defend against is an active on-path attacker: someone
- * who can rewrite traffic can substitute their own public key, and no amount of
- * handshake fixes that without an authenticated channel. That is a TLS problem,
- * not a pairing problem, and the honest answer is the one the pane already
- * offers — pair over the Tailscale address, which is encrypted end to end.
+ * What this does **not** defend against, today: an active on-path attacker.
+ * The phone's public key is never bound to the six-digit code shown only at
+ * the machine, so someone who can rewrite traffic can substitute their own
+ * key and the handshake completes anyway. That code IS an out-of-band
+ * channel — comparing a fingerprint of the key against it at accept time
+ * would close this — the handshake just does not use it yet. Until it does,
+ * the honest answer is the one the pane already offers — pair over the
+ * Tailscale address, which is encrypted end to end.
  *
  * Everything here is in memory. A half-finished pairing that survives a restart
  * is a pairing nobody is watching, and the cost of losing one is scanning

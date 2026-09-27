@@ -97,12 +97,16 @@ describe("settings", () => {
 describe("the manifest", () => {
   const base = { name: "orbit-lint", publisher: "acme", description: "d", entrypoint: "true", scope: "read" };
 
-  test("a manifest from before drawing existed keeps its hash, and so its approval", () => {
+  test("a manifest with nothing beyond the basics hashes as those fields plus the default box", () => {
+    // Boxes became the default, so a bare manifest no longer keeps the hash it
+    // had before them: its approval is asked for again. Drawing adds nothing
+    // to the hash of a manifest that does not draw.
     const m = validateManifest(base) as PluginManifest;
-    const before = createHash("sha256").update(JSON.stringify({
+    const expected = createHash("sha256").update(JSON.stringify({
       name: m.name, publisher: m.publisher, description: m.description, entrypoint: m.entrypoint, scope: m.scope,
+      sandbox: { network: "agentglass", read: [], write: [], programs: [] },
     })).digest("hex");
-    expect(manifestHash(m)).toBe(before);
+    expect(manifestHash(m)).toBe(expected);
   });
 
   test("declaring somewhere new to draw changes what was approved, so the person is asked again", () => {

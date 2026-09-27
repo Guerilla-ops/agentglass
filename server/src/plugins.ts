@@ -15,7 +15,7 @@
 // somewhere new asks again.
 import { createHash } from "node:crypto";
 import {
-  cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync,
+  closeSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync,
 } from "node:fs";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { homedir, tmpdir } from "node:os";
@@ -31,6 +31,11 @@ import type { GuardedFetchOptions } from "./net.ts";
 import { blockedEntry, type BlockEntry } from "./plugin-blocklist.ts";
 import { type Contributes, validateContributes } from "../../shared/pluginUi.ts";
 import { type PluginSandbox, validateSandbox } from "../../shared/pluginSandbox.ts";
+import {
+  hostResolvConfExtraRo, hostSystemPaths, openGrantFds, pluginDataDir, removePluginDataDir, resolveGrants,
+  resolvePrograms, sandboxArgv, sandboxProbe, type SandboxProbe,
+} from "./plugin-sandbox.ts";
+import { ensurePluginSocketServer, pluginSocketPath, stopPluginSocketServer } from "./plugin-socket.ts";
 import { coerceSettings, dropNotesOf, fieldsWithOptions, forgetPlugin, pushEvent, resolveSettings, setLivenessCheck } from "./plugin-ui.ts";
 
 /** What a plugin folder must carry at its root, translated from `orca-plugin.json`
@@ -125,6 +130,15 @@ const NO_CONTROL_CHARS = /[\x00-\x1f\x7f]/;
  * than being coerced into something wider than what was actually declared.
  * Returns the error sentence to show the reviewer, or the manifest.
  */
+/** The block a manifest runs under: its own, or the default box when it has
+ *  none. Shared by the hash and the validator so the two cannot disagree about
+ *  what an unboxed-looking manifest was approved as. */
+function defaultedSandbox(raw: unknown): PluginSandbox {
+  const r = validateSandbox(raw === undefined ? {} : raw);
+  if (!r.ok) throw new Error(r.error);
+  return r.value;
+}
+
 export function validateManifest(raw: unknown): PluginManifest | string {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return "manifest must be a JSON object";
   const m = raw as Record<string, unknown>;
@@ -157,12 +171,17 @@ export function validateManifest(raw: unknown): PluginManifest | string {
   if (m.minApp !== undefined && (typeof m.minApp !== "string" || !/^\d{1,4}(\.\d{1,4}){0,2}$/.test(m.minApp))) {
     return "minApp must be a version like 0.18.0";
   }
-  let sandbox: PluginSandbox | undefined;
-  if (m.sandbox !== undefined) {
-    const r = validateSandbox(m.sandbox);
-    if (!r.ok) return r.error;
-    sandbox = r.value;
-  }
+  // No block is the default box, not "no box": an author who says nothing gets
+  // the plugin's own folder and the app's own address, and nothing else. It is
+  // filled in HERE, before the hash, so the approval a plugin held before boxes
+  // were the default no longer matches and is asked for again, with the grants
+  // it now runs under shown. Ceiling: there is no per-plugin switch to run
+  // outside the box on a host that HAS one; a host that cannot build one
+  // refuses to start the plugin unless allowUnboxed consent (or the
+  // machine-wide escape hatch) says otherwise — see startProcess.
+  const r = validateSandbox(m.sandbox === undefined ? {} : m.sandbox);
+  if (!r.ok) return r.error;
+  const sandbox: PluginSandbox = r.value;
   return {
     name: m.name,
     publisher: m.publisher.trim().slice(0, 200),
@@ -173,7 +192,7 @@ export function validateManifest(raw: unknown): PluginManifest | string {
     ...(typeof m.icon === "string" ? { icon: m.icon } : {}),
     ...(typeof m.color === "string" ? { color: m.color.toLowerCase() } : {}),
     ...(typeof m.minApp === "string" ? { minApp: m.minApp } : {}),
-    ...(sandbox ? { sandbox } : {}),
+    sandbox,
   };
 }
 
@@ -224,9 +243,9 @@ export function manifestHash(m: PluginManifest): string {
     ...(m.icon ? { icon: m.icon } : {}),
     ...(m.color ? { color: m.color } : {}),
     // What it asks to be given is what was approved, so a grant that grows
-    // asks again. Present even when empty: a block that says "nothing extra"
-    // is a claim; absent keeps the old hash.
-    ...(m.sandbox ? { sandbox: m.sandbox } : {}),
+    // asks again. A manifest with no block is hashed as the default box, the
+    // same as an empty one.
+    sandbox: defaultedSandbox(m.sandbox),
   });
   return createHash("sha256").update(canonical).digest("hex");
 }
@@ -304,6 +323,16 @@ export interface PluginRecord extends PluginManifest {
    *  declared fields. Survives updates; a field an update removed is simply
    *  never read again. */
   settings?: Record<string, unknown>;
+  /**
+   * Explicit, per-plugin, revocable consent to run WITHOUT the box on a host
+   * that cannot build one. Declaring `sandbox` used to be decoration on such
+   * a host: the plugin ran exactly as if it had never declared it, behind a
+   * warning nobody had to read. Absent or `false` means the safer default —
+   * refuse to start rather than widen the grant silently — and only a human
+   * flipping this (or the machine-wide `AGENTGLASS_PLUGINS_UNBOXED=1`, for a
+   * host where every plugin's install is already trusted) turns it back on.
+   */
+  allowUnboxed?: boolean;
 }
 
 export function pluginsConfigDir(): string {
@@ -371,6 +400,16 @@ interface Store {
 }
 const DEFAULT_STORE: Store = { master: true, plugins: [] };
 
+/** A record written before boxes were the default has no `sandbox`, and would
+ *  otherwise go on running unboxed with the approval it already holds. It gets
+ *  the default box and loses that approval, so it is asked for again with the
+ *  grants it now runs under shown — the same thing a manifest with no block
+ *  gets on install (see `validateManifest`). Idempotent: once saved it has a
+ *  block and passes through untouched. */
+function boxedByDefault(rec: PluginRecord): PluginRecord {
+  return rec.sandbox ? rec : { ...rec, sandbox: defaultedSandbox(undefined), approvedFingerprint: null };
+}
+
 function read(): Store {
   const p = pluginsPath();
   if (offLimits(p) || !existsSync(p)) return { ...DEFAULT_STORE, plugins: [] };
@@ -379,7 +418,7 @@ function read(): Store {
     const kept = parsed.keptSettings;
     return {
       master: typeof parsed.master === "boolean" ? parsed.master : true,
-      plugins: Array.isArray(parsed.plugins) ? parsed.plugins : [],
+      plugins: Array.isArray(parsed.plugins) ? parsed.plugins.map(boxedByDefault) : [],
       ...(kept && typeof kept === "object" && !Array.isArray(kept) ? { keptSettings: kept } : {}),
     };
   } catch {
@@ -400,13 +439,61 @@ function write(store: Store): void {
   }
 }
 
+/**
+ * Whether the process actually running is inside a bwrap box, and why not
+ * when it isn't. `no-block` is a plugin declaring nothing — not a failure of
+ * anything, just "there is no box to build" — the other three are
+ * `SandboxProbe`'s reasons, carried through so the reviewer sees exactly
+ * what the app saw rather than a generic "unboxed". `refused` is a grant or
+ * program that resolved but was still turned away (a symlink, a live
+ * socket dir) — boxed and true either way, but worth a red line rather than
+ * silence.
+ */
+export type BoxState =
+  | { kind: "boxed"; refused?: { path: string; why: string }[] }
+  | { kind: "unboxed"; reason: "no-block" | "missing" | "userns-blocked" | "failed"; detail?: string };
+
 /** Live process state, deliberately never persisted. A pid and a token are
  *  only meaningful for the process that holds them; a server restart cannot
  *  hand either back, so it starts with nothing running and
  *  `resumeEnabledPlugins` starts each enabled plugin again with a new token. */
-interface Running { proc: ReturnType<typeof Bun.spawn>; token: string; pid: number }
+interface Running { proc: ReturnType<typeof Bun.spawn>; token: string; pid: number; boxState: BoxState }
 const running = new Map<string, Running>();
 setLivenessCheck((name) => running.has(name));
+
+/**
+ * A box that died in its first moments — bwrap itself refusing to mount
+ * something, not the plugin's own code — with nowhere left to report once
+ * `running` has already dropped the entry. Keyed by name, cleared at the
+ * start of every new attempt so a failure never outlives the run after it.
+ */
+const lastBoxFailure = new Map<string, string>();
+const BOX_GRACE_MS = 2000;
+const STDERR_CAP = 2048;
+
+/** Reads `stderr` up to `STDERR_CAP` bytes and cancels the stream once
+ *  either that cap or the process's own exit is reached — this is not log
+ *  capture, only enough to explain a bwrap mount failure that happens in
+ *  the first instant of a boxed start. */
+async function captureFirstStderrLine(stream: ReadableStream<Uint8Array>): Promise<string> {
+  const reader = stream.getReader();
+  let bytes = 0;
+  const chunks: Uint8Array[] = [];
+  try {
+    while (bytes < STDERR_CAP) {
+      const { done, value } = await reader.read();
+      if (done || !value) break;
+      chunks.push(value);
+      bytes += value.length;
+    }
+  } catch {
+    /* stream errored (process reaped, pipe closed): use whatever arrived */
+  } finally {
+    try { await reader.cancel(); } catch { /* already done */ }
+  }
+  const text = Buffer.concat(chunks.map((c) => Buffer.from(c))).toString("utf8", 0, STDERR_CAP);
+  return text.split("\n").find((l) => l.trim().length > 0)?.trim() ?? "";
+}
 
 /** The whole group: the entrypoint runs as `bash -c`, and what it started
  *  (an interpreter, a caged agent) is a grandchild that a kill of the bash
@@ -437,10 +524,124 @@ export function stopAllPluginsSync(): void {
     revokePluginToken(r.token);
     killGroup(r.pid);
   }
+  stopPluginSocketServer();
 }
 
 function serverBase(): string {
   return `http://127.0.0.1:${Number(process.env.AGENTGLASS_PORT || 4000)}`;
+}
+
+/**
+ * How to re-invoke this app as `agentglass-server plugin-bridge …` from
+ * inside a `network: "agentglass"` box (see cookieentry.ts, which answers
+ * that argument the same way it already answers `cookies`).
+ *
+ * `Bun.main` is a compiled build's own entry, never a `.ts` path — `bun
+ * server/src/index.ts` in dev always ends in one. Dev re-runs `bun
+ * <that file>`; a compiled build re-runs the sidecar binary itself
+ * (`process.execPath`), since the binary already contains index.ts and
+ * everything it imports, cookieentry.ts included.
+ */
+function bridgeExecCommand(): string[] {
+  return Bun.main.endsWith(".ts") ? [process.execPath, Bun.main] : [process.execPath];
+}
+
+/**
+ * What has to be readable inside the box for `bridgeExecCommand()`'s own
+ * argv to actually exec — one more read-only path the box needs, never
+ * anything a plugin declared, bound after the tmpfs over HOME and /tmp. A compiled build's argv is one file: the
+ * sidecar binary itself, self-contained. Dev's `bun <index.ts>` needs the
+ * whole repository read — `import type` lines get stripped before bun ever
+ * asks the filesystem for their target, but plenty of the OTHER imports
+ * index.ts pulls in are not type-only, and they resolve relative to files
+ * under `shared/`, a sibling of `server/`, not under it — so the bound root
+ * is the repository, not just `server/`. Never node_modules-only: the
+ * `plugin-bridge` subcommand exits in cookieentry.ts, its very first import,
+ * before index.ts's own (non-type) imports — the ones that would reach
+ * `node_modules` — are ever evaluated.
+ */
+function bridgeExtraRo(bridgeExec: string[]): string[] {
+  const paths = [bridgeExec[0]!];
+  if (bridgeExec[1]) paths.push(resolve(dirname(bridgeExec[1]), "..", ".."));
+  return paths;
+}
+
+/**
+ * Turn an approved `sandbox` block plus what the host filesystem actually
+ * looks like into the exact argv bwrap runs with, and the open descriptors
+ * that argv's `--ro-bind-fd`/`--bind-fd` entries name. Everything impure —
+ * the probe, walking `/etc`/`/opt`/the split-usr directories, resolving
+ * `~/…` grants and `programs` against the real filesystem, and opening each
+ * grant right before the spawn that will use it — happens here, once per
+ * start; `sandboxArgv` itself never touches disk.
+ *
+ * `parentFds` must be closed by the caller once `Bun.spawn` has returned:
+ * they exist only to be duplicated into the child at spawn time.
+ */
+/**
+ * What `extraRo` is for a box, given whether it has a `network` input built
+ * already. Pulled out of `buildBoxArgv` as its own exported, pure function so
+ * the decision is directly testable — `buildBoxArgv` itself boots a real
+ * plugin socket and is not something a unit test can call, which is exactly
+ * how a reverted version of this one line (every box, networked or not, got
+ * the host resolver mounted) shipped once without a red test noticing.
+ *
+ * A `network: "agentglass"` box has no interface but its own loopback
+ * (`--unshare-net`, see sandboxArgv) and no resolver to reach: the host's
+ * resolve socket at /run/systemd/resolve answers over varlink, not DNS, so
+ * mounting it in anyway turned the box into a name-resolution oracle for the
+ * open internet — measured with varlinkctl's own ResolveHostname call
+ * returning real addresses from inside a box whose curl could not resolve
+ * anything. Only a box with no network gets the host resolver.
+ */
+export function boxExtraRo(network: unknown): string[] {
+  return network ? [] : hostResolvConfExtraRo();
+}
+
+async function buildBoxArgv(
+  rec: PluginRecord,
+  sandbox: PluginSandbox,
+  bwrap: string,
+  dataDir: string,
+): Promise<{ argv: string[]; parentFds: number[]; refused: { path: string; why: string }[] }> {
+  const home = process.env.HOME ?? homedir();
+  const grants = resolveGrants(sandbox, home);
+  const programs = resolvePrograms(sandbox.programs, process.env.PATH ?? "", home);
+  const { systemDirs, systemLinks } = hostSystemPaths();
+  // The socket has to exist before bwrap tries to bind-mount it — started
+  // here, once per box, rather than at server boot: most installs never
+  // enable a `network: "agentglass"` plugin at all, and a listener nothing
+  // ever dials is one more thing to explain in a process list. Awaited, and
+  // BEFORE `openGrantFds` below: a second instance's live socket at this
+  // same path is only knowable by actually connecting to it (see
+  // `ensurePluginSocketServer`), and that throwing here is deliberate — the
+  // plugin's start fails loudly rather than boxing it against another
+  // instance's socket. Ordered ahead of the fd opens so that throw can
+  // never leave this plugin's own grant descriptors open with nothing left
+  // to close them (they used to be opened first, and a start refused over a
+  // live socket leaked them on every refusal).
+  let network: { socketHostPath: string; bridgeExec: string[]; bridgeRo: string[] } | undefined;
+  if (sandbox.network === "agentglass") {
+    await ensurePluginSocketServer();
+    network = { socketHostPath: pluginSocketPath(), bridgeExec: bridgeExecCommand(), bridgeRo: bridgeExtraRo(bridgeExecCommand()) };
+  }
+  const opened = openGrantFds({ read: grants.read, write: grants.write }, home);
+  const argv = sandboxArgv({
+    bwrap,
+    installDir: rec.installDir,
+    dataDir,
+    home,
+    entrypoint: rec.entrypoint,
+    env: { PATH: process.env.PATH ?? "", AGENTGLASS_URL: serverBase() },
+    sandbox,
+    grants: { read: opened.read, write: opened.write },
+    programDirs: programs.dirs,
+    systemLinks,
+    systemDirs,
+    network,
+    extraRo: boxExtraRo(network),
+  });
+  return { argv, parentFds: opened.parentFds, refused: [...grants.refused, ...programs.refused, ...opened.refused] };
 }
 
 /**
@@ -459,9 +660,78 @@ async function startProcess(rec: PluginRecord): Promise<void> {
   // is the one place a process actually starts, so it is the one place a
   // block can never be bypassed by a path that forgets to check first.
   if (blockedEntry(rec.name)) return;
+  lastBoxFailure.delete(rec.name);
   const token = mintPluginToken(rec.scope, rec.name);
+  // Whether or not the plugin ends up boxed, it gets a folder of its own —
+  // the same folder every time, so a plugin that writes state today can
+  // read it back after a box that could not build, or after this host gets
+  // bwrap installed.
+  const dataDir = pluginDataDir(rec.name);
+  let argv: string[] = ["bash", "-c", rec.entrypoint];
+  let boxState: BoxState = { kind: "unboxed", reason: "no-block" };
+  let parentFds: number[] = [];
+  if (rec.sandbox) {
+    const probe = sandboxProbe();
+    if (probe.ok) {
+      let built: Awaited<ReturnType<typeof buildBoxArgv>>;
+      try {
+        built = await buildBoxArgv(rec, rec.sandbox, probe.bwrap, dataDir);
+      } catch (e) {
+        // `ensurePluginSocketServer` refusing a live socket another instance
+        // owns is the one way this throws today. Running THIS plugin unboxed
+        // instead would widen exactly what `network: "agentglass"` declares
+        // it needs boxed away from, so the start fails rather than falling
+        // back — the same shape `blockedEntry` already returns early for.
+        const detail = e instanceof Error ? e.message : String(e);
+        lastBoxFailure.set(rec.name, detail);
+        console.warn(`[plugin sandbox] ${rec.name}: could not build the box: ${detail}`);
+        return;
+      }
+      argv = built.argv;
+      parentFds = built.parentFds;
+      boxState = built.refused.length > 0 ? { kind: "boxed", refused: built.refused } : { kind: "boxed" };
+      for (const r of built.refused) console.warn(`[plugin sandbox] ${rec.name}: refused ${r.path}: ${r.why}`);
+    } else if (process.platform !== "linux" || rec.allowUnboxed || process.env.AGENTGLASS_PLUGINS_UNBOXED === "1") {
+      // `process.platform !== "linux"` first, and unconditional: bwrap is a
+      // Linux mechanism, so on macOS/Windows `sandboxProbe()` fails with
+      // "missing" for every single plugin, always — there is no box to
+      // consent AWAY from there, unlike Linux where "missing"/"userns-
+      // blocked" is usually a fixable local policy. Refusing by default
+      // would not defend anything (there was never a box on these
+      // platforms to widen past) and would silently stop every plugin at
+      // the first boot after this ships. This is exactly the condition
+      // it replaces, unchanged for those two platforms.
+      // The host cannot build the box, and a human (or the machine-wide
+      // escape hatch) has explicitly said this plugin may run anyway: the
+      // plugin runs exactly as it would with no `sandbox` block at all,
+      // behind the same red PROCESS_WARNING the declaration screen already
+      // shows — the app tells the reviewer why, rather than silently
+      // widening the grant.
+      boxState = { kind: "unboxed", reason: probe.reason, detail: probe.detail };
+    } else {
+      // The host cannot build the box and nobody has said this plugin may
+      // run without it: refuse to start rather than run it wide open behind
+      // a warning the reviewer may never scroll to. `enabled` stays true —
+      // this is the same shape as a crashed plugin, not an uninstall — so
+      // turning on `allowUnboxed` (POST /plugins/allow-unboxed — no Settings
+      // UI for this yet) or fixing the host
+      // (installing bwrap, etc.) picks it back up without reinstalling.
+      console.warn(
+        `[plugin sandbox] ${rec.name}: refused to start unboxed (${probe.reason}) — ` +
+        `this host cannot build the box it declared; allow it explicitly per plugin, ` +
+        `or set AGENTGLASS_PLUGINS_UNBOXED=1 for every plugin, to run it anyway`
+      );
+      lastBoxFailure.set(rec.name, `refused to run unboxed: ${probe.reason}${probe.detail ? ` (${probe.detail})` : ""}`);
+      // The token above was minted for a process that is not going to exist;
+      // a refused start must not be the one path that leaves a live,
+      // unrevoked credential behind, one more per boot or retry.
+      revokePluginToken(token);
+      return;
+    }
+  }
+  const boxed = boxState.kind === "boxed";
   try {
-    const proc = Bun.spawn(["bash", "-c", rec.entrypoint], {
+    const proc = Bun.spawn(argv, {
       // Its own process group, so stopping it stops everything it started.
       detached: true,
       cwd: rec.installDir,
@@ -470,12 +740,24 @@ async function startProcess(rec: PluginRecord): Promise<void> {
         HOME: process.env.HOME ?? "",
         AGENTGLASS_READ_TOKEN: token,
         AGENTGLASS_URL: serverBase(),
+        AGENTGLASS_PLUGIN_DATA: dataDir,
       },
-      stdout: "ignore",
-      stderr: "ignore",
-      stdin: "ignore",
+      // Extra fds for the box's `--ro-bind-fd`/`--bind-fd` grants — index 3
+      // onward, matching the child fd numbers `sandboxArgv` was given. A
+      // boxed start also pipes stderr, but ONLY long enough to catch bwrap
+      // itself failing to mount something in the first instant; see
+      // `captureFirstStderrLine`, which cancels the stream well short of
+      // becoming a general log capture this app has never done.
+      stdio: ["ignore", "ignore", boxed ? "pipe" : "ignore", ...parentFds],
     });
-    const entry: Running = { proc, token, pid: proc.pid };
+    for (const fd of parentFds) { try { closeSync(fd); } catch { /* already closed by the dup */ } }
+    const startedAt = Date.now();
+    if (boxed && proc.stderr instanceof ReadableStream) {
+      captureFirstStderrLine(proc.stderr).then((line) => {
+        if (line && Date.now() - startedAt < BOX_GRACE_MS) lastBoxFailure.set(rec.name, line);
+      });
+    }
+    const entry: Running = { proc, token, pid: proc.pid, boxState };
     running.set(rec.name, entry);
     // A plugin that crashes or exits on its own must not leave a live token
     // behind — the same "revoked when the run ends" rule `mintUnderstudyToken`
@@ -486,6 +768,7 @@ async function startProcess(rec: PluginRecord): Promise<void> {
     });
   } catch (e) {
     revokePluginToken(token);
+    for (const fd of parentFds) { try { closeSync(fd); } catch { /* fine */ } }
     throw e;
   }
 }
@@ -511,11 +794,54 @@ async function git(args: string[], cwd: string, timeoutMs: number): Promise<{ ok
   }
 }
 
-export type PublicPlugin = PluginRecord & { running: boolean; pid: number | null };
+export type PublicSandboxProbe = { ok: true } | { ok: false; reason: Extract<SandboxProbe, { ok: false }>["reason"]; detail: string };
+
+export type PublicPlugin = PluginRecord & {
+  running: boolean;
+  pid: number | null;
+  boxState?: BoxState;
+  /** Whether THIS HOST can build a box at all, present only when the plugin
+   *  declares a sandbox — checked before a start is ever attempted, so the
+   *  approval screen can say "this system cannot build the box" instead of
+   *  the neutral "will run in a box" right up until the person switches it
+   *  on. `sandboxProbe()` is cached, so asking for every plugin costs one
+   *  probe, not one per plugin. */
+  sandboxProbe?: PublicSandboxProbe;
+  /** The first line bwrap wrote to stderr the last time this plugin's box
+   *  died in its opening instant, cleared at the start of the next attempt.
+   *  Set only while nothing is running: a plugin currently up has nothing
+   *  to explain. */
+  lastBoxFailure?: string;
+};
 
 /** A record from before `contributes` existed has none on disk. */
 function withContributes(p: PluginRecord): PluginRecord {
   return p.contributes ? p : { ...p, contributes: {} };
+}
+
+function publicProbe(): PublicSandboxProbe {
+  const p = sandboxProbe();
+  return p.ok ? { ok: true } : { ok: false, reason: p.reason, detail: p.detail };
+}
+
+/** `running`/`pid`/`boxState` together, from the one live entry — so a
+ *  caller never reads `pid` off one lookup and `boxState` off a second that
+ *  raced a stop or a restart in between. Adds the host-level probe and any
+ *  leftover crash detail, both keyed off the RECORD rather than the live
+ *  entry, since they matter most while nothing is running. */
+function liveState(p: PluginRecord): Pick<PublicPlugin, "running" | "pid" | "boxState" | "sandboxProbe" | "lastBoxFailure"> {
+  const r = running.get(p.name);
+  const out: Pick<PublicPlugin, "running" | "pid" | "boxState" | "sandboxProbe" | "lastBoxFailure"> = {
+    running: r !== undefined,
+    pid: r?.pid ?? null,
+  };
+  if (r) out.boxState = r.boxState;
+  if (p.sandbox) out.sandboxProbe = publicProbe();
+  if (!r) {
+    const fail = lastBoxFailure.get(p.name);
+    if (fail) out.lastBoxFailure = fail;
+  }
+  return out;
 }
 
 /** `settings` stays out: what a person typed into one plugin's settings (a
@@ -523,7 +849,7 @@ function withContributes(p: PluginRecord): PluginRecord {
  *  — another plugin, a paired phone — to see. It is served on its own, at
  *  `full`, and to the plugin itself over its own token. */
 export function listPlugins(): PublicPlugin[] {
-  return read().plugins.map(({ settings: _s, ...p }) => ({ ...withContributes(p), running: running.has(p.name), pid: running.get(p.name)?.pid ?? null }));
+  return read().plugins.map(({ settings: _s, ...p }) => ({ ...withContributes(p), ...liveState(p) }));
 }
 
 /** What a plugin declared, for the routes that check a draw against it. */
@@ -770,7 +1096,7 @@ async function finishInstall(
     // under the same name neither reads them nor throws them away.
     keptSettings: restored ? withoutKept(displaced, manifest.name, from) : displaced,
   });
-  return { ok: true, plugin: { ...record, running: running.has(record.name), pid: running.get(record.name)?.pid ?? null } };
+  return { ok: true, plugin: { ...record, ...liveState(record) } };
 }
 
 /**
@@ -945,6 +1271,36 @@ export async function enablePlugin(name: string, approved = true): Promise<{ ok:
   return { ok: true };
 }
 
+/**
+ * Grant or revoke this plugin's explicit consent to run unboxed on a host
+ * that cannot build its box (see `allowUnboxed` on `PluginRecord`, and R1 in
+ * the security triage this closes). Granting retries a start if the plugin
+ * is enabled but not currently running — the shape a refused start leaves it
+ * in. Revoking stops it if the reason it is running at all was this consent;
+ * a plugin that is boxed, or that never needed the box, is untouched.
+ */
+export async function setPluginUnboxedConsent(name: string, allow: boolean): Promise<{ ok: true } | { ok: false; error: string }> {
+  const store = read();
+  const rec = store.plugins.find((p) => p.name === name);
+  if (!rec) return { ok: false, error: "no such plugin" };
+  rec.allowUnboxed = allow;
+  write(store);
+  if (allow) {
+    // The same three gates `enablePlugin`/`resumeEnabledPlugins` hold a start
+    // to: switched on, approved at its CURRENT fingerprint, and not blocked.
+    // Consent is not a fourth way to enable a plugin — a legacy record
+    // migrated with `enabled: true, approvedFingerprint: null` (never
+    // reviewed), or one with the master switch off, must not start just
+    // because someone flipped this one switch.
+    const canStart = store.master && rec.enabled && rec.approvedFingerprint === rec.fingerprint && !blockedEntry(name);
+    if (canStart && !running.has(name)) await startProcess(rec);
+  } else {
+    const r = running.get(name);
+    if (r && r.boxState.kind === "unboxed" && r.boxState.reason !== "no-block") await stopRunning(name);
+  }
+  return { ok: true };
+}
+
 export async function disablePlugin(name: string): Promise<boolean> {
   const store = read();
   const rec = store.plugins.find((p) => p.name === name);
@@ -973,11 +1329,15 @@ export async function removePlugin(name: string, opts: { dropSettings?: boolean 
     return true;
   }
   await stopRunning(name);
+  lastBoxFailure.delete(name);
   // A record is read back from disk, so its `installDir` is trusted no more
   // than a manifest is: the folder goes only when it is a child of the
   // plugins root. Otherwise the record is dropped and the disk left alone —
   // a stale entry is a nuisance, a deleted config directory is not.
   if (insidePluginsRoot(rec.installDir)) rmSync(rec.installDir, { recursive: true, force: true });
+  // A different author's plugin installed later under this same name must
+  // not inherit whatever this one cached here.
+  removePluginDataDir(name);
   const keep = !opts.dropSettings && rec.settings && Object.keys(rec.settings).length > 0;
   const from = sourceKey(rec.source);
   write({

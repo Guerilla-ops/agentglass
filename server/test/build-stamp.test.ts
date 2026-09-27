@@ -51,8 +51,9 @@ function fixture() {
   write(dir, "package.json", JSON.stringify({ name: "agentglass", version: "0.8.0" }));
   write(dir, "bun.lock", "{}\n");
   write(dir, "electron/package.json", JSON.stringify({ name: "agentglass-electron", version: "0.8.0" }));
-  // build.mjs copies this into staging, so it has to exist.
+  // build.mjs copies these into staging, so they have to exist.
   write(dir, "electron/self-update.sh", "#!/usr/bin/env bash\n");
+  write(dir, "electron/release-allowed-signers", "release ssh-ed25519 AAAAfixture\n");
   write(dir, "electron/main.js", "// the electron shell\n");
   write(dir, "web/src/App.tsx", "export const App = () => null\n");
   write(dir, "server/src/index.ts", "export const serve = () => 0\n");

@@ -2,15 +2,19 @@
  * The manifest's `sandbox` block: what it may declare, and what a declaration
  * does to the approval.
  *
- * Nothing enforces it yet, so what is pinned here is the contract the
- * enforcement will stand on: a grant that could reach the machine's
- * credentials is refused when the manifest is read, a change to a grant
- * changes the hash the reviewer approved, and a manifest with no block reads
- * and hashes exactly as it did before the block existed.
+ * The box itself (bwrap, argv, the real filesystem) is server/src/plugin-sandbox.ts
+ * and its own test file; this one is the contract that stands upstream of it —
+ * a grant that could reach the machine's credentials, a live socket
+ * directory, or a place a shell reads at login is refused when the manifest
+ * is READ, before any of it is resolved against a real disk. A change to a
+ * grant changes the hash the reviewer approved, and a manifest with no block
+ * reads and hashes exactly as it did before the block existed.
  */
 import { describe, expect, test } from "bun:test";
 import { manifestHash, validateManifest, type PluginManifest } from "../src/plugins.ts";
-import { NEVER_MOUNTABLE, describeSandbox, secretGrant, validateSandbox } from "../../shared/pluginSandbox.ts";
+import {
+  NEVER_MOUNTABLE, NEVER_MOUNTABLE_ROOTS, describeSandbox, secretGrant, validateSandbox,
+} from "../../shared/pluginSandbox.ts";
 
 const OK = {
   name: "orbit-reviewer",
@@ -33,11 +37,11 @@ const ok = (sandbox: unknown) => {
 };
 
 describe("a manifest with no sandbox block", () => {
-  test("reads without one and keeps the hash it had before the block existed", () => {
+  test("reads without one as the default box, and so no longer keeps the hash it had before boxes were the default", () => {
     const m = validateManifest(OK) as PluginManifest;
-    expect("sandbox" in m).toBe(false);
-    // Taken from the code as it was before this block: an app upgrade must not clear anybody's approval.
-    expect(manifestHash(m)).toBe("9231e5eae8e211e8a81afa12672213cfb50e8b3f8b34f6ac78e5967f8059ba0a");
+    expect(m.sandbox).toEqual({ network: "agentglass", read: [], write: [], programs: [] });
+    // The approval taken before this change no longer matches: it is asked for again, with the box's grants shown.
+    expect(manifestHash(m)).not.toBe("9231e5eae8e211e8a81afa12672213cfb50e8b3f8b34f6ac78e5967f8059ba0a");
   });
 });
 
@@ -103,6 +107,35 @@ describe("what no manifest may ask for", () => {
   });
 });
 
+describe("system roots no manifest may name", () => {
+  // A read-only bind of one of these still lets a plugin connect() a live
+  // socket inside it — `/tmp/tmux-1000`, `/run/docker.sock` — or hand it
+  // every process's cmdline via `/proc`. Refused at the spelling here;
+  // `refusalReason` in plugin-sandbox.ts re-checks the RESOLVED path, since a
+  // symlink can lead here even when the spelling does not.
+  const NEVER_ROOTS = ["/tmp", "/tmp/tmux-1000", "/var/tmp", "/proc", "/proc/1/environ", "/sys", "/dev", "/run", "/var/run", "/var/run/docker.sock"];
+  for (const p of NEVER_ROOTS) {
+    for (const key of ["read", "write"]) {
+      test(`${key} ${p} is refused`, () => { expect(typeof read({ [key]: [p] })).toBe("string"); });
+    }
+  }
+
+  test("the list is the one the box's own file checks against", () => {
+    const expected: string[] = ["/dev", "/proc", "/run", "/sys", "/var/run", "/var/tmp", "/tmp"];
+    const actual: string[] = [...NEVER_MOUNTABLE_ROOTS];
+    expect(actual.sort()).toEqual(expected.sort());
+  });
+});
+
+describe("write-only: places a shell or a desktop reads without the plugin running", () => {
+  const FILES = ["~/.bashrc", "~/.profile", "~/.bash_profile", "~/.zshrc", "~/.zprofile"];
+  const DIRS = ["~/.config/fish", "~/.local/bin", "~/bin", "~/.config/systemd", "~/.config/autostart", "~/.local/share/applications", "~/.config/environment.d"];
+  for (const p of [...FILES, ...DIRS]) {
+    test(`write ${p} is refused`, () => { expect(typeof read({ write: [p] })).toBe("string"); });
+    test(`read ${p} is fine — reading is not what write refuses`, () => { expect(ok({ read: [p] }).sandbox?.read).toEqual([p.replace(/\/$/, "")]); });
+  }
+});
+
 describe("secret-looking grants", () => {
   for (const p of ["~/.config/gh", "~/.aws", "~/.aws/credentials", "~/.netrc", "~/.git-credentials", "~/.config/gcloud", "~/.kube/config", "~/.docker/config.json", "~/.npmrc", "~/.codex/auth.json", "~/keys/deploy.pem", "~/backup/id_ed25519", "~/.password-store", "/etc/orbit/api-token"]) {
     test(`${p} is flagged`, () => { expect(secretGrant(p)).not.toBeNull(); });
@@ -116,8 +149,8 @@ describe("the hash the reviewer approved", () => {
   const h = (sandbox?: unknown) => manifestHash(ok(sandbox ?? undefined));
   const base = { network: "internet", read: ["~/.config/gh"], write: [], programs: ["gh"] };
 
-  test("an empty block is not the same as no block", () => {
-    expect(manifestHash(ok({}))).not.toBe(manifestHash(validateManifest(OK) as PluginManifest));
+  test("an empty block is the same as no block: both are the default box", () => {
+    expect(manifestHash(ok({}))).toBe(manifestHash(validateManifest(OK) as PluginManifest));
   });
 
   test("moves when the network, a read, a write or a program changes", () => {

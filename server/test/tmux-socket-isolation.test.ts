@@ -25,6 +25,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { engineSocketArgs, tmuxSocket } from "../src/tmuxbin.ts";
 import { SERVER_BOOT_MS } from "./serverBoot.ts";
+import { freePort } from "./freePort.ts";
 
 const SAVED = {
   XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME,
@@ -157,7 +158,7 @@ async function bootAndRecord(tmuxTmpdir: string): Promise<string[]> {
   const stub = join(stubDir, "tmux");
   writeFileSync(stub, `#!/bin/sh\nprintf '%s\\n' "$*" >> "${log}"\ncase "$*" in *-V*) echo "tmux 3.4"; exit 0;; esac\nexit 1\n`);
   chmodSync(stub, 0o755);
-  const port = 4960 + Math.floor(Math.random() * 30);
+  const port = await freePort();
   const proc = Bun.spawn(["bun", "run", new URL("../src/index.ts", import.meta.url).pathname], {
     env: {
       PATH: `${stubDir}:${process.env.PATH ?? ""}`,

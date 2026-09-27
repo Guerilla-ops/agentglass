@@ -17,6 +17,7 @@ import { join } from "node:path";
 import { TMUX_TEST_TMPDIR } from "./tmuxTmp.ts";
 import { SERVER_BOOT_MS } from "./serverBoot.ts";
 import { TMUX_ISOLATED } from "./tmuxIsolated.ts";
+import { freePort } from "./freePort.ts";
 
 const SOCKET = `agx-agentops-${process.pid}`;
 const CLI = new URL("../../bin/agentglass-agent", import.meta.url).pathname;
@@ -56,7 +57,7 @@ beforeAll(async () => {
   wt = join(dir, "wt");
   mkdirSync(wt);
   log = join(dir, "stub-log");
-  const port = 4930 + Math.floor(Math.random() * 30);
+  const port = await freePort();
   base = `http://127.0.0.1:${port}`;
   proc = Bun.spawn(["bun", "run", new URL("../src/index.ts", import.meta.url).pathname], {
     env: {

@@ -1,9 +1,10 @@
 import type { ReactNode } from "react";
 import type { DeviceScope, PublicPlugin } from "../../../../shared/types.ts";
-import { EyeIcon, NoteIcon, HandIcon } from "../../lib/glyphIcons.tsx";
+import { CopyIcon, EyeIcon, NoteIcon, HandIcon } from "../../lib/glyphIcons.tsx";
 import { CommandIcon, PuzzleIcon, ShieldIcon, SlidersIcon } from "../settingsNavIcons.tsx";
 import { describeSandbox, type SandboxGrant } from "../../../../shared/pluginSandbox.ts";
-import { ICON } from "../../lib/iconSize.ts";
+import { boxWording } from "../../lib/pluginBoxState.ts";
+import { HIT, ICON } from "../../lib/iconSize.ts";
 
 /**
  * What switching a plugin on approves, drawn rather than recited.
@@ -28,11 +29,14 @@ const SCOPE_SENTENCE: Record<DeviceScope, string> = {
   full: "Everything this machine can do: a terminal, git writes, Docker, the browser, releasing permission gates. Give this to code you would run yourself.",
 };
 
-/** Whatever the scope: it limits the token, and the process is the user's. */
+/** Whatever the scope: it limits the token, and an UNBOXED process is the
+ *  user's. Never shown for a boxed plugin — that would contradict what "What
+ *  it asks to be given" says right below it. */
 const PROCESS_WARNING = "This plugin runs as you. The scope limits its access to this app, not to your machine: it can still read your files and run programs. Approve it only if you would run its code yourself.";
+/** The boxed equivalent: the scope still limits the token, but the process
+ *  itself is contained to the folders in the block below, not the whole machine. */
+const BOXED_PROCESS_NOTE = "This plugin runs in a box: the scope still limits its access to this app, and the box limits what else it can reach — see what it asks to be given, below.";
 
-/** The block is a request for a box, and no box is built yet: saying otherwise would be the gate lying. */
-const SANDBOX_NOTE = "Declared, not enforced: this version does not build the box yet, so the plugin still runs as you. The list is what a later version will hold it to.";
 
 const SCOPE_WORD: Record<DeviceScope, string> = { read: "reads the app", answer: "reads and replies", full: "everything" };
 const SCOPE_TINT: Record<DeviceScope, string> = { read: "var(--success)", answer: "var(--warning)", full: "var(--error)" };
@@ -71,14 +75,15 @@ export function PluginDeclaration({ plugin }: { plugin: PublicPlugin }) {
   const tint = SCOPE_TINT[plugin.scope];
   const drawn = surfaces(plugin);
   const d = plugin.sandbox ? describeSandbox(plugin.sandbox) : null;
+  const box = boxWording(plugin);
   return (
     <div className="flex flex-col gap-2.5 min-w-0">
       <Block icon={<EyeIcon size={ICON.sm} />} tint={tint} head="What it sees" chip={SCOPE_WORD[plugin.scope]}>
         <p className="m-0 text-[12px] leading-relaxed" style={{ color: "var(--text2)" }}>{SCOPE_SENTENCE[plugin.scope]}</p>
       </Block>
 
-      <Block icon={<CommandIcon size={ICON.sm} />} tint="var(--warning)" head="What it runs">
-        <p className="m-0 mb-1.5 text-[12px] leading-relaxed" style={{ color: "var(--text2)" }}>{PROCESS_WARNING}</p>
+      <Block icon={<CommandIcon size={ICON.sm} />} tint={box?.tone === "boxed" ? "var(--primary)" : "var(--warning)"} head="What it runs">
+        <p className="m-0 mb-1.5 text-[12px] leading-relaxed" style={{ color: "var(--text2)" }}>{box?.tone === "boxed" ? BOXED_PROCESS_NOTE : PROCESS_WARNING}</p>
         {/* The command, as a command: the one line here that is not prose, and
             the one a reader is most likely to want to recognise. */}
         <code className="block t-mono text-[11.5px] px-2 py-1.5 rounded-md break-all"
@@ -87,10 +92,24 @@ export function PluginDeclaration({ plugin }: { plugin: PublicPlugin }) {
         </code>
       </Block>
 
-      {d && (
-        <Block icon={<ShieldIcon size={ICON.sm} />} tint={d.secretCount ? "var(--error)" : "var(--warning)"} head="What it asks to be given"
-          chip={d.secretCount ? `${d.secretCount} look${d.secretCount === 1 ? "s" : ""} like a login` : "declared"}>
-          <p className="m-0 mb-1.5 text-[12px] leading-relaxed" style={{ color: "var(--text2)" }}>{SANDBOX_NOTE}</p>
+      {d && box && (
+        <Block
+          icon={<ShieldIcon size={ICON.sm} />}
+          tint={box.tone === "warning" ? "var(--error)" : d.secretCount ? "var(--error)" : "var(--warning)"}
+          head="What it asks to be given"
+          chip={d.secretCount ? `${d.secretCount} look${d.secretCount === 1 ? "s" : ""} like a login` : "declared"}
+        >
+          <p className="m-0 mb-1.5 text-[12px] leading-relaxed" style={{ color: box.tone === "warning" ? "var(--error)" : "var(--text2)" }}>{box.text}</p>
+          {box.tone === "warning" && "fix" in box && box.fix && <FixBlock command={box.fix} />}
+          {box.tone === "boxed" && box.refused && box.refused.length > 0 && (
+            <div className="flex flex-col gap-0.5 mb-1.5">
+              {box.refused.map((r) => (
+                <p key={r.path} className="m-0 text-[11.5px] leading-snug" style={{ color: "var(--error)" }}>
+                  Refused <span className="t-mono">{r.path}</span> — {r.why}
+                </p>
+              ))}
+            </div>
+          )}
           <div className="flex flex-col gap-1">
             <Row label="Network" tint={d.internet ? "var(--warning)" : undefined}>
               {d.internet ? "any host on the internet" : "this app only"}
@@ -127,6 +146,24 @@ function Row({ label, tint, children }: { label: string; tint?: string; children
     <div className="flex items-start gap-2 min-w-0 text-[12px] leading-snug">
       <span className="shrink-0 w-[68px] t-dim">{label}</span>
       <span className="min-w-0 break-all" style={{ color: tint ?? "var(--text)" }}>{children}</span>
+    </div>
+  );
+}
+
+/** The one-time fix, as a command to run rather than a paragraph to follow:
+ *  copied whole, never retyped from a screenshot of a terminal. */
+function FixBlock({ command }: { command: string }) {
+  return (
+    <div className="relative mb-1.5">
+      <pre className="m-0 t-mono text-[11px] leading-relaxed px-2 py-1.5 pr-7 rounded-md overflow-x-auto whitespace-pre"
+        style={{ color: "var(--text)", background: "var(--surface-inset)", border: "1px solid var(--surface-line)" }}>
+        {command}
+      </pre>
+      <button type="button" className="agx-btn absolute top-1 right-1 rounded inline-flex items-center justify-center"
+        style={{ width: HIT, height: HIT, color: "var(--text3)" }}
+        title="Copy" onClick={() => { void navigator.clipboard?.writeText(command).catch(() => {}); }}>
+        <CopyIcon size={ICON.xs} />
+      </button>
     </div>
   );
 }

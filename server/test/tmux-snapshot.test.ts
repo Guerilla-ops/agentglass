@@ -74,6 +74,11 @@ const put = (name: string, text: string, asLast = true): string => {
   return path;
 };
 
+// The file moves HOME and XDG_CONFIG_HOME, and the whole suite is one process:
+// a base left pointing at a made-up home reached the isolation and tmux-conf
+// files that ran after it, in whichever order the runner listed them.
+const savedEnv = { HOME: process.env.HOME, XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME };
+
 beforeEach(() => {
   home = mkdtempSync(join(tmpdir(), "agx-snap-"));
   process.env.HOME = home;
@@ -82,6 +87,10 @@ beforeEach(() => {
 
 afterEach(() => {
   rmSync(home, { recursive: true, force: true });
+  for (const [k, v] of Object.entries(savedEnv)) {
+    if (v === undefined) delete process.env[k];
+    else process.env[k] = v;
+  }
 });
 
 describe("what a save is worth", () => {
