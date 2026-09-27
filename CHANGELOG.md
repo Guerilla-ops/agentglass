@@ -14,6 +14,13 @@ kept in one place.
 
 ## Released
 
+- **v0.22.0** — **The browser learns to script itself.** The in-app browser gets reusable page templates, scriptable page tools and an honest identity header; Settings gets a full reorganization; a plugin's sandbox is now enforced, and its network box holds under review; the phone gets on-device dictation and a camera attach.
+  - **Browser page templates and page tools.** `newtab --from-template` opens a visible twin of a lane's ephemeral fork; new primitives let an agent read, click and fill a page over the CLI or MCP; shared-open no longer hangs.
+  - **Settings redesigned.** Search finds the row you typed, one control column, four-card notifications, six nav groups, gear links from panels.
+  - **Plugin sandbox enforced**, and its network box closes off the paths reviewed since it landed.
+  - **Phone: on-device dictation and a camera attach**, and an uploaded image is classified by its own content.
+  - **Elsewhere**, a stalled loop says what it was doing, the usage chart and update panel stop jumping, server errors get a rotated log and a digest pill, and a round of test-hygiene and CI-replica fixes. Four issues from a v0.21 triage are closed, and two docs pages were corrected.
+
 - **v0.21.0** — **The phone becomes a place to follow your pull requests.** A pull request's conversation can be read on the phone, split into people and bots; a new comment from a person reaches it with a badge, and on Android 15 alerts keep arriving after the app leaves the screen. What you read on one device stops being new on the others, and every phone screen went through a QA pass. Underneath, the desktop app proves a server before it trusts it.
   - **Pull requests on the phone.** The Talk pane with All, Humans and Bots; a live badge, and an opt-in notification per device, for a new comment from a person; search with Open, Merged, Closed and Any.
   - **Read marks shared through the server.** A pull request opened on the desktop is no longer new on the phone, and "new since last time" is marked with a badge and a divider.
