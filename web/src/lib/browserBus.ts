@@ -1,6 +1,6 @@
 import type { BrowserAskFrame } from "../../../shared/types.ts";
 import { api } from "./api.ts";
-import { captureBrowser, registerBrowserInitScript, browserCdp, browserCdpEvents, applySessionSettings, browserDevtools, browserDevtoolsClose, browserDevtoolsShot, browserDevtoolsPanel, browserDevtoolsZoom } from "./desktop.ts";
+import { captureBrowser, registerBrowserInitScript, browserCdp, browserCdpEvents, applySessionSettings, browserDevtools, browserDevtoolsClose, browserDevtoolsShot, browserDevtoolsPanel, browserDevtoolsZoom, setGuestOwner } from "./desktop.ts";
 import { runBrowserAsk, type DrivableWebview } from "./browserDrive.ts";
 import { whilePainting } from "./panePainting.ts";
 import { diagnosisScript } from "./browserObserve.ts";
@@ -72,7 +72,12 @@ export interface TabOps {
      once is the limit", "that name is taken" — and a caller told only that it
      "could not open a tab" has nothing to act on. Measured on the running app
      with 64 tabs open: the limit was hit and the message named nothing. */
-  open(url: string, profile?: string): { id: string } | { error: string } | null;
+  /* A Promise, for `newtab --from-template`: opening the tab needs an
+     ephemeral partition from main FIRST (electron/main.js
+     `ag:tabEphemeralOpen`), which is a round trip no other `open` has ever
+     needed. An ordinary mint still returns the plain value; `serveTabs`
+     awaits either shape the same way. */
+  open(url: string, profile?: string): { id: string } | { error: string } | null | Promise<{ id: string } | { error: string } | null>;
   close(which: { index?: number; id?: string }): boolean;
   /** Every container the panel knows about, so an agent can pick one by name
    *  instead of guessing at a string the panel would silently reject. */
@@ -99,7 +104,7 @@ export function onBrowserTabs(ops: TabOps | null): () => void {
 
 const TAB_OPS = new Set(["tabs", "tab", "newtab", "closetab", "profiles"]);
 
-function serveTabs(ask: BrowserAskFrame): { ok: boolean; value?: unknown; error?: string } {
+async function serveTabs(ask: BrowserAskFrame): Promise<{ ok: boolean; value?: unknown; error?: string }> {
   if (!tabs) return { ok: false, error: "the browser view is not open in this window" };
   const which = {
     ...(typeof ask.args.index === "number" ? { index: ask.args.index } : {}),
@@ -159,7 +164,7 @@ function serveTabs(ask: BrowserAskFrame): { ok: boolean; value?: unknown; error?
        * the 40-minute magic-link cost the spec measured. `serveBrowserAsk`
        * only routes an `open` here when it carries a `profile`; a plain
        * `open` still replaces the current view, unchanged. */
-      const made = tabs.open(String(ask.args.url ?? ""),
+      const made = await tabs.open(String(ask.args.url ?? ""),
         typeof ask.args.profile === "string" ? ask.args.profile : undefined);
       if (made && "error" in made) return { ok: false, error: made.error };
       return made
@@ -267,7 +272,7 @@ export async function serveBrowserAsk(el: DrivableWebview | null, ask: BrowserAs
      note beside `case "open"` in serveTabs for why a plain `open` must NOT
      take this branch. */
   if (TAB_OPS.has(ask.op) || (ask.op === "open" && typeof ask.args.profile === "string")) {
-    const reply = serveTabs(ask);
+    const reply = await serveTabs(ask);
     try { await api.browserResult({ client: clientId(), id: ask.id, ...reply }); } catch { /* already timed out */ }
     return;
   }
@@ -275,6 +280,18 @@ export async function serveBrowserAsk(el: DrivableWebview | null, ask: BrowserAs
     const reply = await serveHealth(el);
     try { await api.browserResult({ client: clientId(), id: ask.id, ...reply }); } catch { /* already timed out */ }
     return;
+  }
+  /*
+   * S9: which agent this guest's requests should be attributed to, for the
+   * identity header — see identify-header.js. Pushed here, on every ask that
+   * addresses a real guest, rather than once when a tab opens: `as` is who is
+   * asking NOW, and a tab a second agent picks up (or `--lane`, or a tab
+   * nobody named) must not go on carrying the first name in main's map.
+   * Fire-and-forget, same as the rest of `setGuestOwner`'s callers.
+   */
+  if (el && typeof ask.args.as === "string") {
+    const owner = guestIdOf(el);
+    if (typeof owner === "number") setGuestOwner(owner, ask.args.as);
   }
   /* A screenshot is the one verb that needs the pane to be PAINTING, not just
      mounted — everything else talks to the page and does not care whether

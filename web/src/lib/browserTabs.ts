@@ -53,6 +53,14 @@ export interface BrowserTab {
    * shelf entry wherever it wanders, and the entry shows where it is.
    */
   shelfId?: string;
+  /**
+   * `newtab --from-template`'s own in-memory jar — the visible-tab twin of a
+   * lane's ephemeral fork. Set only for a tab minted that way; absent means
+   * "the ordinary `partitionFor(profile)` one", which is what the `<webview>`
+   * falls back to. Fixed for the life of the tab, same reason as `profile`:
+   * the partition is decided when the guest attaches.
+   */
+  partition?: string;
 }
 
 /**
@@ -83,12 +91,13 @@ export const MAX_ROWS = 64;
 
 let seq = 0;
 
-export function newTab(url: string = BLANK, profile = "", shelfId?: string): BrowserTab {
+export function newTab(url: string = BLANK, profile = "", shelfId?: string, partition?: string): BrowserTab {
   return {
     id: `t${++seq}-${Math.random().toString(36).slice(2, 8)}`,
     url, title: "", icon: null, loading: false, failed: null,
     canBack: false, canForward: false, profile,
     ...(shelfId ? { shelfId } : null),
+    ...(partition ? { partition } : null),
   };
 }
 
@@ -163,7 +172,7 @@ export function closeTab(tabs: BrowserTab[], id: string): { tabs: BrowserTab[]; 
 
 /** Add one after the tab it was opened from — a link opened in a new tab
  *  belongs beside its parent, not at the far end of the strip. */
-export function addTab(tabs: BrowserTab[], url: string, afterId?: string, profile?: string, shelfId?: string): { tabs: BrowserTab[]; tab: BrowserTab } | { error: string } {
+export function addTab(tabs: BrowserTab[], url: string, afterId?: string, profile?: string, shelfId?: string, partition?: string): { tabs: BrowserTab[]; tab: BrowserTab } | { error: string } {
   if (tabs.length >= MAX_ROWS) {
     return { error: `${MAX_ROWS} pages is the limit. Close one first — or drop a profile you are done with, which closes its pages with it.` };
   }
@@ -177,7 +186,7 @@ export function addTab(tabs: BrowserTab[], url: string, afterId?: string, profil
   // Anything else would sign you out mid-flow, which is the one thing profiles
   // must never do by accident.
   const from = afterId ? tabs.find((t) => t.id === afterId) : undefined;
-  const tab = newTab(url, profile ?? from?.profile ?? "", shelfId);
+  const tab = newTab(url, profile ?? from?.profile ?? "", shelfId, partition);
   const at = afterId ? tabs.findIndex((t) => t.id === afterId) : -1;
   const next = at < 0 ? [...tabs, tab] : [...tabs.slice(0, at + 1), tab, ...tabs.slice(at + 1)];
   return { tabs: next, tab };
