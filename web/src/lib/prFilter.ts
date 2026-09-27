@@ -20,7 +20,7 @@
 // ever shrink the result to zero, which reads as broken.
 import type { PrSummary } from "../../../shared/types.ts";
 import { prTextMatch } from "../../../shared/prSearch.ts";
-import type { FieldSpec, ReadField, Rule } from "../components/tasks/filters.ts";
+import { applyWith, type FieldSpec, type FilterSet, type ReadField, type Rule } from "../components/tasks/filters.ts";
 
 export type ReviewTok = "approved" | "changes-requested" | "required" | "none";
 export type ChecksTok = "green" | "red" | "pending";
@@ -309,6 +309,20 @@ function checksRank(p: PrSummary): number {
 /** The filtered + sorted rows, for callers that hold the whole set. */
 export function applyFilters(prs: PrSummary[], f: FilterState): PrSummary[] {
   return prs.filter((p) => matches(p, f)).sort(SORTERS[f.sort] ?? SORTERS[DEFAULT_SORT]);
+}
+
+/**
+ * The rule builder, minus one exemption: a row with something unread on it
+ * (the same predicate the "N unread" chip counts by) is never dropped by a
+ * rule the user built — only read gets it out. The chip promised "2 unread"
+ * and a rule like "Card status is not Done" could hide both with no way to
+ * see them; the text box and the pills above still apply normally.
+ */
+export function applyRulesKeepUnread<T>(rows: T[], rules: FilterSet, read: ReadField<T>, isUnread: (row: T) => boolean): T[] {
+  const kept = applyWith(rows, rules, read);
+  if (kept.length === rows.length) return kept;
+  const keptSet = new Set(kept);
+  return [...kept, ...rows.filter((r) => !keptSet.has(r) && isUnread(r))];
 }
 
 /**

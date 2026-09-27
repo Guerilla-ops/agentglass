@@ -25,8 +25,18 @@ export interface Lane {
    *  is wiped when the lane closes and is the default: a lane an agent opens
    *  must not carry the person's logins unless somebody said so. `shared` is
    *  the person's own container, on purpose. `named` is one of the containers
-   *  `profiles` lists, by `name`. */
-  container: "private" | "shared" | "named";
+   *  `profiles` lists, by `name`. `ephemeral` (S6, `lane new --from-template`)
+   *  is an in-memory jar seeded from a template — no `persist:` prefix at all,
+   *  so unlike `private` there is nothing on disk to wipe on close. */
+  container: "private" | "shared" | "named" | "ephemeral";
+  /* `ephemeral` as a fourth container value, parallel to `private`, rather
+     than an orthogonal `persist: boolean` riding on `private` the way `name`
+     rides on `named` — considered, not done here: it would have collapsed
+     the container union, `laneSlug`, and the lane-hash format down to one
+     fewer case each, at the cost of touching parseAsk, composeLane, every
+     consumer of `container`, and the hash format in the same change as the
+     feature itself. Left as the next simplification after this, not one
+     this diff is confident enough in to do unmeasured at the same time. */
   name?: string;
   created: number;
   lastAsk: number;

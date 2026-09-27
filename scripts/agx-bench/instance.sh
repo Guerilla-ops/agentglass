@@ -111,6 +111,8 @@ start)
     # The instance opens an empty project of its own, inside DIR.
     printf 'export AGENTGLASS_ROOT=%q\n' "$DIR/project"
     printf 'export SHELL=/bin/bash\n'
+    # Opt-in features a task needs (page tools); off unless the caller sets it.
+    [ -n "${AGENTGLASS_BROWSER_WEBMCP:-}" ] && printf 'export AGENTGLASS_BROWSER_WEBMCP=%q\n' "$AGENTGLASS_BROWSER_WEBMCP"
   } > "$DIR/launch.env"
   echo "$PORT" > "$DIR/port"
   : > "$DIR/electron.log"

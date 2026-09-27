@@ -12,7 +12,7 @@
 // same offset is what makes the poll loop double as the live path: an active
 // session's transcript grows on disk, and we pick up the tail every tick.
 
-import { readdirSync, statSync } from "node:fs";
+import { readdirSync, statSync, type Stats } from "node:fs";
 import { homedir } from "node:os";
 import { basename, delimiter, join } from "node:path";
 import type { IngestBody } from "../../shared/types.ts";
@@ -1104,11 +1104,31 @@ const FULL_MS = 60_000;
 /** Last mtime seen for each transcript, so a light sweep can tell warm from cold. */
 const lastMtime = new Map<string, number>();
 
+/** Transcripts the last budgeted sweep left for the next one. */
+let backlog = 0;
+export const scanBacklog = () => backlog;
+
+/**
+ * The cold-start backfill is not one sweep but a run of them, each reading at
+ * most this many bytes, newest transcript first, with a pause between: the
+ * duty cycle is what bounds the CPU the backfill takes from the loop the PTY
+ * rides, and nothing is dropped — every file it did not reach is the next
+ * chunk's. Read per call, like the batch limits.
+ *
+ * Measured on 289 MB of transcripts: total CPU is the same as one big sweep
+ * (33 s); what changes is that the newest session is in after 0.6 s instead of
+ * after the last file. Not here: a queue kept across chunks. Each chunk walks
+ * and stats every file again, which is cheap next to the reads it saves.
+ */
+const coldBudgetBytes = () => Math.max(1024 * 1024, Number(process.env.AGENTGLASS_SCAN_COLD_BUDGET_BYTES || 128 * 1024 * 1024));
+const coldPauseMs = () => Math.max(0, Number(process.env.AGENTGLASS_SCAN_COLD_PAUSE_MS ?? 200));
+
 /** One sweep over every project directory under every root.
  *  Exported for the scanner tests, which drive sweeps by hand rather than
  *  waiting on the 3s timer. `full` (the default) looks at every file; the
- *  timer passes false between full sweeps. */
-export async function scanOnce(onLive: ((r: InsertResult) => void) | null, full = true): Promise<number> {
+ *  timer passes false between full sweeps. A `budget` (bytes) stops the sweep
+ *  once that much has been read, newest first; see scanBacklog(). */
+export async function scanOnce(onLive: ((r: InsertResult) => void) | null, full = true, budget = Infinity): Promise<number> {
   // Read the workspace once per sweep so every file in it sees the same scope.
   // As one string — every open project, NUL-separated — because it is also the
   // key the refused-file memo compares; see rootsOf().
@@ -1118,6 +1138,10 @@ export async function scanOnce(onLive: ((r: InsertResult) => void) | null, full 
   const cutoff = RETENTION_DAYS ? Date.now() - RETENTION_DAYS * 86_400_000 : 0;
   let total = 0;
 
+  // Gathered first, so the newest transcript is read first: on a cold database
+  // the session somebody is looking at is ingested before the week-old ones
+  // behind it, instead of whenever its directory happened to sort.
+  const queue: { path: string; st: Stats }[] = [];
   for (const root of projectsDirs()) {
     let dirs: string[];
     try {
@@ -1135,7 +1159,7 @@ export async function scanOnce(onLive: ((r: InsertResult) => void) | null, full 
       for (const path of walkTranscripts(dirPath)) {
         const seen = lastMtime.get(path);
         if (!full && seen !== undefined && Date.now() - seen > COLD_MS) continue;
-        let st: ReturnType<typeof statSync>;
+        let st: Stats;
         try {
           st = statSync(path);
         } catch {
@@ -1144,73 +1168,88 @@ export async function scanOnce(onLive: ((r: InsertResult) => void) | null, full 
         }
         lastMtime.set(path, st.mtimeMs);
         if (cutoff && st.mtimeMs < cutoff) continue; // outside retention
-
-        const prev = getFile.get(path);
-        // Unchanged since last sweep → skip without opening it.
-        if (prev && prev.size === st.size && prev.mtime === Math.floor(st.mtimeMs)) {
-          owned.add(prev.session_id);
-          continue;
-        }
-
-        try {
-          // A transcript that got *shorter* was rewritten, not appended to, so a
-          // saved offset now points into different content. Re-read it whole
-          // rather than skipping past records that no longer exist.
-          const rewritten = !!prev && st.size < prev.size;
-          /* Already judged somebody else's, by THIS workspace: skip it without
-             opening it. This is the whole fix for the 6.5 GB/min — a live
-             session in another repo grows every second, and every one of those
-             growths used to buy a full re-read of a file whose bytes we then
-             threw away. */
-          const verdict = stillRefused(path, scope, rewritten, st.size, st.mtimeMs);
-          if (verdict === "yes") continue;
-          /* The verdict has aged out, but this file was somebody else's a
-             minute ago. Ask the cheap way before falling back to reading a live
-             multi-hundred-megabyte transcript whole. */
-          if (verdict === "stale" && scope) {
-            const again = await judgeByHead(path, scope);
-            if (again === true) { noteRefused(path, scope, st.size, st.mtimeMs); continue; }
-            // false, or "the head could not say": both go the long way. false
-            // because the file has come into scope and now has to be INGESTED,
-            // and null because a head that found no cwd must never be believed —
-            // `ingestFile` reads an empty cwd as "no scope test to make".
-            refused.delete(path);
-          }
-          // This read is outside any transaction and is only a *hint* by the time
-          // the batch below writes — see putFileIfUnmoved. `from` and the marker
-          // are different numbers on the rewrite path, so both travel.
-          const marker = prev?.lines_done ?? 0;
-          const from = rewritten ? 0 : marker;
-          // A rewrite also invalidates the cached tail: its byte offset and its
-          // carried tool calls describe content that no longer exists.
-          const r = await ingestFile(path, basename(path, ".jsonl"), from, marker, onLive, scope, !rewritten);
-          // Out of scope: claim nothing, so widening the scope later can still
-          // pick it up, and the hook path isn't blocked for a session we skipped.
-          if (r.skipped) continue;
-          // Still ours to skip on the hook path: the transcript exists and is
-          // being read from disk, whichever process is doing the reading.
-          owned.add(r.session_id);
-          total += r.ingested;
-          // Another process moved the marker mid-file. Writing the final row now
-          // would stamp our stale line count — and a size/mtime saying "fully
-          // done" — over their progress, which is the double-ingest this whole
-          // path exists to prevent. Leave the file to them; the next sweep picks
-          // it up from wherever they left it.
-          if (r.lost) continue;
-          putFileIfUnmoved.run({
-            $path: path,
-            $sid: r.session_id,
-            $src: r.source_app,
-            $proj: r.project_path,
-            $lines: r.lines,
-            $size: st.size,
-            $mtime: Math.floor(st.mtimeMs),
-            $expect: r.expect,
-          });
-        } catch (e) {
-          console.error(`[scan] ${path}: ${e instanceof Error ? e.message : e}`);
-        }
+        queue.push({ path, st });
       }
+    }
+  }
+  queue.sort((a, b) => b.st.mtimeMs - a.st.mtimeMs);
+
+  let spent = 0;
+  backlog = 0;
+  for (const { path, st } of queue) {
+    // The budget is spent: leave this file for the next sweep. It must not
+    // stay in lastMtime, or a light sweep would take a file nobody has read
+    // yet for a cold one and not look at it again until the next full sweep.
+    if (spent >= budget) {
+      lastMtime.delete(path);
+      backlog++;
+      continue;
+    }
+    const prev = getFile.get(path);
+    // Unchanged since last sweep → skip without opening it.
+    if (prev && prev.size === st.size && prev.mtime === Math.floor(st.mtimeMs)) {
+      owned.add(prev.session_id);
+      continue;
+    }
+
+    try {
+      // A transcript that got *shorter* was rewritten, not appended to, so a
+      // saved offset now points into different content. Re-read it whole
+      // rather than skipping past records that no longer exist.
+      const rewritten = !!prev && st.size < prev.size;
+      /* Already judged somebody else's, by THIS workspace: skip it without
+         opening it. This is the whole fix for the 6.5 GB/min — a live
+         session in another repo grows every second, and every one of those
+         growths used to buy a full re-read of a file whose bytes we then
+         threw away. */
+      const verdict = stillRefused(path, scope, rewritten, st.size, st.mtimeMs);
+      if (verdict === "yes") continue;
+      /* The verdict has aged out, but this file was somebody else's a
+         minute ago. Ask the cheap way before falling back to reading a live
+         multi-hundred-megabyte transcript whole. */
+      if (verdict === "stale" && scope) {
+        const again = await judgeByHead(path, scope);
+        if (again === true) { noteRefused(path, scope, st.size, st.mtimeMs); continue; }
+        // false, or "the head could not say": both go the long way. false
+        // because the file has come into scope and now has to be INGESTED,
+        // and null because a head that found no cwd must never be believed —
+        // `ingestFile` reads an empty cwd as "no scope test to make".
+        refused.delete(path);
+      }
+      // This read is outside any transaction and is only a *hint* by the time
+      // the batch below writes — see putFileIfUnmoved. `from` and the marker
+      // are different numbers on the rewrite path, so both travel.
+      const marker = prev?.lines_done ?? 0;
+      const from = rewritten ? 0 : marker;
+      // A rewrite also invalidates the cached tail: its byte offset and its
+      // carried tool calls describe content that no longer exists.
+      const r = await ingestFile(path, basename(path, ".jsonl"), from, marker, onLive, scope, !rewritten);
+      // Out of scope: claim nothing, so widening the scope later can still
+      // pick it up, and the hook path isn't blocked for a session we skipped.
+      if (r.skipped) continue;
+      // Still ours to skip on the hook path: the transcript exists and is
+      // being read from disk, whichever process is doing the reading.
+      owned.add(r.session_id);
+      total += r.ingested;
+      spent += st.size - (rewritten ? 0 : prev?.size ?? 0);
+      // Another process moved the marker mid-file. Writing the final row now
+      // would stamp our stale line count — and a size/mtime saying "fully
+      // done" — over their progress, which is the double-ingest this whole
+      // path exists to prevent. Leave the file to them; the next sweep picks
+      // it up from wherever they left it.
+      if (r.lost) continue;
+      putFileIfUnmoved.run({
+        $path: path,
+        $sid: r.session_id,
+        $src: r.source_app,
+        $proj: r.project_path,
+        $lines: r.lines,
+        $size: st.size,
+        $mtime: Math.floor(st.mtimeMs),
+        $expect: r.expect,
+      });
+    } catch (e) {
+      console.error(`[scan] ${path}: ${e instanceof Error ? e.message : e}`);
     }
   }
   // Once per sweep, not per file: the tail cache holds every tool call's input
@@ -1334,7 +1373,15 @@ export function startScanner(onLive: (r: InsertResult) => void): void {
   // token and dollar for those sessions was silently doubled in the DB.
   sweepBusy = true;
   entered("first transcript scan");
-  scanOnce(null)
+  const coldBackfill = async (): Promise<number> => {
+    let n = 0;
+    do {
+      n += await scanOnce(null, true, coldBudgetBytes());
+      if (backlog) await new Promise((r) => setTimeout(r, coldPauseMs()));
+    } while (backlog);
+    return n;
+  };
+  coldBackfill()
     .then((n) => {
       const projects = projectPaths.size;
       console.log(

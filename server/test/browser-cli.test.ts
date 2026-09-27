@@ -61,6 +61,8 @@ beforeAll(async () => {
       AGENTGLASS_DB: join(dir, "f.db"),
       AGENTGLASS_SCAN_DISABLED: "1",
       AGENTGLASS_PORT: String(port),
+      // `tools` and `call-tool` are refused without it; the refusal is held in browser-webmcp.test.ts.
+      AGENTGLASS_BROWSER_WEBMCP: "1",
     },
     stdout: "ignore", stderr: "pipe",
   });
@@ -242,6 +244,36 @@ describe.skipIf(!HAVE_PY)("the CLI an agent runs", () => {
     expect(key.code).toBe(1);
     expect(key.err).toContain("must be one of");
     expect(asked).toEqual([]);
+  });
+
+  test("call-tool sends the name and the parsed args, and prints the page's answer marked untrusted", async () => {
+    await openWindow();
+    const marked = { text: "added 1", untrusted: true, source: "page" };
+    answers = { "call-tool": { ok: true, value: { tool: "add_to_cart", result: marked } } };
+    asked = []; askedArgs = [];
+    const r = await cli("call-tool", "add_to_cart", "--args", '{"sku":"ORBIT-1042"}');
+    expect(r.code).toBe(0);
+    expect(verbArgs(0)).toEqual({ name: "add_to_cart", args: { sku: "ORBIT-1042" } });
+    expect(JSON.parse(r.out).result).toEqual(marked);
+  });
+
+  test("call-tool with args that are not a JSON object exits 2 and asks nothing", async () => {
+    await openWindow();
+    asked = [];
+    for (const bad of ["{nope", "[1]", '"s"']) {
+      const r = await cli("call-tool", "t", "--args", bad);
+      expect(r.code).toBe(2);
+    }
+    expect(asked).toEqual([]);
+  });
+
+  test("tools asks the window with no arguments", async () => {
+    await openWindow();
+    answers = { tools: { ok: true, value: { api: "document.modelContext", tools: [], nlweb: false, total: 0, dropped: 0, llms: null } } };
+    asked = []; askedArgs = [];
+    const r = await cli("tools");
+    expect(r.code).toBe(0);
+    expect(asked).toContain("tools");
   });
 
   test("cookies --set carries --domain/--http-only/--same-site/--insecure only when given", async () => {
@@ -1099,17 +1131,30 @@ describe("the dispatcher cannot act before it knows who is asking", () => {
     expect(resolved).toBeLessThan(firstBranch);
   });
 
-  /** Every top-level `def` whose body reaches `call(` — the helpers a branch
-   *  can act through. Derived, so a new one is covered the day it is written. */
-  const actingHelpers = [...src.matchAll(/^def (\w+)\(/gm)]
-    .filter((m) => {
+  /** Every top-level `def` whose body reaches `call(` — directly, or through
+   *  another helper already known to. Derived to a fixed point, so a new one
+   *  is covered the day it is written AND a helper that only acts through
+   *  ANOTHER helper (`session_save` through `_capture_state`, `template_save`
+   *  the same way) is still caught rather than dropping out because its own
+   *  body never spells `call(` itself. */
+  const bodies = new Map(
+    [...src.matchAll(/^def (\w+)\(/gm)].map((m) => {
       const from = m.index! + m[0].length;
       const next = src.indexOf("\ndef ", from);
-      return /\bcall\(/.test(src.slice(from, next === -1 ? undefined : next));
-    })
-    .map((m) => m[1])
-    /* `call` is the wire itself and `main` is the dispatcher being audited. */
-    .filter((name) => name !== "call" && name !== "main");
+      return [m[1], src.slice(from, next === -1 ? undefined : next)] as const;
+    }),
+  );
+  const found: string[] = [];
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const [name, fnBody] of bodies) {
+      if (found.includes(name)) continue;
+      const knownRe = new RegExp(`\\b(?:${["call", ...found].join("|")})\\(`);
+      if (knownRe.test(fnBody)) { found.push(name); grew = true; }
+    }
+  }
+  /* `call` is the wire itself and `main` is the dispatcher being audited. */
+  const actingHelpers = found.filter((name) => name !== "call" && name !== "main");
   const actsRe = new RegExp(`\\b(?:call|${actingHelpers.join("|")})\\(`);
 
   test("the helper list is read off the source, and it names the session pair", () => {

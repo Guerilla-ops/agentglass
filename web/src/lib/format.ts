@@ -150,3 +150,11 @@ export const MODEL_COLORS: Record<string, string> = {
   unknown: "#54555c",
 };
 export const modelColor = (m: string) => MODEL_COLORS[m] ?? hashColor(m);
+
+/** "12 min ago", "3 h ago" — and "just now" under a minute, where the minute
+ *  count rounds to zero and "0 min ago" reads like a missing value. */
+export function minutesAgo(t: number, now = Date.now()): string {
+  const m = Math.max(0, Math.round((now - t) / 60_000));
+  if (m === 0) return "just now";
+  return m < 60 ? `${m} min ago` : `${Math.round(m / 60)} h ago`;
+}

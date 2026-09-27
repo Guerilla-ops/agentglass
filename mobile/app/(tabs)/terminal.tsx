@@ -34,7 +34,8 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View,
+  ActivityIndicator, Alert, KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, Text,
+  TextInput, View,
 } from "react-native";
 import * as Haptics from "expo-haptics";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
@@ -77,27 +78,45 @@ import type { AgentSessionRow, DeviceScope, GitRepoRef } from "../../../shared/t
 /** The last segment of a path, which is what a person calls a checkout — the
  *  same rule src/terminal/tabs.ts uses to name a window. */
 /*
- * The picture and the microphone are wired and do not work, so they are drawn
- * disabled rather than drawn as if they might.
- *
- * Both need a computer to finish: the attach path wants a server that will take
- * the upload, and dictation wants a transcriber configured on the machine.
- * Neither is a phone-side change and neither is being guessed at from here.
- *
- * Drawn and dimmed rather than removed, which is the opposite call to the one
- * `80c`, `line` and `fit` got. Those were controls that WORKED and duplicated
- * something else; these are controls that do not work yet, and a row that
- * silently loses them says the feature was dropped. A dimmed one says "not
- * this build", which is true. The wiring below is untouched — `attach` and
- * `dictate` still exist and still do what they did — so re-enabling is this
- * line and nothing else.
+ * The picture and the microphone buttons used to be drawn dimmed and disabled
+ * behind a `HARDWARE_READY = false` flag: attaching needed a server route
+ * that did not exist yet, and dictation needed RECORD_AUDIO, which the camera
+ * plugin's config was blocking from the built manifest so the OS permission
+ * prompt had nothing to grant. Both gaps are closed — the server takes the
+ * upload, and app.json carries the permission — so both buttons are live.
+ * Neither can silently do nothing now: attach() and dictate() end every path
+ * in a paste, an error, or a request the person can act on.
  */
-const HARDWARE_READY = false;
-
 const leafOf = (path: string): string => path.split("/").filter(Boolean).pop() ?? path;
 
+/**
+ * What this screen tells the person when something failed, extended to carry
+ * an optional next step — "Open settings" for a permission the OS will not
+ * prompt for again on its own. A plain string is still every existing
+ * `setError("…")` call site: it is the `TermError` a bare sentence already is,
+ * so none of them had to change to add this.
+ */
+type TermError = string | { message: string; action?: { label: string; onPress: () => void } };
+const errorText = (e: TermError): string => (typeof e === "string" ? e : e.message);
+const errorAction = (e: TermError): { label: string; onPress: () => void } | undefined =>
+  typeof e === "string" ? undefined : e.action;
+
+/** The one message this file shows twice — attach()'s camera path denies the
+ *  same OS permission dictate()'s device path does — with the one way off it:
+ *  Android does not prompt again once a permission has been refused once. */
+const micOrCameraDenied = (what: "microphone" | "camera"): TermError => ({
+  message: `The ${what} is not allowed for this app.`,
+  action: { label: "Open settings", onPress: () => { void Linking.openSettings(); } },
+});
+
 import { fileFrom, pastePayload, type Uploaded } from "../../src/terminal/imagePaste.ts";
-import { joinDictated, nameFor, wordsFrom, type Said } from "../../src/terminal/dictation.ts";
+import {
+  dictationDestination, joinDictatedInto, nameFor, wordsFrom, type Said,
+} from "../../src/terminal/dictation.ts";
+import {
+  onDeviceAvailable, startListening, voicePlan, whisperAvailable,
+  type DictationSession,
+} from "../../src/terminal/speech.ts";
 /* Imported at the top, unlike the image picker below it, and the difference is
    the rule rather than an inconsistency: expo-audio ships IN the Expo Go
    client, so it is not one of the modules test/native-imports.test.ts is about
@@ -106,7 +125,10 @@ import { joinDictated, nameFor, wordsFrom, type Said } from "../../src/terminal/
 import {
   RecordingPresets, requestRecordingPermissionsAsync, setAudioModeAsync, useAudioRecorder,
 } from "expo-audio";
-import { readAsStringAsync } from "expo-file-system";
+/* The legacy entry point on purpose: from SDK 54 the bare "expo-file-system"
+   readAsStringAsync throws at call time ("is deprecated"), so every voice note
+   failed to send while the typecheck and the mocked tests stayed green. */
+import { readAsStringAsync } from "expo-file-system/legacy";
 
 /** One row of `/terminal/agents`. Declared here rather than in shared/ for the
  *  same reason PrViewCounts is: it is this route's answer shape and nothing
@@ -301,7 +323,7 @@ function TerminalPane(): React.ReactNode {
    *  strips' worth of windows, and all of them at once is not a strip anybody
    *  reads. */
   const [session, setSession] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<TermError | null>(null);
   const [stale, setStale] = useState(false);
   const [active, setActive] = useState<string | null>(null);
   const [state, setState] = useState<TerminalState>("connecting");
@@ -744,28 +766,31 @@ function TerminalPane(): React.ReactNode {
    * build that does not carry it. This app has shipped a blank screen twice
    * that way.
    *
+   * No `requestMediaLibraryPermissionsAsync` any more: Android 13+ opens the
+   * system photo picker, which hands this app the one picture chosen and
+   * needs no permission grant at all — asking for one anyway used to put a
+   * dialog in front of a picker that did not need it.
+   *
    * The bytes go up, a path comes back, and the path is pasted — see
    * src/terminal/imagePaste.ts for why a path and why bracketed paste.
    */
-  const attach = useCallback(async (): Promise<void> => {
-    if (!host || !terminal.current) return;
-    let picker: typeof import("expo-image-picker");
+  const loadPicker = useCallback((): typeof import("expo-image-picker") | null => {
     try {
-      picker = require("expo-image-picker") as typeof import("expo-image-picker");
+      return require("expo-image-picker") as typeof import("expo-image-picker");
     } catch {
       setError("This build has no image picker.");
-      return;
+      return null;
     }
+  }, []);
 
-    const allowed = await picker.requestMediaLibraryPermissionsAsync();
-    if (!allowed.granted) { setError("The gallery is not allowed for this app."); return; }
-
-    // base64 asked for here rather than read from the uri afterwards: the file
-    // system module is a second native dependency, and this one already has
-    // the bytes.
-    const picked = await picker.launchImageLibraryAsync({ base64: true, quality: 0.8 });
-    if (picked.canceled || !picked.assets?.length) return;
-    const asset = picked.assets[0]!;
+  /** Shared by both sources below: the upload, and what the server's own
+   *  refusal (413 over 8MB, 415 for a type it does not take) says verbatim —
+   *  `fileFrom`/`ask` already carry the server's sentence rather than a
+   *  paraphrase of it, so nothing here rewrites it. */
+  const uploadPicture = useCallback(async (
+    asset: { base64?: string | null; fileName?: string | null; uri: string },
+  ): Promise<void> => {
+    if (!host || !terminal.current) return;
     if (!asset.base64) { setError("That picture came back empty."); return; }
 
     setSending(true);
@@ -782,10 +807,65 @@ function TerminalPane(): React.ReactNode {
     terminal.current.send(pastePayload(got.file));
   }, [host, terminal]);
 
+  // base64 asked for on both paths rather than read from the uri afterwards:
+  // the file system module is a second native dependency, and the picker
+  // already has the bytes.
+  const PICKER_OPTS = { mediaTypes: ["images" as const], base64: true, quality: 0.7, exif: false };
+
+  const fromLibrary = useCallback(async (): Promise<void> => {
+    const picker = loadPicker();
+    if (!picker) return;
+    const picked = await picker.launchImageLibraryAsync(PICKER_OPTS);
+    if (picked.canceled || !picked.assets?.length) return;
+    void uploadPicture(picked.assets[0]!);
+  }, [loadPicker, uploadPicture]);
+
+  const fromCamera = useCallback(async (): Promise<void> => {
+    const picker = loadPicker();
+    if (!picker) return;
+    const allowed = await picker.requestCameraPermissionsAsync();
+    if (!allowed.granted) { setError(micOrCameraDenied("camera")); return; }
+    const picked = await picker.launchCameraAsync(PICKER_OPTS);
+    if (picked.canceled || !picked.assets?.length) return;
+    void uploadPicture(picked.assets[0]!);
+  }, [loadPicker, uploadPicture]);
+
+  const attach = useCallback((): void => {
+    if (!host || !terminal.current) return;
+    Alert.alert("Attach a picture", undefined, [
+      { text: "Photo library", onPress: () => { void fromLibrary(); } },
+      { text: "Camera", onPress: () => { void fromCamera(); } },
+      { text: "Cancel", style: "cancel" },
+    ]);
+  }, [host, terminal, fromLibrary, fromCamera]);
+
+  /** The device-recognizer session between `start()` and its `onEnd` — only
+   *  meaningful while `hearing === "listening"` on that engine, and read by
+   *  the second press to know which engine to stop. */
+  const dictationSession = useRef<DictationSession | null>(null);
+  const dictationEngine = useRef<"device" | "whisper" | null>(null);
+
   /**
-   * Speak, and put the words in the field.
+   * Speak, and put the words where this screen is already typing.
    *
-   * ── the shape, which is Orca's ───────────────────────────────────────
+   * ── two destinations ─────────────────────────────────────────────────
+   * Compose and live/keys are the two things this screen already does with a
+   * keystroke, and dictation feeds whichever one is live when the transcript
+   * lands (`dictationDestination`, checked against `raw` fresh on every
+   * partial and on the final, since a person can flip modes mid-dictation).
+   * In compose it lands in `draft`, same as always. In live it goes where
+   * typing goes: `typedBody`, the same function an ordinary keystroke calls,
+   * so it is diffed against `keyed`/`keyedSent` and put on the pane's stdin
+   * exactly as if it had been typed — no second send path to keep in step
+   * with the first.
+   *
+   * ── two engines ───────────────────────────────────────────────────────
+   * `voicePlan` picks between them: an on-device recognizer (modules/agx-speech)
+   * when this phone has one, Whisper on the paired computer otherwise. Neither
+   * is a fallback drawn alongside the other — the person presses one button
+   * and this decides once, before recording starts, which engine answers it.
+   *
+   * ── the whisper shape, which is Orca's ───────────────────────────────
    * The phone records and the COMPUTER transcribes. That is not a workaround:
    * reading their mobile app, their dictation calls `speech.models.list` on the
    * desktop and fails with `voice_model_not_selected` — the models live on the
@@ -802,12 +882,27 @@ function TerminalPane(): React.ReactNode {
    * Dictation is wrong often enough that a line submitting itself would be a
    * question nobody read arriving at an agent. Inserting also makes it
    * composable, which is how it gets used: say a sentence, type a path after
-   * it, send once.
+   * it, send once. `joinDictatedInto` only ever composes text into `draft` or
+   * `keyed`; nothing in either engine's path can append the carriage return
+   * that would send it. In live mode that rule has a second edge, because
+   * live has no separate submit step to catch a stray one at: a transcript
+   * that comes back with a \r or \n in it — either engine has been seen to
+   * model a pause that way — is flattened to a space before it ever reaches
+   * `typedBody`, so it cannot land on the pane as an Enter no one pressed.
    */
   const dictate = useCallback(async (): Promise<void> => {
     if (!host) return;
 
-    // Second press: stop, upload, insert.
+    // Second press on the on-device engine: ask it to stop. `onFinal` commits
+    // the transcript and `onEnd` (wired in the branch below) clears `hearing`
+    // — there is nothing more to do here.
+    if (hearing === "listening" && dictationEngine.current === "device") {
+      dictationSession.current?.stop();
+      return;
+    }
+
+    // Second press on whisper: stop the recording, upload it, insert what
+    // comes back.
     if (hearing === "listening") {
       setHearing("thinking");
       try {
@@ -824,29 +919,88 @@ function TerminalPane(): React.ReactNode {
         if ("error" in got) { setError(got.error); return; }
         void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         setError(null);
-        // Into the compose field, whatever is already there. `joinDictated`
-        // owns the spacing rule — see its tests for why that is not obvious.
-        setDraft((was) => joinDictated(was, got.text));
+        // Into whatever the screen feeds right now: the compose field, or —
+        // in live mode — the pane, as keystrokes through the same `typedBody`
+        // ordinary typing uses. `joinDictatedInto` owns the spacing rule and
+        // the live flattening of any \r/\n the engine heard as a pause; see
+        // its tests for why that is not obvious.
+        if (raw) {
+          typedBody(joinDictatedInto("live", keyed, got.text));
+        } else {
+          setDraft((was) => joinDictatedInto("compose", was, got.text));
+        }
       } catch (e) {
         setHearing(null);
         setError(`That recording could not be sent: ${String(e)}`);
+      } finally {
+        dictationEngine.current = null;
       }
       return;
     }
 
+    // First press: decide which engine answers this one.
+    // Whisper is only asked about when the phone cannot do it itself: on-device
+    // wins in voicePlan regardless, so the request would be a round trip whose
+    // answer is thrown away.
+    const onDevice = onDeviceAvailable();
+    const plan = voicePlan({ onDevice, whisper: onDevice ? false : await whisperAvailable(host) });
+    if (typeof plan !== "string") { setError(plan.unavailable); return; }
+
+    if (plan === "device") {
+      try {
+        const allowed = await requestRecordingPermissionsAsync();
+        if (!allowed.granted) { setError(micOrCameraDenied("microphone")); return; }
+      } catch (e) {
+        setError(`The microphone would not start: ${String(e)}`);
+        return;
+      }
+      // Fixed at the moment listening starts: every partial replaces it with
+      // base + that partial, so typing while listening would otherwise be
+      // overwritten by the next partial — dictating and composing by hand at
+      // the same time is not a case this button has to get right. Same rule
+      // in live mode, against `keyed` instead of `draft`.
+      const destination = dictationDestination(raw);
+      const base = raw ? keyed : draft;
+      const session = startListening({
+        onPartial: (text) => {
+          const next = joinDictatedInto(destination, base, text);
+          if (raw) typedBody(next); else setDraft(next);
+        },
+        onFinal: (text) => {
+          const next = joinDictatedInto(destination, base, text);
+          if (raw) typedBody(next); else setDraft(next);
+        },
+        onError: (message) => setError(message),
+        onEnd: () => {
+          setHearing(null);
+          dictationEngine.current = null;
+          dictationSession.current?.unsubscribe();
+          dictationSession.current = null;
+        },
+      });
+      if (!session) { setError("This build has no speech recognizer."); return; }
+      dictationSession.current = session;
+      dictationEngine.current = "device";
+      setError(null);
+      setHearing("listening");
+      return;
+    }
+
+    // plan === "whisper" — the record/upload path above, untouched.
     try {
       const allowed = await requestRecordingPermissionsAsync();
-      if (!allowed.granted) { setError("The microphone is not allowed for this app."); return; }
+      if (!allowed.granted) { setError(micOrCameraDenied("microphone")); return; }
       await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
       await recorder.prepareToRecordAsync();
       recorder.record();
+      dictationEngine.current = "whisper";
       setError(null);
       setHearing("listening");
     } catch (e) {
       setHearing(null);
       setError(`The microphone would not start: ${String(e)}`);
     }
-  }, [host, hearing, recorder]);
+  }, [host, hearing, recorder, draft]);
 
   const openAgent = useCallback((kind: string, yolo: boolean): void => {
     if (!terminal.current) return;
@@ -1760,7 +1914,7 @@ function TerminalPane(): React.ReactNode {
               <Label text={strip === null ? "Looking" : "Nothing open"} />
               <Note tone={error ? "bad" : "quiet"}>
                 {error
-                  ? error
+                  ? errorText(error)
                   : strip === null
                     ? "Reading what is open on the computer…"
                     : "Nothing is open on the computer right now — no window, no running agent."}
@@ -1944,14 +2098,35 @@ function TerminalPane(): React.ReactNode {
         over the pane until something else replaces it.
       */}
       {open && error ? (
-        <Pressable
-          onPress={() => setError(null)}
-          accessibilityRole="button"
-          accessibilityLabel={`${error}. Tap to dismiss.`}
-          style={{ paddingHorizontal: SPACE.lg, paddingVertical: SPACE.sm, backgroundColor: K.bg2 }}
-        >
-          <Text style={{ color: K.error, fontSize: T.eyebrow }}>{error}</Text>
-        </Pressable>
+        <View style={{
+          flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+          paddingHorizontal: SPACE.lg, paddingVertical: SPACE.sm, backgroundColor: K.bg2,
+        }}>
+          <Pressable
+            onPress={() => setError(null)}
+            accessibilityRole="button"
+            accessibilityLabel={`${errorText(error)}. Tap to dismiss.`}
+            style={{ flex: 1 }}
+          >
+            <Text style={{ color: K.error, fontSize: T.eyebrow }}>{errorText(error)}</Text>
+          </Pressable>
+          {/* Only for a permission Android will not prompt for again on its
+              own — see errorAction. Tapping it does not itself dismiss the
+              error: Settings is a separate app, and the person coming back
+              may still need to read why they were sent there. */}
+          {errorAction(error) ? (
+            <Pressable
+              onPress={() => errorAction(error)?.onPress()}
+              accessibilityRole="button"
+              accessibilityLabel={errorAction(error)?.label}
+              style={{ paddingLeft: SPACE.md }}
+            >
+              <Text style={{ color: K.text2, fontSize: T.eyebrow, textDecorationLine: "underline" }}>
+                {errorAction(error)?.label}
+              </Text>
+            </Pressable>
+          ) : null}
+        </View>
       ) : null}
       {open && state !== "live" ? (
         <View style={{ paddingHorizontal: SPACE.lg, paddingVertical: SPACE.xs, backgroundColor: K.bg2 }}>
@@ -2304,12 +2479,9 @@ function TerminalPane(): React.ReactNode {
           */}
           <Pressable
             onPress={() => { void attach(); }}
-            disabled={!HARDWARE_READY || !open || sending}
+            disabled={!open || sending}
             accessibilityRole="button"
-            accessibilityState={{ disabled: !HARDWARE_READY }}
-            accessibilityLabel={HARDWARE_READY
-              ? "Attach a picture to this pane"
-              : "Attach a picture — not available in this build"}
+            accessibilityLabel="Attach a picture to this pane"
             // 40 wide rather than 44, and the eight points that buys across
             // the two icons are what keep the field readable at this width. The
             // HEIGHT stays at the 44 floor, which is the axis a thumb misses on.
@@ -2319,12 +2491,12 @@ function TerminalPane(): React.ReactNode {
               // 10pt corner inside a 22pt capsule reads as a button escaping
               // the thing it sits in — which is exactly what it looked like.
               borderRadius: RADIUS.pill,
-              opacity: !HARDWARE_READY ? 0.28 : !open ? 0.4 : pressed ? 0.5 : 1,
+              opacity: !open ? 0.4 : pressed ? 0.5 : 1,
             })}
           >
             {sending
               ? <ActivityIndicator color={K.text3} size="small" />
-              : <ImageIcon color={HARDWARE_READY ? K.text3 : K.text4} size={19} />}
+              : <ImageIcon color={K.text3} size={19} />}
           </Pressable>
           {/* The microphone, beside the picture, for the same reason: what is
               being said is part of the line being written, not a separate
@@ -2334,12 +2506,9 @@ function TerminalPane(): React.ReactNode {
               your turn to hold on. */}
           <Pressable
             onPress={() => { void dictate(); }}
-            disabled={!HARDWARE_READY || !open || hearing === "thinking"}
+            disabled={!open || hearing === "thinking"}
             accessibilityRole="button"
-            accessibilityState={{ disabled: !HARDWARE_READY }}
-            accessibilityLabel={!HARDWARE_READY
-              ? "Speak a line — not available in this build"
-              : hearing === "listening" ? "Stop and transcribe" : "Speak a line"}
+            accessibilityLabel={hearing === "listening" ? "Stop and transcribe" : "Speak a line"}
             style={({ pressed }) => ({
               width: 40, height: TAP, alignItems: "center", justifyContent: "center",
               borderRadius: RADIUS.pill, // same reason as the picture above
@@ -2347,13 +2516,13 @@ function TerminalPane(): React.ReactNode {
               // would be a button drawn on top of a field; a live one is the
               // one state on this row that has to be unmissable.
               backgroundColor: hearing === "listening" ? K.error : "transparent",
-              opacity: !HARDWARE_READY ? 0.28 : !open ? 0.4 : pressed ? 0.5 : 1,
+              opacity: !open ? 0.4 : pressed ? 0.5 : 1,
             })}
           >
             {hearing === "thinking"
               ? <ActivityIndicator color={K.text3} size="small" />
               : <MicIcon
-                  color={hearing === "listening" ? ink(K.error) : HARDWARE_READY ? K.text3 : K.text4}
+                  color={hearing === "listening" ? ink(K.error) : K.text3}
                   size={19}
                 />}
           </Pressable>

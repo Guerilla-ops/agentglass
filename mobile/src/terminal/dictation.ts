@@ -63,6 +63,40 @@ export function joinDictated(existing: string, dictated: string): string {
   return /\s$/.test(existing) ? `${existing}${said}` : `${existing} ${said}`;
 }
 
+/** Which field a dictated transcript feeds: the compose field it has always
+ *  fed, or — when the pane is in live/keys mode — the pane's stdin, typed the
+ *  way `typedBody` in terminal.tsx types anything else. Decided once, from
+ *  whether the screen is in live mode at the moment the transcript lands. */
+export type DictationDestination = "compose" | "live";
+
+/** `dictate()`'s one branch: which destination this transcript goes to. */
+export function dictationDestination(live: boolean): DictationDestination {
+  return live ? "live" : "compose";
+}
+
+/**
+ * The next value for whichever destination dictation feeds.
+ *
+ * "compose" is `joinDictated`, unchanged — the field is edited before it is
+ * sent, so nothing about its content is dangerous. "live" is not a field the
+ * person edits before sending: the result becomes keystrokes on a pane's
+ * stdin (`typedBody`, terminal.tsx), sent as they are typed with no separate
+ * submit step. A transcript that came back with a line break in it — heard by
+ * either engine as a pause and modelled as a paragraph break — must never
+ * carry one through there, or a dictated command would submit itself the
+ * moment it landed; see the "inserted, never sent" rule this file and
+ * speech.ts both state. So "live" flattens every \r and \n to a space before
+ * running the same spacing rule as "compose".
+ */
+export function joinDictatedInto(
+  destination: DictationDestination,
+  existing: string,
+  dictated: string,
+): string {
+  const said = destination === "live" ? dictated.replace(/[\r\n]+/g, " ") : dictated;
+  return joinDictated(existing, said);
+}
+
 /** The name sent up with the bytes. Only the extension is read on the other
  *  side, and it decides how the file is written — a recording called `.m4a`
  *  that is really webm is one whisper opens and rejects. */

@@ -3,6 +3,7 @@ import { ACC_NAME, COLLECTOR, ID_ORIGIN, PICK, STAMP, observeScript } from "./br
 import { MARKS_ID, MARKS_MAX, MARKS_SCRIPT } from "./browserMarks.ts";
 import { cleanHtmlBody } from "./browserCleanHtml.ts";
 import { A11Y_SCRIPT, VITALS_SCRIPT, VITAL_LIMITS, rate, type VitalName } from "./browserVitals.ts";
+import { LLMS_SCRIPT, PAGE_TOOLS_SCRIPT, callToolScript, shapeCallResult, shapeLlms, shapeTools } from "./browserPageTools.ts";
 import { jsLit } from "../../../shared/jsLit.ts";
 import { cookieSetParams } from "./cookieSet.ts";
 import { FIND, locatorLit, parseLocator } from "./browserLocator.ts";
@@ -1384,6 +1385,25 @@ async function navigateTo(
  * does not go on believing it has focus after the agent has left.
  */
 const focusUsers = new WeakMap<object, number>();
+/* /llms.txt, once per origin for the life of a tab: it is a file a site
+   publishes, so asking again on every `tools` call only adds a request the
+   page can see. Keyed by guest, then origin, because a tab that navigates
+   is a different site with a different file. */
+const llmsSeen = new WeakMap<object, Map<string, ReturnType<typeof shapeLlms>>>();
+async function llmsFor(el: { getURL(): string; executeJavaScript(c: string, g?: boolean): Promise<unknown> }) {
+  let origin = "";
+  try { origin = new URL(el.getURL()).origin; } catch { return null; }
+  if (!/^https?:/.test(origin)) return null;
+  const perTab = llmsSeen.get(el) ?? new Map<string, ReturnType<typeof shapeLlms>>();
+  llmsSeen.set(el, perTab);
+  const hit = perTab.get(origin);
+  if (hit) return hit;
+  const shaped = shapeLlms(await el.executeJavaScript(LLMS_SCRIPT).catch(() => null));
+  /* A failed fetch (status 0) is not a fact about the site: ask again next time. */
+  if (shaped.status !== 0) perTab.set(origin, shaped);
+  return shaped;
+}
+
 export async function withFocus<T>(
   el: object,
   cdp: (m: string, p?: unknown) => Promise<{ ok: boolean; error?: string }>,
@@ -1940,6 +1960,26 @@ async function runVerb(
         const url = String(ask.args.url ?? "");
         const r = await navigateTo(el, url, (err) => withEgressReason(err, url, applySessionSettings));
         return r.ok ? { ok: true, value: { url: r.url, title: el.getTitle() } } : r;
+      }
+
+      case "tools": {
+        /* What the PAGE offers an agent. Everything it says arrives marked
+           page-supplied — see browserPageTools.ts — and is never returned as
+           the page's own object. */
+        const shaped = shapeTools(await el.executeJavaScript(PAGE_TOOLS_SCRIPT).catch(() => null));
+        return { ok: true, value: { url: el.getURL(), ...shaped, llms: await llmsFor(el) } };
+      }
+
+      case "call-tool": {
+        /* An act, with the activation a click has (the second argument to
+           executeJavaScript, inside withFocus), because a page tool that
+           opens a picker or a payment sheet checks for one. One tool per call.
+           The focus hold is bounded under the server's 30 s so it is never
+           still on after the server has given up. */
+        const raw = await withFocus(el, cdp, () =>
+          el.executeJavaScript(callToolScript(String(ask.args.name ?? ""), ask.args.args ?? {}), true), 25_000) as unknown;
+        const r = shapeCallResult(raw);
+        return r.ok ? { ok: true, value: { tool: String(ask.args.name), result: r.value } } : { ok: false, error: r.error };
       }
 
       case "vitals": {

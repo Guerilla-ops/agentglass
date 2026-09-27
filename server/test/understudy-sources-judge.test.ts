@@ -121,7 +121,11 @@ describe("the username never votes", () => {
   test("the suggested set is not empty on a real machine", () => {
     // The other failure mode of an over-cautious fix: suggest nothing, and the
     // button that exists to answer "where do I start" answers "nowhere".
-    const found = SRC.listSources({}, []).filter((s) => s.found);
+    // The suite's HOME is a directory under tmp, and a source under tmp is
+    // scratch by the rule above. Whichever earlier file left something in that
+    // home made a "real machine" whose every source is scratch, and this failed
+    // depending on file order. Only sources outside scratch can be asked for.
+    const found = SRC.listSources({}, []).filter((s) => s.found && !/[-/]tmp([-/]|$)|scratchpad/i.test(s.path));
     if (found.length > 0) {
       expect(found.some((s) => s.recommended)).toBe(true);
     }

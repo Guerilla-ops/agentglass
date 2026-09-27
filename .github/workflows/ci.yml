@@ -201,9 +201,16 @@ jobs:
           cd server
           AGENTGLASS_PORT=4123 AGENTGLASS_DB=/tmp/ci.db AGENTGLASS_SCAN_DISABLED=1 bun run src/index.ts &
           SVPID=$!
-          sleep 2
-          curl -sf http://localhost:4123/health
+          # Polled, not slept: a loaded runner printed the banner 2.4 s in, after
+          # a fixed `sleep 2` had already sent curl to a closed port. Twenty
+          # seconds is the ceiling on "boots", not an expected time.
+          ok=1
+          for _ in $(seq 40); do
+            if curl -sf http://localhost:4123/health; then ok=0; break; fi
+            sleep 0.5
+          done
           kill $SVPID
+          exit $ok
 
   # The catalogue's own check, and the one auto-merge should wait on.
   #

@@ -16,7 +16,7 @@
 // it before it reaches the filesystem — a listing endpoint that accepts
 // `../../../etc` is a file server for the whole machine.
 
-import { lstatSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { type Dirent, lstatSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { failed } from "./refused.ts";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve, relative, sep } from "node:path";
@@ -249,16 +249,26 @@ export function fileTree(rootIn: unknown, relIn: unknown): TreeReport {
   const at = inside(rootIn, relIn);
   if ("error" in at) return { ok: false, root: "", rel: "", entries: [], error: at.error };
 
-  let names: string[];
-  try { names = readdirSync(at.abs); } catch (e) { return { ok: false, root: at.root, rel: at.rel, entries: [], error: failed("files/tree", e, "that directory could not be read") }; }
+  let names: Dirent[];
+  try { names = readdirSync(at.abs, { withFileTypes: true }); } catch (e) { return { ok: false, root: at.root, rel: at.rel, entries: [], error: failed("files/tree", e, "that directory could not be read") }; }
 
   const marks = statusMarks(at.root);
   const entries: FileEntry[] = [];
-  for (const name of names) {
+  for (const de of names) {
+    const name = de.name;
     // `.git` is machinery, not content: opening it is never what was meant, and
     // it is thousands of objects deep.
     if (name === ".git") continue;
     const rel = at.rel ? `${at.rel}/${name}` : name;
+    // A plain directory needs no stat: the listing already said what it is, and
+    // a directory row carries no size. Everything else is stat'd, files for
+    // their size and links to see where they land. The directory rows are most
+    // of a repository root, which is what made the stat-per-entry loop slow.
+    if (de.isDirectory()) {
+      entries.push({ name, rel, dir: true, ...(marks.get(rel) ? { status: marks.get(rel) } : {}) });
+      if (entries.length >= MAX_ENTRIES) break;
+      continue;
+    }
     let st;
     try { st = lstatSync(join(at.abs, name)); } catch { continue; }
     // A link is listed only when it lands somewhere this listing could open;

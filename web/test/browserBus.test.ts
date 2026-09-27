@@ -27,7 +27,7 @@ describe("isolated contexts, addressable at last", () => {
       close: () => true,
       profiles: () => ["support", "agent"],
     });
-    const r = serveTabsForTest({ id: "1", op: "profiles", args: {} } as never);
+    const r = await serveTabsForTest({ id: "1", op: "profiles", args: {} } as never);
     expect((r.value as any).profiles).toEqual(["support", "agent"]);
     stop();
   });
@@ -40,8 +40,28 @@ describe("isolated contexts, addressable at last", () => {
       open: (_url, profile) => { got = profile; return { id: "t1" }; },
       close: () => true,
     });
-    serveTabsForTest({ id: "1", op: "newtab", args: { url: "https://example.com", profile: "support" } } as never);
+    await serveTabsForTest({ id: "1", op: "newtab", args: { url: "https://example.com", profile: "support" } } as never);
     expect(got).toBe("support");
+    stop();
+  });
+
+  test("newtab awaits an async open — `newtab --from-template` mints its partition before the tab exists", async () => {
+    // `TabOps.open` returns a Promise when the panel has to ask main for an
+    // ephemeral partition first (electron/main.js `ag:tabEphemeralOpen`) —
+    // `serveTabs` has to await it rather than reporting `[object Promise]`
+    // as the id, which is what a bare `tabs.open(...)` call would do.
+    const stop = onBrowserTabs({
+      list: () => [],
+      select: () => true,
+      open: async (url) => {
+        await Promise.resolve();
+        return { id: `eph-for-${url}` };
+      },
+      close: () => true,
+    });
+    const r = await serveTabsForTest({ id: "1", op: "newtab", args: { url: "https://acme.example", ephemeral: true } } as never);
+    expect(r.ok).toBe(true);
+    expect((r.value as any).id).toBe("eph-for-https://acme.example");
     stop();
   });
 
@@ -51,7 +71,7 @@ describe("isolated contexts, addressable at last", () => {
     const stop = onBrowserTabs({
       list: () => [], select: () => true, open: () => ({ id: "t1" }), close: () => true,
     });
-    const r = serveTabsForTest({ id: "1", op: "profiles", args: {} } as never);
+    const r = await serveTabsForTest({ id: "1", op: "profiles", args: {} } as never);
     expect(r.ok).toBe(true);
     expect((r.value as any).profiles).toEqual([]);
     stop();

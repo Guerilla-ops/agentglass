@@ -61,9 +61,15 @@ contextBridge.exposeInMainWorld("agentglass", {
     try { return ipcRenderer.sendSync("ag:deskKey") || null; } catch { return null; }
   })(),
   /** Make or destroy a lane's hidden window. Answered only for the app's own window. */
-  laneOpen: (/** @type {string} */ id, /** @type {string} */ slug) => ipcRenderer.invoke("ag:laneOpen", id, slug),
+  laneOpen: (/** @type {string} */ id, /** @type {string} */ slug, /** @type {boolean} */ ephemeral) =>
+    ipcRenderer.invoke("ag:laneOpen", id, slug, ephemeral),
   laneClose: (/** @type {string} */ id) => ipcRenderer.invoke("ag:laneClose", id),
   laneKeep: (/** @type {string[]} */ ids) => ipcRenderer.invoke("ag:laneKeep", ids),
+  /** `newtab --from-template`'s visible-tab jar: mint one before the tab's
+   *  `<webview>` is created (its `partition` has to be right the first time a
+   *  guest attaches), and wipe it once the tab closes. */
+  tabEphemeralOpen: () => ipcRenderer.invoke("ag:tabEphemeralOpen"),
+  tabEphemeralClose: (/** @type {string} */ partition) => ipcRenderer.invoke("ag:tabEphemeralClose", partition),
   remoteEnabled: () => ipcRenderer.invoke("ag:remoteEnabled"),
   /** @param {boolean} on */
   setRemote: (on) => ipcRenderer.invoke("ag:setRemote", on),
@@ -331,6 +337,10 @@ contextBridge.exposeInMainWorld("agentglass", {
    *  through the Electron main process. */
   /** @param {Record<string, unknown>} req */
   sessionSettings: (req) => ipcRenderer.invoke("ag:browserSessionSettings", req),
+  /** S9: which agent a guest's requests should be attributed to, for the
+   *  `identify` header. Fire-and-forget, like `browser-active` — main keeps
+   *  the map, this is just the push. @param {number} guestId @param {string} owner */
+  setGuestOwner: (guestId, owner) => ipcRenderer.send("ag:browserGuestOwner", { guestId, owner }),
   /** The system folder chooser, for picking a project. Resolves to a path, or
    *  null if it was cancelled. A browser tab has no equivalent, which is why
    *  the picker keeps a path box beside it.

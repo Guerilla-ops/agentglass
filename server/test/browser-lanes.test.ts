@@ -60,10 +60,12 @@ describe("lane new / list / close", () => {
     expect((listed.value as { lanes: Array<{ id: string; as: string }> }).lanes).toMatchObject([{ id, as: "orbit" }]);
   });
 
-  test("private is the default; shared and a named container are asked for by name", async () => {
+  test("private is the default; shared, a named container and an ephemeral one are asked for by name", async () => {
     await open({ shared: true });
     await open({ profile: "orbit-qa" });
-    expect(sent.filter((s) => "make" in s.args).map((s) => [s.args.container, s.args.name])).toEqual([["shared", undefined], ["named", "orbit-qa"]]);
+    await open({ ephemeral: true });
+    expect(sent.filter((s) => "make" in s.args).map((s) => [s.args.container, s.args.name]))
+      .toEqual([["shared", undefined], ["named", "orbit-qa"], ["ephemeral", undefined]]);
     expect("error" in parseAsk("lane", { action: "new", profile: "a\nb" })).toBe(true);
   });
 

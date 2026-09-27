@@ -55,6 +55,18 @@ export interface Stall {
   ms: number;
   /** What was in flight when it stalled, if anything said so. */
   what: string;
+  /** CPU the process burned across the stall, in ms. */
+  cpuMs: number;
+  /**
+   * The thread was held without burning CPU: a synchronous read, a child
+   * process waited on, or the machine not running us at all (swap, a stopped
+   * process). Computing is this process's own code; waiting often is not.
+   */
+  waiting: boolean;
+  /** Pages read back from disk during the stall — swap, on a machine short of memory. */
+  majorFaults: number;
+  /** Blocks read from disk rather than the page cache: a synchronous read, or SQLite, gone cold. */
+  diskReads: number;
 }
 
 const ring: Stall[] = [];
@@ -71,7 +83,9 @@ let seq = 0;
  * window below says outright rather than guessing.
  */
 const BACKGROUND = "(background — a timer, a stream, or GC)";
-let recent: { what: string; at: number } | null = null;
+/** A label, when it began, and when it answered (0 while still running). */
+export interface Mark { what: string; at: number; done: number }
+let recent: Mark | null = null;
 
 /**
  * The label, carried across awaits — by hand.
@@ -99,13 +113,29 @@ let recent: { what: string; at: number } | null = null;
  */
 
 /** The label to blame right now, for a caller about to await. */
+/**
+ * Whether the loop is already late — the heartbeat overdue by a stall's worth.
+ *
+ * A label entered then cannot have started the block: it is a request that
+ * waited in the socket buffer while the loop was held, and whose handler ran
+ * the moment it came back, before the heartbeat that measures the block. It
+ * entered last and inside the window, and it did nothing. Measured on an
+ * isolated server stopped from outside five times with no code at fault: all
+ * five stalls were filed under `GET /health` or `POST /ingest`, whichever the
+ * load happened to be sending. So a late label keeps the one before it.
+ */
+function late(): boolean {
+  return timer !== null && performance.now() - last > TICK_MS + STALL_MS;
+}
+
 export function currentLabel(): string {
   return recent?.what ?? BACKGROUND;
 }
 
 /** "A continuation of `what` is about to run synchronously." */
 export function resumedAs(what: string): void {
-  recent = { what, at: Date.now() };
+  if (late()) return;
+  recent = { what, at: Date.now(), done: 0 };
 }
 
 /**
@@ -138,17 +168,31 @@ let started = 0;
  * purpose — one object write — because this runs on every request including the
  * ones that must stay fast.
  */
-export function entered(what: string): void {
-  recent = { what, at: Date.now() };
+export function entered(what: string): Mark {
+  const mark = { what, at: Date.now(), done: 0 };
+  if (!late()) recent = mark;
+  return mark;
+}
+
+/**
+ * The request answered. A label that ran for less than half a stall cannot
+ * have caused it, even though it entered inside the window: under steady load
+ * one always does. See the blame note in watchLoop.
+ */
+export function finished(mark: Mark): void {
+  mark.done = Date.now();
 }
 
 export function watchLoop(): void {
   if (timer) return;
   started = Date.now();
   last = performance.now();
+  let usage = process.resourceUsage();
   timer = setInterval(() => {
     const now = performance.now();
     const drift = now - last - TICK_MS;
+    const was = usage;
+    usage = process.resourceUsage();
     // When the loop was last known free. Everything that entered since then is
     // a candidate for having blocked it — see the blame note below.
     const freeAt = Date.now() - Math.round(now - last);
@@ -169,13 +213,26 @@ export function watchLoop(): void {
     // did it looks too old to be responsible and the stall is filed under
     // "background". Which is exactly what happened, and what this comment is
     // paid for.
-    const what = recent && recent.at >= freeAt - BLAME_MARGIN_MS ? recent.what : BACKGROUND;
-    const entry: Stall = { id: ++seq, at: Date.now(), ms, what };
+    const quick = !!recent?.done && recent.done - recent.at < ms / 2;
+    const what = recent && !quick && recent.at >= freeAt - BLAME_MARGIN_MS ? recent.what : BACKGROUND;
+    // Process-wide CPU, not the main thread's: the other threads (GC, sqlite)
+    // are mostly idle, and a block this long on the main thread burns its own
+    // length in CPU, so half of it is a wide margin either way.
+    const cpuMs = Math.round((usage.userCPUTime + usage.systemCPUTime - was.userCPUTime - was.systemCPUTime) / 1000);
+    const waiting = cpuMs < ms / 2;
+    const majorFaults = usage.majorPageFault - was.majorPageFault;
+    const diskReads = usage.fsRead - was.fsRead;
+    const entry: Stall = { id: ++seq, at: Date.now(), ms, what, cpuMs, waiting, majorFaults, diskReads };
     ring.push(entry);
     const max = cap();
     if (ring.length > max) ring.splice(0, ring.length - max);
     if (ms >= LOG_MS) {
-      console.warn(`⏱  event loop blocked ${ms}ms by ${what} — the terminal was frozen for that long`);
+      const how = waiting
+        ? `waiting, not computing (${[`${cpuMs}ms CPU`,
+            majorFaults ? `${majorFaults} pages read back from swap` : "",
+            diskReads ? `${diskReads} blocks read from disk` : ""].filter(Boolean).join(", ")})`
+        : "computing";
+      console.warn(`⏱  event loop blocked ${ms}ms by ${what}, ${how} — the terminal was frozen for that long`);
     }
   }, TICK_MS);
   // Never hold the process open for this.

@@ -24,6 +24,9 @@ import { ContextMenu } from "./ContextMenu.tsx";
 import { RunDialog, runRecipeSteps } from "./RecipesPane.tsx";
 import type { GitRepoRef } from "../../../shared/types.ts";
 import { openSettings } from "../lib/openSettings.ts";
+import { searchSettings, type SettingsPage } from "../lib/settingsIndex.ts";
+import { SETTINGS_PAGES as ALL_SETTINGS_PAGES } from "../lib/settingsRows.gen.ts";
+import { HAS_BROWSER } from "../lib/desktop.ts";
 import type { Recipe } from "../../../shared/types.ts";
 import type { ProjectCommand, TerminalCommands } from "../../../shared/types.ts";
 import { api, IS_DEMO } from "../lib/api.ts";
@@ -275,6 +278,10 @@ export function menuSide(left: number, right: number, viewport: number, width = 
   return right - width >= 8 ? "right" : "left";
 }
 
+// The Browser page only exists where there is a browser, same as in Settings.
+const SETTINGS_PAGES = HAS_BROWSER ? ALL_SETTINGS_PAGES : ALL_SETTINGS_PAGES.filter((p) => p.id !== "browser");
+const SETTINGS_PAGES_NO_KW = SETTINGS_PAGES.map((p) => ({ ...p, kw: "" }) as SettingsPage);
+
 export function CommandBar({ root, disabled, font, onRun, runTargetInTmux, onClose, dropUp, quiet }: {
   root: string;
   disabled: boolean;
@@ -459,6 +466,24 @@ export function CommandBar({ root, disabled, font, onRun, runTargetInTmux, onClo
     onRun(decodeCustomPin(cmd)?.cmd ?? cmd);
   };
 
+  /*
+   * A settings row, or a whole settings page, opened from the SAME box this
+   * runs `make test` from — this is where "where is the thing that changes
+   * X" gets typed whether X is a shell target or a switch, and sending half
+   * of those questions to a different box is a second search box to
+   * remember exists. Pages always show (there are 24 of them, the same
+   * order of magnitude as "git — always available" below); ROWS only once
+   * something is typed, or the empty palette would carry 90-odd row entries
+   * nobody asked for on top of every make target in the repo.
+   */
+  const ql = query.trim().toLowerCase();
+  const settingsPageMatches = ql
+    ? SETTINGS_PAGES.filter((p) => p.label.toLowerCase().includes(ql))
+    : SETTINGS_PAGES;
+  const settingsRowMatches = ql
+    ? searchSettings(ql, SETTINGS_PAGES_NO_KW).filter((r) => r.row)
+    : [];
+
   const groups: [string, ProjectCommand[]][] = [];
   /*
    * Recipes first, because they are the ones somebody chose to keep — and there
@@ -558,6 +583,25 @@ export function CommandBar({ root, disabled, font, onRun, runTargetInTmux, onClo
                   {gitMatches.map((c) => <CommandRow key={"g:" + c.cmd} c={c} font={font} on={pins.includes(c.cmd)} full={full} onRun={(cmd) => { const rr = (c as ProjectCommand & { recipe?: Recipe }).recipe; if (rr) runRecipe(rr); else run(cmd); }} onPin={pin} />)}
                 </div>
               )}
+              {(!!settingsPageMatches.length || !!settingsRowMatches.length) && (
+                <div>
+                  <div className="px-3 pt-1.5 pb-0.5 t-dim2 text-[9.5px] uppercase tracking-wider">settings</div>
+                  {settingsPageMatches.map((p) => (
+                    <button key={"sp:" + p.id} onClick={() => { openSettings(p.id); dismiss(); }}
+                      className="w-full px-3 py-1.5 text-left hover:bg-[color-mix(in_srgb,var(--primary)_10%,transparent)]"
+                      style={{ color: "var(--text2)" }}>
+                      Settings: {p.label}
+                    </button>
+                  ))}
+                  {settingsRowMatches.map((r) => (
+                    <button key={"sr:" + r.pane + ":" + r.row} onClick={() => { openSettings(r.pane, r.row); dismiss(); }}
+                      className="w-full px-3 py-1.5 text-left hover:bg-[color-mix(in_srgb,var(--primary)_10%,transparent)]"
+                      style={{ color: "var(--text2)" }}>
+                      Settings: {SETTINGS_PAGES.find((p) => p.id === r.pane)?.label ?? r.pane} › {r.label}
+                    </button>
+                  ))}
+                </div>
+              )}
               {/* The form takes the whole menu while it is up: you came here to
                   run this one, and a list of three hundred others underneath is
                   only somewhere to lose your place. */}
@@ -573,7 +617,7 @@ export function CommandBar({ root, disabled, font, onRun, runTargetInTmux, onClo
                   {list.map((c) => <CommandRow key={label + ":" + c.cmd} c={c} font={font} on={pins.includes(c.cmd)} full={full} onRun={(cmd) => { const rr = (c as ProjectCommand & { recipe?: Recipe }).recipe; if (rr) runRecipe(rr); else run(cmd); }} onPin={pin} />)}
                 </div>
               ))}
-              {!asking && !gitMatches.length && !groups.length && (
+              {!asking && !gitMatches.length && !groups.length && !settingsPageMatches.length && !settingsRowMatches.length && (
                 <div className="px-3 py-2 t-dim2">{cmds ? `No command matches “${query.trim()}”` : "Reading the project…"}</div>
               )}
             </div>

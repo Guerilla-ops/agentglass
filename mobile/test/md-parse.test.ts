@@ -22,11 +22,11 @@ describe("the checklist every pull request here opens with", () => {
     "- [x] I have followed the [Checks before submitting a Pull Request](https://github.com/x/y/blob/master/docs/submit.md) document.",
     "- [x] I have added the necessary tests for this feature, if needed.",
     "- [ ] I have updated the documentation accordingly, if needed.",
-    "- [ ] If there are changes in prompts, I have added the `Evals` label so CI runs the eval suite.",
+    "- [ ] If this changes the public API, I have added the `api` label so CI runs the contract suite.",
     "",
-    "## CU reference",
+    "## Task reference",
     "",
-    "https://app.clickup.com/t/14295188/PROJ-18040",
+    "https://app.clickup.com/t/9000001/ORBIT-1042",
   );
 
   const blocks = parseMarkdown(body);
@@ -39,13 +39,13 @@ describe("the checklist every pull request here opens with", () => {
   test("an item keeps its link and its code span", () => {
     const [list] = only(blocks, "list");
     expect(list!.items[0]!.kids.some((k) => k.t === "link")).toBe(true);
-    expect(inlineText(list!.items[3]!.kids)).toContain("Evals");
-    expect(list!.items[3]!.kids.some((k) => k.t === "code" && k.text === "Evals")).toBe(true);
+    expect(inlineText(list!.items[3]!.kids)).toContain("api");
+    expect(list!.items[3]!.kids.some((k) => k.t === "code" && k.text === "api")).toBe(true);
   });
 
   test("both headings survive, at their own level", () => {
     expect(only(blocks, "h").map((h) => [h.level, inlineText(h.kids)]))
-      .toEqual([[2, "Checklist"], [2, "CU reference"]]);
+      .toEqual([[2, "Checklist"], [2, "Task reference"]]);
   });
 
   test("the bare CU address is a link — it is written without brackets", () => {
@@ -53,7 +53,7 @@ describe("the checklist every pull request here opens with", () => {
     expect(last.t).toBe("p");
     expect(last.t === "p" && last.kids[0]!.t === "link").toBe(true);
     expect(last.t === "p" && last.kids[0]!.t === "link" && last.kids[0]!.href)
-      .toBe("https://app.clickup.com/t/14295188/PROJ-18040");
+      .toBe("https://app.clickup.com/t/9000001/ORBIT-1042");
   });
 
   test("a sentence directly above a list stays a sentence", () => {

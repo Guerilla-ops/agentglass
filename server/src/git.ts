@@ -194,6 +194,22 @@ export function __resetGitCapForTest(): void {
  */
 const gitTimeoutMs = () => Number(process.env.AGENTGLASS_GIT_TIMEOUT_SECONDS ?? 120) * 1000;
 
+/**
+ * How long past the budget we go on waiting for git's output to end.
+ *
+ * Killing git at the budget does not close its pipes. A child git started —
+ * the ssh of a fetch — has git's stderr as its own, is not killed with it, and
+ * holds the pipe open until it exits by itself: measured at the full 30 s of a
+ * test remote that sleeps, and a real ssh stuck connecting to a dead host lasts
+ * until its TCP timeout. Waiting for the pipe was waiting for that ssh, with the
+ * pool slot held. Past this grace the call ends without the rest of the output.
+ *
+ * The ceiling, chosen: the orphaned ssh is left to die on its own. Killing it
+ * would need git in a process group of its own, which also takes it out of the
+ * server's — a bigger change than returning the slot on time.
+ */
+const PIPE_GRACE_MS = 2_000;
+
 async function runGit(cwd: string, args: string[]): Promise<GitResult> {
   const t0 = performance.now();
   // Whose work this is, read while we are still standing inside the caller —
@@ -217,11 +233,25 @@ async function runGit(cwd: string, args: string[]): Promise<GitResult> {
       // this path — prs.ts fetches PR refs from the network through here.
       env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_ASKPASS: "", SSH_ASKPASS_REQUIRE: "never" },
     });
-    const [stdout, stderr, code] = await Promise.all([
+    const budget = gitTimeoutMs();
+    const output = Promise.all([
       new Response(proc.stdout).text(),
       new Response(proc.stderr).text(),
       proc.exited,
     ]);
+    output.catch(() => {}); // it may settle after we stopped listening
+    let late: ReturnType<typeof setTimeout> | undefined;
+    const gaveUp = new Promise<null>((done) => { late = setTimeout(done, budget + PIPE_GRACE_MS, null); });
+    const settled = await Promise.race([output, gaveUp]);
+    clearTimeout(late);
+    if (!settled) {
+      proc.kill("SIGKILL"); // a no-op on the usual path, where git is already dead
+      resumedAs(owner);
+      const err = `git ${args[0] ?? ""} gave up after ${budget / 1000}s — killed, and a process it started still held its output`;
+      record(cwd, args, 1, performance.now() - t0, err);
+      return { code: 1, stdout: "", stderr: err };
+    }
+    const [stdout, stderr, code] = settled;
     // Everything after this line is synchronous parsing of what git said, on
     // behalf of whoever asked.
     resumedAs(owner);
@@ -229,7 +259,7 @@ async function runGit(cwd: string, args: string[]): Promise<GitResult> {
     // first line in front of the user verbatim — an empty one reads as a bug in
     // us rather than as a remote that never answered.
     const err = proc.signalCode && !stderr.trim()
-      ? `git ${args[0] ?? ""} gave up after ${gitTimeoutMs() / 1000}s — killed with ${proc.signalCode}`
+      ? `git ${args[0] ?? ""} gave up after ${budget / 1000}s — killed with ${proc.signalCode}`
       : stderr;
     record(cwd, args, code ?? 1, performance.now() - t0, err);
     return { code: code ?? 1, stdout, stderr: err };

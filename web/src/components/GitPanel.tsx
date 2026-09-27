@@ -38,7 +38,7 @@ import { buildFileTree, visibleRows, allDirPaths } from "../lib/fileTree.ts";
 import { useIncremental } from "../lib/useIncremental.ts";
 import { CommandLog } from "./CommandLog.tsx";
 import { UnifiedDiff, SplitDiff, SCROLLBAR_CSS } from "./diff/DiffLines.tsx";
-import { ThemePicker, Toggle } from "./diff/DiffControls.tsx";
+import { ThemePicker, Toggle, DiffSettingsLink } from "./diff/DiffControls.tsx";
 import { changesetSig, readWalkCache, writeWalkCache } from "../lib/walkCache.ts";
 import { PresetDiff } from "./diff/PresetDiff.tsx";
 import { useSidebarWidth } from "../lib/sidebarWidth.ts";
@@ -3271,7 +3271,7 @@ export function GitView({ active, onOpenChat }: { active: boolean; onOpenChat?: 
                               {writeEnabled && (selected.staged ? <Toggle onClick={() => unstage(selected)} title="Unstage this file"><IconLabel icon={<MinusIcon size={ICON.xs} />}>unstage</IconLabel></Toggle> : <Toggle onClick={() => stage(selected)} title="Stage this file"><IconLabel icon={<PlusIcon size={ICON.xs} />}>stage</IconLabel></Toggle>)}
                               <Toggle on={split} onClick={() => setSplit((s) => !s)} title="Split / unified">{split ? "split" : "unified"}</Toggle>
                               <Toggle on={wrap} onClick={() => setWrap((w) => !w)} title="Toggle line wrap">wrap</Toggle>
-                              <ThemePicker value={themePref} onChange={setThemePref} error={hiliteError} />
+                              <ThemePicker value={themePref} onChange={setThemePref} error={hiliteError} /><DiffSettingsLink />
                               <Toggle on={bold} onClick={() => setBold((b) => !b)} title="Bold keywords, functions & types (Neovim-style)">bold</Toggle>
                             </div>
                           </div>

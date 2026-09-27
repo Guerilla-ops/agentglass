@@ -100,6 +100,24 @@ describe("opening", () => {
     expect(r.tabs.at(-1)!.id).toBe(r.tab.id);
   });
 
+  it("carries an ephemeral tab's own partition, when `newtab --from-template` minted one", () => {
+    // `newtab --from-template`'s visible-tab jar: the partition is main's to
+    // mint (electron/main.js `ag:tabEphemeralOpen`), not derived from the
+    // tab's own id, so it travels as its own argument.
+    const { tabs } = three();
+    const r = addTab(tabs, "https://acme.example/", undefined, undefined, undefined, "agentglass-browser-eph-t1a2b3c4");
+    if ("error" in r) throw new Error(r.error);
+    expect(r.tab.partition).toBe("agentglass-browser-eph-t1a2b3c4");
+  });
+
+  it("leaves an ordinary tab with no partition of its own", () => {
+    // The webview falls back to `partitionFor(BROWSER_PARTITION, profile)` —
+    // this only ever carries a value for the ephemeral fork.
+    const r = addTab(three().tabs, "https://ordinary.example/");
+    if ("error" in r) throw new Error(r.error);
+    expect(r.tab.partition).toBeUndefined();
+  });
+
   it("refuses past the cap, and says why and what to do", () => {
     // Each tab is a live Chromium guest, in an app that is also running a
     // fleet of agents. A silent drop would look like the button was broken.

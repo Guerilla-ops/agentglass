@@ -13,6 +13,8 @@
  * every time you pressed it would be a control nobody could use for a glance.
  */
 
+import { THEME_KEY } from "./diffHighlight.ts";
+
 const SPLIT_KEY = "agentglass.diff.split";
 const WRAP_KEY = "agentglass.diff.wrap";
 const NOWS_KEY = "agentglass.diff.noWhitespace";
@@ -42,3 +44,8 @@ export const diffWrap = (): boolean => (read(WRAP_KEY) === null ? DEFAULT_WRAP :
 export function setDiffSplit(on: boolean): void { write(SPLIT_KEY, on, DEFAULT_SPLIT); }
 export function setDiffWrap(on: boolean): void { write(WRAP_KEY, on, DEFAULT_WRAP); }
 export function setDiffNoWhitespace(on: boolean): void { write(NOWS_KEY, on, DEFAULT_NO_WHITESPACE); }
+
+/** The syntax theme every diff view reads at mount; "auto" follows light/dark.
+ *  Same key the diff views persist, so Settings and a diff toolbar are one store. */
+export const diffThemePref = (): string => read(THEME_KEY) || "auto";
+export const setDiffThemePref = (v: string): void => { try { localStorage.setItem(THEME_KEY, v); } catch { /* private mode */ } };

@@ -316,6 +316,36 @@ export const PHASE2_TASKS: Task[] = [
     },
     grade: (a) => (a?.error ? a.error : a?.heading === "Items" ? null : `ended on ${JSON.stringify(a?.heading)}`),
   },
+  {
+    id: "p3-webmcp",
+    family: "phase2",
+    title: "tools + call-tool: use the tool a page offers, and get what it says as marked data (needs AGENTGLASS_BROWSER_WEBMCP=1 on the instance)",
+    arms: {
+      // Before: the DOM path, which is still the default and still works.
+      async baseline(s) {
+        await s.cli("open", [s.url("/webmcp")]);
+        await s.cli("click", ['role=button[name="Add ORBIT-1042 to cart"]']);
+        return { via: "dom", tools: null, result: null };
+      },
+      async phase2(s) {
+        await s.cli("open", [s.url("/webmcp")]);
+        const t = (await s.cli("tools")).json;
+        const c = (await s.cli("call-tool", ["add_to_cart", "--args", '{"sku":"ORBIT-1042"}'])).json;
+        return { via: "tool", tools: t, result: c?.result ?? null };
+      },
+    },
+    grade: (a, state) => {
+      if (!(state.beacons["webmcp-add"] > 0)) return "nothing was added to the cart";
+      if (a?.via === "dom") return null;
+      const names = (a?.tools?.tools ?? []).map((x: any) => x?.name?.text);
+      if (!names.includes("add_to_cart")) return `tools did not list add_to_cart (${names.join(",")})`;
+      const bad = (a.tools.tools ?? []).find((x: any) => x?.name?.text === "export_data");
+      if (!bad?.description?.untrusted || bad.description.source !== "page") return "an injected description was not marked page-supplied";
+      if (typeof bad.description === "string") return "a description arrived as a bare string";
+      if (!a.result?.untrusted || !String(a.result.text).includes("ORBIT-1042")) return `the tool's answer was not returned marked: ${JSON.stringify(a.result)}`;
+      return null;
+    },
+  },
 ];
 
 async function seen(s: Session) {

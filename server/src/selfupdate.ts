@@ -101,7 +101,7 @@ function scriptEnv(): NodeJS.ProcessEnv {
 // can point the clone at a fixture instead of writing into the developer's
 // real one — the mistake #144 fixed for the database.
 const SRC = process.env.AGENTGLASS_UPDATE_SRC || join(homedir(), ".cache", "agentglass", "source");
-const LOG = join(homedir(), ".cache", "agentglass", "update.log");
+const LOG = process.env.AGENTGLASS_UPDATE_LOG || join(homedir(), ".cache", "agentglass", "update.log");
 const STAMP = join(homedir(), ".cache", "agentglass", "last-update.json");
 
 function git(cwd: string, args: string[], timeout = 30_000) {
@@ -434,9 +434,20 @@ export async function startUpdate(): Promise<{ ok: boolean; error?: string; log?
   return { ok: true, log: LOG };
 }
 
-export function updateLog(): { ok: boolean; text: string } {
-  try { return { ok: true, text: readFileSync(LOG, "utf8").slice(-8000) }; }
-  catch { return { ok: true, text: "" }; }
+/**
+ * The tail of the log, and the `==> ` step lines from all of it.
+ *
+ * The tail alone is not enough to say where an update has got to: the build
+ * step prints far more than 8000 characters, and on a real update the panel
+ * went from "step 4 of 5" back to "starting" once the step lines it counts had
+ * scrolled off the front of the tail. The step lines are a handful per run.
+ */
+export function updateLog(): { ok: boolean; text: string; steps: string } {
+  try {
+    const all = readFileSync(LOG, "utf8");
+    const steps = all.split("\n").filter((l) => l.startsWith("==> ")).join("\n");
+    return { ok: true, text: all.slice(-8000), steps };
+  } catch { return { ok: true, text: "", steps: "" }; }
 }
 
 /**
@@ -484,7 +495,11 @@ export async function releaseNotes(tagIn?: string): Promise<{ ok: boolean; tag: 
   if (existsSync(join(SRC, ".git"))) {
     const r = git(SRC, ["for-each-ref", "--format=%(objecttype)%0a%(contents)", `refs/tags/${tag}`]);
     const [kind, ...rest] = (r.status === 0 ? r.stdout : "").split("\n");
-    const local = kind?.trim() === "tag" ? rest.join("\n").trim() : "";
+    // Every tag is signed now, and %(contents) includes the trailing
+    // signature armor along with the message — dropped so the panel shows
+    // the release notes a person wrote, not that plus a block of base64.
+    const withoutSignature = rest.join("\n").replace(/\n-----BEGIN (?:PGP|SSH) SIGNATURE-----[\s\S]*$/, "");
+    const local = kind?.trim() === "tag" ? withoutSignature.trim() : "";
     if (local) return keep(local, "clone");
   }
 

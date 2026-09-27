@@ -126,6 +126,71 @@ describe("attribution across an await", () => {
   // that blocks is a *continuation* that resumes after its handler returned.
   // "The last thing to start" then names whichever poll arrived while we were
   // waiting — it named `/__ping__`, a route that does not exist, for 674ms.
+  it("does not blame a request that arrived after the block", async () => {
+    // A request that lands while the loop is held waits in the socket buffer,
+    // and its handler runs as soon as the loop comes back — before the
+    // heartbeat that measures the block. It entered last, inside the window,
+    // and it did nothing. Measured on an isolated server stopped from outside
+    // five times with no code at fault: all five stalls were filed under
+    // `GET /health` or `POST /ingest`, whichever the load happened to send.
+    await Bun.sleep(300);
+    const before = lw.stalls().stalls.at(-1)?.id ?? 0;
+    lw.entered("GET /the-real-culprit");
+    block(520);
+    lw.entered("OPTIONS /the-victim"); // queued during the block, handled right after
+    await Bun.sleep(300);
+
+    const seen = lw.stalls(before).stalls;
+    const worst = seen.reduce((a, b) => (b.ms > a.ms ? b : a));
+    expect(worst.ms).toBeGreaterThanOrEqual(150);
+    expect(worst.what).toBe("GET /the-real-culprit");
+  });
+
+  it("does not blame a request that finished in less time than the stall", async () => {
+    // Under steady load a request always lands between the last heartbeat and
+    // a freeze, and it is inside the window. Stopped from outside at 20
+    // requests a second, every stall still went to `/ingest` or `/health`.
+    // One that answered in a millisecond cannot have held the loop for half
+    // a second.
+    await Bun.sleep(300);
+    const before = lw.stalls().stalls.at(-1)?.id ?? 0;
+    lw.finished(lw.entered("GET /quick"));
+    block(520);
+    await Bun.sleep(300);
+    const worst = lw.stalls(before).stalls.reduce((a, b) => (b.ms > a.ms ? b : a));
+    expect(worst.what).toContain("background");
+
+    // …while one that was still running across the block answers for it.
+    await Bun.sleep(300);
+    const again = lw.stalls().stalls.at(-1)?.id ?? 0;
+    const mark = lw.entered("GET /slow");
+    block(520);
+    lw.finished(mark);
+    await Bun.sleep(300);
+    expect(lw.stalls(again).stalls.reduce((a, b) => (b.ms > a.ms ? b : a)).what).toBe("GET /slow");
+  });
+
+  it("says whether the thread was computing or waiting", async () => {
+    // Burning CPU is this process's own code. Holding the thread without
+    // burning it is a synchronous read, a child process, or the machine
+    // itself (swap, a stopped process) — different fixes, so it says which.
+    await Bun.sleep(300);
+    let before = lw.stalls().stalls.at(-1)?.id ?? 0;
+    block(520);
+    await Bun.sleep(300);
+    let worst = lw.stalls(before).stalls.reduce((a, b) => (b.ms > a.ms ? b : a));
+    expect(worst.waiting).toBe(false);
+
+    await Bun.sleep(300);
+    before = lw.stalls().stalls.at(-1)?.id ?? 0;
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 520); // held, not busy
+    await Bun.sleep(300);
+    worst = lw.stalls(before).stalls.reduce((a, b) => (b.ms > a.ms ? b : a));
+    expect(worst.ms).toBeGreaterThanOrEqual(150);
+    expect(worst.waiting).toBe(true);
+    expect(worst.cpuMs).toBeLessThan(worst.ms / 2);
+  });
+
   it("blames the request that owns the continuation, not the poll that arrived meanwhile", async () => {
     await Bun.sleep(120);
     const before = lw.stalls().stalls.at(-1)?.id ?? 0;

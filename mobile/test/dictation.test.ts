@@ -6,7 +6,9 @@
  * flag nobody typed, in a command that will run.
  */
 import { describe, expect, test } from "bun:test";
-import { joinDictated, nameFor, wordsFrom } from "../src/terminal/dictation.ts";
+import {
+  dictationDestination, joinDictated, joinDictatedInto, nameFor, wordsFrom,
+} from "../src/terminal/dictation.ts";
 
 describe("reading the answer", () => {
   test("words come back as words", () => {
@@ -58,6 +60,60 @@ describe("joining it to what is there", () => {
     // Dictating is one part of writing a line, not the whole of it — which is
     // the reason the transcript is not sent by itself either.
     expect(joinDictated("one", "two")).toContain("one");
+  });
+});
+
+describe("which destination a transcript goes to", () => {
+  test("compose when the screen is not in live mode", () => {
+    expect(dictationDestination(false)).toBe("compose");
+  });
+
+  test("live when the screen is", () => {
+    expect(dictationDestination(true)).toBe("live");
+  });
+});
+
+describe("joining it into that destination", () => {
+  test("compose behaves exactly like joinDictated", () => {
+    expect(joinDictatedInto("compose", "git commit -m", "fix the thing"))
+      .toBe(joinDictated("git commit -m", "fix the thing"));
+  });
+
+  test("live joins the same way when there is nothing to flatten", () => {
+    expect(joinDictatedInto("live", "ls ", "the tests")).toBe("ls the tests");
+  });
+
+  // The bug this whole function exists to close: the live destination is
+  // keystrokes on a pane's stdin with no submit step of its own, so a
+  // transcript carrying a line break — either engine has been seen to model a
+  // pause that way — must never put one there. Broken on purpose first: drop
+  // the `.replace` in `joinDictatedInto` and this goes red with a literal \n
+  // in the result.
+  test("live never contains \\r or \\n, however the transcript arrived", () => {
+    const cases = [
+      "run the tests\n",
+      "run the tests\r\n",
+      "first line\nsecond line",
+      "windows style\r\nline two",
+      "\ntrailing thought",
+    ];
+    for (const dictated of cases) {
+      const got = joinDictatedInto("live", "", dictated);
+      expect(got).not.toContain("\r");
+      expect(got).not.toContain("\n");
+    }
+  });
+
+  test("live still applies the spacing rule after flattening", () => {
+    expect(joinDictatedInto("live", "git commit -m", "fix the thing\n"))
+      .toBe("git commit -m fix the thing");
+  });
+
+  test("compose is untouched by the live-only flattening — a real newline stays", () => {
+    // Compose is the field somebody edits before sending, so nothing about
+    // its content needs to be dangerous the way an un-gated live send is.
+    expect(joinDictatedInto("compose", "", "line one\nline two"))
+      .toBe("line one\nline two");
   });
 });
 

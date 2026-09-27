@@ -81,6 +81,7 @@ export type BrowserOp =
   | "pdf" | "throttle" | "har" | "region" | "clipboard" | "save" | "headers" | "fake"
   | "trace" | "intercept" | "checkup" | "dialog" | "handoff" | "vitals" | "a11y"
   | "inspect"
+  | "tools" | "call-tool"
   | "whoami"
   | "lane"
   | "health";
@@ -98,6 +99,7 @@ export const BROWSER_OPS: readonly BrowserOp[] = [
   "addInitScript", "expose", "exposed",
   "cdp", "listeners", "coverage", "profiles", "emulate", "events", "record", "audit", "debug",
   "inspect",
+  "tools", "call-tool",
   "clock", "download", "settings", "drag", "upload", "storage", "permission", "pdf",
   "throttle", "har", "region", "clipboard", "save", "headers", "fake", "trace", "intercept",
   "checkup", "dialog", "handoff", "vitals", "a11y",
@@ -243,6 +245,10 @@ const TIMEOUT_MS: Record<BrowserOp, number> = {
   /* One check waits up to 25 s inside the page; the CLI loops over checks. */
   handoff: 45_000,
   vitals: 15_000, a11y: 15_000,
+  /* Reading what a page offers is a round trip; running one of its tools is
+     the page's own code, which may wait on a network of its own. The page-side
+     race gives up at 25 s so this is never the first to say so. */
+  tools: 15_000, "call-tool": 30_000,
   /* The clipboard is a round trip; a snapshot is Chromium serialising every
      subresource the page pulled in. */
   clipboard: 15_000, save: 60_000, headers: 15_000,
@@ -691,6 +697,14 @@ function readonlyMode(): boolean {
   return process.env.AGENTGLASS_BROWSER_READONLY === "1";
 }
 
+/** `AGENTGLASS_BROWSER_WEBMCP=1` — `tools` and `call-tool` exist. Off by
+ *  default because a page's tool descriptions are text somebody else wrote and
+ *  a model will read; turning them on is the operator's decision, not an
+ *  agent's. Only the exact value `1`, read on every call like the rest. */
+function webmcpOn(): boolean {
+  return process.env.AGENTGLASS_BROWSER_WEBMCP === "1";
+}
+
 /** Every verb, named. This list is read-only mode's whole enforcement, so a
  *  verb that is not in it is acting by default — see `isActing` — rather than
  *  quietly falling on the safe-to-run side because nobody classified it. */
@@ -708,6 +722,9 @@ const OBSERVE_OPS: ReadonlySet<BrowserOp> = new Set([
      refused it, the one call an agent should make BEFORE deciding whether it
      may act would be the first thing refused. */
   "whoami",
+  /* Reading what a page offers looks and runs nothing; `call-tool` is not
+     here, so it acts by default like every unclassified verb. */
+  "tools",
   /* Opening a lane touches no page and no person's window: it makes a room for
      an agent to work in, which read-only mode has no reason to refuse. */
   "lane",
@@ -964,6 +981,14 @@ const VALUE_CARRYING: Record<string, (
     } else if ((args.method === "Network.setCookies" || args.method === "Storage.setCookies") && Array.isArray(p.cookies)) {
       out.params = { ...(out.params as Record<string, unknown>), cookies: p.cookies.map(blank) };
     }
+  },
+  /* Every value of a page tool's arguments, by position: the page chose the
+     argument names (`password`, `cvv`, `otp`, or anything), so no key list can
+     say which are secret. Only the keys survive in the log. */
+  "call-tool"(out, args) {
+    const given = args.args;
+    if (!given || typeof given !== "object" || Array.isArray(given)) return;
+    out.args = Object.fromEntries(Object.keys(given).map((k) => [k, REDACTED]));
   },
   /* What a prompt() is answered with is typed into a box the page chose, and
      no selector says whether that box asked for a passcode. Position rule
@@ -1389,7 +1414,14 @@ const uploadHome = (): string => process.env.HOME || homedir();
  *  scope", and that is the one answer this must never give. */
 function uploadDenied(): string[] {
   const h = uploadHome();
-  return [dirname(configPath()), join(h, ".config", "agentglass"), join(h, ".ssh"), join(h, ".gnupg"), join(h, ".aws")];
+  return [
+    dirname(configPath()), join(h, ".config", "agentglass"), join(h, ".ssh"), join(h, ".gnupg"), join(h, ".aws"),
+    // A template (S6) is a signed-in page's cookies and storage, same weight
+    // as the four above — named explicitly rather than left to the
+    // hidden-segment rule below, which a non-default `XDG_DATA_HOME` inside
+    // the workspace or an AGENTGLASS_DISK_ROOTS entry would step around.
+    join(process.env.XDG_DATA_HOME || join(h, ".local", "share"), "agentglass", "browser-templates"),
+  ];
 }
 
 function underDir(p: string, dir: string): boolean {
@@ -1531,6 +1563,12 @@ export function parseAsk(op: unknown, body: unknown): { ask: BrowserAsk } | { er
           }
           args.container = "named";
           args.name = b.profile.trim();
+        } else if (b.ephemeral === true) {
+          // S6: `lane new --from-template` — the CLI, never the server, reads
+          // the template file and seeds the lane's tab afterwards with the
+          // same `session load` calls a person's own file would go through.
+          // The server only knows this jar is in-memory, never persisted.
+          args.container = "ephemeral";
         } else {
           args.container = "private";
         }
@@ -1549,6 +1587,20 @@ export function parseAsk(op: unknown, body: unknown): { ask: BrowserAsk } | { er
     }
     case "open":
     case "newtab": {
+      /* S6's visible-tab twin: `newtab --from-template` mints a blank
+         ephemeral tab first (the CLI reads the template and seeds it
+         afterwards, the same as `lane new --from-template` — see that
+         branch's comment). Checked FIRST, before the profile branch below
+         claims anything: `open` never mints a partition (it navigates a tab
+         whose partition is already fixed when it attached), and a NAMED
+         profile is a persisted container — the opposite of this one-shot,
+         in-memory jar — so the two together would file the tab under a
+         container it does not actually use. */
+      if (b.ephemeral === true) {
+        if (op !== "newtab") return { error: "ephemeral only applies to newtab — open acts on a tab whose partition is already fixed" };
+        if (b.profile !== undefined) return { error: "ephemeral and profile are two different jars — pick one" };
+        args.ephemeral = true;
+      }
       if (b.profile !== undefined) {
         /*
          * THE EMPTY STRING IS THE PERSON'S OWN CONTAINER, and it is a legal
@@ -1601,8 +1653,22 @@ export function parseAsk(op: unknown, body: unknown): { ask: BrowserAsk } | { er
        * for: "you have to work in the background, in your own container."
        */
       if (b.show === true) args.show = true;
-      /* Same validation for both: the only difference is whether the page
-         lands over the current view or beside it. */
+      /* An ephemeral mint is deliberately blank: the CLI writes the
+         template's cookies via CDP onto this tab BEFORE its own follow-up
+         `open` navigates it to the real (fully validated) origin, and
+         `Network.setCookie` needs no page loaded at all. Minting at the real
+         URL directly would navigate before the cookies land — precisely the
+         redirect-race `lane new --from-template` was built to avoid — so
+         `about:blank` is the one URL this flag accepts unchecked: it reaches
+         no origin at all, allow-listed or not. */
+      const rawUrl = typeof b.url === "string" ? b.url.trim() : "";
+      if (args.ephemeral === true && rawUrl === "about:blank") {
+        args.url = "about:blank";
+        break;
+      }
+      /* Same validation for both `open` and an ordinary `newtab`: the only
+         difference is whether the page lands over the current view or
+         beside it. */
       const url = safeUrl(b.url);
       if (!url) return { error: "url must be an http(s) address" };
       const list = allowedOrigins();
@@ -2984,6 +3050,22 @@ export function parseAsk(op: unknown, body: unknown): { ask: BrowserAsk } | { er
     case "back":
     case "forward":
       break;
+    case "tools":
+      break;
+    case "call-tool": {
+      /* The name is what the page called the tool, so it is held to what a
+         name can plausibly be; the args are the caller's and go to the page as
+         JSON, bounded so one call cannot ship a document. */
+      if (typeof b.name !== "string" || !b.name || b.name.length > 100 || /[\r\n]/.test(b.name)) {
+        return { error: "call-tool needs the tool's name: one line, up to 100 characters (`tools` lists them)" };
+      }
+      args.name = b.name;
+      const given = b.args === undefined ? {} : b.args;
+      if (!given || typeof given !== "object" || Array.isArray(given)) return { error: "args must be a JSON object" };
+      if (JSON.stringify(given).length > 20_000) return { error: "args are over 20 KB" };
+      args.args = given;
+      break;
+    }
     case "attr": {
       /* One element, some of its attributes. The names become page JS, so
          they are held to what an attribute name can be; the count is capped
@@ -3152,6 +3234,11 @@ export function parseAsk(op: unknown, body: unknown): { ask: BrowserAsk } | { er
      both straight back off, so the recorded args stay the verb's own. */
   if (caller.as && args.as === undefined) args.as = caller.as;
   if (caller.how) args.how = caller.how;
+  if ((op === "tools" || op === "call-tool") && !webmcpOn()) {
+    const msg = `"${op}" is off: set AGENTGLASS_BROWSER_WEBMCP=1 on the server to read and run the tools a page offers. The DOM verbs (interactive, click, fill) work without it.`;
+    recordAudit(op as BrowserOp, args, false, msg, false, undefined, caller);
+    return { error: msg };
+  }
   if (readonlyMode() && isActing(op as BrowserOp, args)) {
     const msg = `read-only mode: "${op}" acts on the page and is refused (observing only: ${[...OBSERVE_OPS].join(", ")})`;
     recordAudit(op as BrowserOp, args, false, msg, false, undefined, caller);
@@ -4047,7 +4134,7 @@ async function composeLane(ask: BrowserAsk): Promise<BrowserReply> {
     const r = await closeLane(String(ask.args.id), as, ask.args.force === true);
     reply = r.ok ? { ok: true, value: { closed: ask.args.id } } : { ok: false, error: r.error };
   } else {
-    const r = await openLane(as, ask.args.container as "private" | "shared" | "named", typeof ask.args.name === "string" ? ask.args.name : undefined);
+    const r = await openLane(as, ask.args.container as "private" | "shared" | "named" | "ephemeral", typeof ask.args.name === "string" ? ask.args.name : undefined);
     reply = r.ok ? { ok: true, value: { lane: r.lane } } : { ok: false, error: r.error };
   }
   recordAudit("lane", ask.args, reply.ok, reply.error);

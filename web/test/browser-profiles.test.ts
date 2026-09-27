@@ -178,6 +178,20 @@ describe("the list, across restarts", () => {
     const angry = { getItem: () => null, setItem: () => { throw new Error("QuotaExceeded"); } };
     expect(() => saveProfiles(angry, [{ id: "work", name: "Work" }])).not.toThrow();
   });
+
+  test("S9: identify round-trips when on, and is absent (not false) when off", () => {
+    // Absent rather than `identify: false` on every profile ever saved before
+    // this existed — the field's whole point is that missing reads as off.
+    const s = store();
+    saveProfiles(s, [{ id: "work", name: "Work", identify: true }, { id: "home", name: "Home" }]);
+    expect(loadProfiles(s)).toEqual([{ id: "work", name: "Work", identify: true }, { id: "home", name: "Home" }]);
+  });
+
+  test("a truthy-but-not-true identify from a hand-edited file reads as off", () => {
+    const s = store();
+    s.setItem("agx_browser_profiles", JSON.stringify([{ id: "work", name: "Work", identify: "yes" }]));
+    expect(loadProfiles(s)).toEqual([{ id: "work", name: "Work" }]);
+  });
 });
 
 describe("the colour a profile is marked with", () => {

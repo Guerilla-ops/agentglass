@@ -43,8 +43,11 @@ test("the board is handed the filtered lists, not the raw fetches", () => {
   /* Enriched with the card the screen is showing, then filtered. */
   expect(src).toMatch(/const boardMineCards = useMemo\(\s*\(\) => boardMine\.map\(\(p\) => withCard\(p, hasTaskProvider\)\)/);
   expect(src).toMatch(/const boardReviewCards = useMemo\(\s*\(\) => boardReview\.map\(\(p\) => withCard\(p, hasTaskProvider\)\)/);
-  expect(src).toContain("const boardMineShown = useMemo(() => applyWith(boardMineCards, rules, readPrField)");
-  expect(src).toContain("const boardReviewShown = useMemo(() => applyWith(boardReviewCards, rules, readPrField)");
+  /* `applyRulesKeepUnread`, not `applyWith` directly: a pull request with
+     something unread on it survives a rule that would otherwise drop it — see
+     prFilter.test.ts. */
+  expect(src).toContain("applyRulesKeepUnread(boardMineCards, rules, readPrField, isRuleExempt)");
+  expect(src).toContain("applyRulesKeepUnread(boardReviewCards, rules, readPrField, isRuleExempt)");
   expect(src).toContain("mine={boardMineShown} review={boardReviewShown}");
   /* The raw pair never reaches the component again — the exact shape of the bug. */
   expect(src).not.toContain("mine={boardMine}");

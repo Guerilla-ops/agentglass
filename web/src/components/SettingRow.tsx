@@ -7,7 +7,8 @@
  * "move your page into a 2,700-line file", so nobody did, and twelve pages
  * grew their own idea of what a row looks like.
  */
-import { createContext, isValidElement, useContext, useState } from "react";
+import { createContext, isValidElement, useContext, useId, useLayoutEffect, useState } from "react";
+import { rowMatches, rowId } from "../lib/settingsIndex.ts";
 
 /* ─────────────────────────── Searching the settings ─────────────────────────
  *
@@ -39,7 +40,7 @@ import { createContext, isValidElement, useContext, useState } from "react";
  * names the page, so a second search for the same thing is a click away,
  * not a re-read of the whole list.
  */
-export const Filter = createContext<{ on: boolean; q: string; seen: (matched: boolean) => void }>(
+export const Filter = createContext<{ on: boolean; q: string; seen: (matched: boolean) => void; flash?: string | null }>(
   { on: false, q: "", seen: () => { /* no filtering outside the dialog */ } },
 );
 
@@ -54,7 +55,38 @@ export function textOf(n: React.ReactNode): string {
   return "";
 }
 
-export function SettingRow({ label, hint, control, onClick, href, download, disabled, role, ariaChecked, align }: {
+/** A hint longer than this is one line and a More control. Twelve words is what
+ *  fits a 760px column at 12px without wrapping; measured on the Terminal page,
+ *  where the long hints were the reason two rows sat at four times the height
+ *  of their neighbours. */
+export const HINT_FOLD_WORDS = 12;
+
+export function hintNeedsFold(text: string): boolean {
+  const t = text.trim();
+  return t !== "" && t.split(/\s+/).length > HINT_FOLD_WORDS;
+}
+
+/*
+ * The More/Less control after a folded hint.
+ *
+ * A real <button>, and never inside the row's own button or link: a control
+ * nested in a `role="switch"` is presentational to assistive tech (its name
+ * is flattened into the switch's and it is never exposed as a button), and
+ * axe fails it as nested-interactive. So an operable row draws it as a
+ * sibling under the row (see SettingRow); a plain row draws it inline.
+ * `controls` names the hint it opens.
+ */
+function HintMore({ open, toggle, controls, className }: { open: boolean; toggle: () => void; controls: string; className?: string }) {
+  return (
+    <button type="button" aria-expanded={open} aria-controls={controls}
+      onClick={toggle}
+      className={`text-[12px] t-dim underline cursor-pointer ${className ?? ""}`}>
+      {open ? "Less" : "More"}
+    </button>
+  );
+}
+
+export function SettingRow({ label, hint, control, onClick, href, download, disabled, role, ariaChecked, align, modified }: {
   label: React.ReactNode;
   hint?: React.ReactNode;
   control?: React.ReactNode;
@@ -69,38 +101,72 @@ export function SettingRow({ label, hint, control, onClick, href, download, disa
   /** A control taller than its label — a stack of buttons, a QR code — reads
    *  better hung from the top than floated in the middle. */
   align?: "center" | "start";
+  /** Differs from the shipped default: a dot before the label. */
+  modified?: boolean;
 }) {
   const { on, q, seen } = useContext(Filter);
+  const [hintOpen, setHintOpen] = useState(false);
+  const hintId = useId();
   // Counted on every render, filtering or not: the count is what decides
   // whether filtering is worth doing at all on this page.
-  const matched = !q || (textOf(label) + " " + textOf(hint)).toLowerCase().includes(q);
+  const matched = !q || rowMatches(textOf(label) + " " + textOf(hint), q);
   seen(matched);
   if (on && !matched) return null;
+  const fold = hintNeedsFold(textOf(hint));
+  const operable = !!(onClick || href);
+  // Under the row, not inside it: see HintMore. Pulled up into the row's own
+  // bottom padding so the pair still reads as one row.
+  const more = fold && operable ? (
+    <div className="px-4 -mt-2.5 pb-3">
+      <HintMore open={hintOpen} toggle={() => setHintOpen((v) => !v)} controls={hintId} />
+    </div>
+  ) : null;
 
   const body = (
     <>
       <span className="min-w-0">
-        <span className="block text-[13.5px]" style={{ color: "var(--text)" }}>{label}</span>
+        <span className="block text-[13.5px]" style={{ color: "var(--text)" }}>
+          {modified && (
+            <span role="img" aria-label="Changed from default" title="Changed from default"
+              className="inline-block rounded-full mr-2 align-middle"
+              style={{ width: 6, height: 6, background: "var(--success)" }} />
+          )}
+          {label}
+        </span>
         {/* mt-1, not mt-0.5. A 2px gap under 13.5px type is not a gap — the
             sweep found this pair "touching" on every settings pane there is,
             which is the single most repeated instance of the complaint that
             started this: things that belong together drawn as one block of
             text. 4px is the step for "these two are one thought". */}
-        {hint !== undefined && hint !== "" && <span className="block text-[12px] t-dim mt-1">{hint}</span>}
+        {hint !== undefined && hint !== "" && (
+          <span className="block text-[12px] t-dim mt-1">
+            {/* The words stay in the DOM when folded, so search still finds them. */}
+            {fold ? <span id={hintId} className={hintOpen ? undefined : "agx-settings-hint-clamp"}>{hint}</span> : hint}
+            {fold && !operable && <HintMore open={hintOpen} toggle={() => setHintOpen((v) => !v)} controls={hintId} className="ml-1.5" />}
+          </span>
+        )}
       </span>
       {control !== undefined && <span className="min-w-0">{control}</span>}
     </>
   );
   const cls = `agx-settings-row${align === "start" ? " items-start" : ""}${onClick || href ? " agx-hover" : ""}`;
   const style: React.CSSProperties | undefined = disabled ? { opacity: 0.55 } : undefined;
-  if (href) return <a href={href} download={download} className={cls} style={style}>{body}</a>;
+  // The row's own anchor. openSettings(pane, row) and the command palette
+  // both scroll to and flash `[data-row=…]` after the page mounts — derived
+  // from the label text so it can never fall out of sync with what the row
+  // is now called.
+  const dataRow = rowId(textOf(label));
+  if (href) return <><a href={href} download={download} className={cls} style={style} data-row={dataRow}>{body}</a>{more}</>;
   if (onClick) {
     return (
-      <button onClick={onClick} disabled={disabled} role={role} aria-checked={ariaChecked}
-        className={`${cls} text-left disabled:cursor-not-allowed`} style={style}>{body}</button>
+      <>
+        <button onClick={onClick} disabled={disabled} role={role} aria-checked={ariaChecked}
+          className={`${cls} text-left disabled:cursor-not-allowed`} style={style} data-row={dataRow}>{body}</button>
+        {more}
+      </>
     );
   }
-  return <div className={cls} style={style}>{body}</div>;
+  return <div className={cls} style={style} data-row={dataRow}>{body}</div>;
 }
 
 /**
@@ -146,20 +212,31 @@ export function Fold({ label, hint, children, defaultOpen }: {
   children: React.ReactNode;
   defaultOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(!!defaultOpen);
+  const { on, flash } = useContext(Filter);
+  const [open, setOpen] = useState(!!defaultOpen || !!flash);
+  /*
+   * A search result or a deep link inside a closed fold has nothing to land
+   * on: the count included it, the highlight and the flash found no row.
+   * While a filter is on the fold is open, and a pending flash opens it for
+   * good. The ceiling: it cannot tell WHICH fold holds the row (the children
+   * are not rendered while closed), so a pending flash opens every fold on
+   * the page it lands on.
+   */
+  useLayoutEffect(() => { if (flash) setOpen(true); }, [flash]);
+  const shown = open || on || !!flash;
   return (
     <>
       <SettingRow
         onClick={() => setOpen((v) => !v)}
         label={<span className="flex items-baseline gap-2">
           <span className="inline-block w-2.5 shrink-0 text-[10px]" style={{ color: "var(--text4)" }} aria-hidden>
-            {open ? "▾" : "▸"}
+            {shown ? "▾" : "▸"}
           </span>
           {label}
         </span>}
         hint={hint === undefined ? undefined : <span className="block pl-[18px]">{hint}</span>}
       />
-      {open && (
+      {shown && (
         /*
          * Flush with the rows above and below it, and with a gap of its own
          * under the header.

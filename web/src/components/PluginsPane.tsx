@@ -8,6 +8,7 @@
 // not review, which is the whole reason this file exists.
 import { PluginMark } from "./plugins/PluginMark.tsx";
 import { emitControl } from "../lib/controlBus.ts";
+import { closeSettings } from "../lib/openSettings.ts";
 import { clearPluginInstall, pluginInstallRequest, subscribePluginInstall } from "../lib/installPlugin.ts";
 import { PluginSettingsPane } from "./plugins/PluginSettingsPane.tsx";
 import { Market } from "./plugins/Market.tsx";
@@ -351,6 +352,14 @@ function PluginCard({ plugin, masterOn, onChanged, onSettings }: {
   // without touching the manifest at all. See consentFingerprint.
   const needsReview = plugin.approvedFingerprint !== plugin.fingerprint;
   const reconsent = needsReview && plugin.hadApproval;
+  // fingerprint (above) folds in every byte on disk, on purpose — see
+  // consentFingerprint in server/src/plugins.ts. That means an update that
+  // only touches a README or fixes a typo in the code re-asks too, with
+  // nothing different in the declaration below to review. manifestHash is
+  // the coarser, capability-only half of the same record: comparing it to
+  // approvedHash is the one way to tell "the declaration itself changed"
+  // from "the code changed but what it asks for is what you already saw".
+  const manifestChanged = plugin.approvedHash !== null && plugin.approvedHash !== plugin.manifestHash;
   // A switch reading "on" while nothing runs is the exact failure this page
   // exists to catch, so the toggle reflects the PROCESS, not the intent —
   // `enabled` can be true with `running` false for one tick after a crash.
@@ -473,11 +482,19 @@ function PluginCard({ plugin, masterOn, onChanged, onSettings }: {
       {/* The re-consent case, drawn so it cannot be mistaken for an ordinary
           disabled card: its own colour, its own sentence, above the fold that
           holds the scope explanation everyone else gets. */}
-      {reconsent && (
+      {reconsent && manifestChanged && (
         <Alert tone="warning">
           <strong>This plugin is asking for something different now.</strong> What is installed no
           longer matches what you last approved — the manifest changed since then. It was turned off
           automatically and stays off until you review the current declaration below and enable it again.
+        </Alert>
+      )}
+      {reconsent && !manifestChanged && (
+        <Alert tone="warning">
+          <strong>This plugin's code changed since you approved it.</strong> What it declares below is
+          the same as what you approved — same scope, same drawing, same sandbox — but an update can
+          rewrite what the code actually does without touching the manifest at all, so it was turned off
+          automatically anyway. Review it below and enable it again.
         </Alert>
       )}
       {!plugin.hadApproval && needsReview && (
@@ -486,7 +503,17 @@ function PluginCard({ plugin, masterOn, onChanged, onSettings }: {
         </div>
       )}
 
-      <div className="mt-1.5">
+      {/* `agx-settings-col`: a Fold with no control is the row's only grid
+          item, and `.agx-settings-row` always reserves the wide control
+          column's width for it (fixed at var(--settings-control-w), even
+          with nothing in it — see index.css). In a page-width settings
+          column that leftover is still hundreds of pixels; in a ~360px
+          plugin card it left "What it can do" about 70px to fit in, one
+          word per line. `agx-settings-col` opens the container query that
+          drops to a single track below 588px, which this card always is.
+          `w-full` because that container's intrinsic width is zero: without
+          it the fold shrank to its longest word and was centred. */}
+      <div className="mt-1.5 w-full agx-settings-col">
         {/* Open by default only while there is a decision to make — the fold
             defaults open for a fresh install or a changed manifest, closed
             once it has been approved. The sentence has to be legible at the
@@ -534,7 +561,7 @@ function PluginCard({ plugin, masterOn, onChanged, onSettings }: {
             {/* Straight to where it shows up — the answer to "I switched it on,
                 now what". */}
             {hasPanel && plugin.enabled && (
-              <button onClick={() => { emitControl({ cmd: "view", to: "plugins" }); emitControl({ cmd: "esc" }); }}
+              <button onClick={() => { emitControl({ cmd: "view", to: "plugins" }); emitControl({ cmd: "esc" }); closeSettings(); }}
                 className="text-[12px] px-2.5 py-1 rounded-lg whitespace-nowrap hover:opacity-80"
                 style={{ color: tint, border: `1px solid color-mix(in srgb, ${tint} 45%, transparent)`, background: `color-mix(in srgb, ${tint} 10%, transparent)` }}>
                 Open

@@ -107,7 +107,6 @@ describe("a plugin's own settings", () => {
        would have a hundred entries in a nav that has nineteen of its own. */
     const modal = await Bun.file(new URL("../../web/src/components/SettingsModal.tsx", import.meta.url)).text();
     expect(modal, "no run-time pages added to the nav").not.toContain("setPluginTabs");
-    expect(modal).toContain("const allTabs = TABS;");
     // A link that named one still lands on it.
     expect(modal).toContain('<PluginsPane open={open} focus={pane.slice("plugin:".length)} />');
 

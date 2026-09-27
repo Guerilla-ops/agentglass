@@ -64,7 +64,7 @@ import { benchTakesBoard, toggleBench, showFile } from "./lib/benchStore.ts";
 import { PeekFile, isRenderable, type Peek } from "./components/PeekFile.tsx";
 import { clearPeek, peekRequest, subscribePeek } from "./lib/openPeek.ts";
 import { requestFilesReveal } from "./lib/filesReveal.ts";
-import { onOpenSettings, openSettings } from "./lib/openSettings.ts";
+import { onCloseSettings, onOpenSettings, openSettings } from "./lib/openSettings.ts";
 import { runBootRecipes } from "./components/RecipesPane.tsx";
 import { onOpenPrs, onOpenPr } from "./lib/openPrs.ts";
 import { onOpenCard, openCard } from "./lib/openCard.ts";
@@ -218,14 +218,21 @@ export default function App() {
   }, [rail, wsView]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   // A pane a panel elsewhere asked us to land on — see lib/openSettings.ts.
-  const [settingsPane, setSettingsPane] = useState<string | null>(null);
+  // A request, not two strings: `n` changes on every call, so the same
+  // openSettings fired twice while the modal is open is still a new value
+  // and the modal navigates again.
+  const [settingsJump, setSettingsJump] = useState<{ pane: string | null; row: string | null; n: number } | null>(null);
   const [prJump, setPrJump] = useState<import("./lib/openPrs.ts").PrJump | null>(null);
   /** The other direction — a pull request asking for the card it came from. */
   const [cardJump, setCardJump] = useState<import("./lib/openCard.ts").CardJump | null>(null);
   /** And a pull request asking for the GitHub issue it closes — see
    *  lib/openIssue.ts for why that link used to leave the app. */
   const [issueJump, setIssueJump] = useState<import("./lib/openIssue.ts").IssueJump | null>(null);
-  useEffect(() => onOpenSettings((pane) => { setSettingsPane(pane ?? null); setSettingsOpen(true); }), []);
+  useEffect(() => onOpenSettings((pane, row) => { setSettingsJump((j) => ({ pane: pane ?? null, row: row ?? null, n: (j?.n ?? 0) + 1 })); setSettingsOpen(true); }), []);
+  // Same close a person gets from "Back to app" — see openSettings.ts. A row
+  // inside Settings (Plugins' "Open") that switches the view underneath it
+  // needs Settings out of the way too, or the switch happens behind the modal.
+  useEffect(() => onCloseSettings(() => { setSettingsOpen(false); setSettingsJump(null); }), []);
   /* A board goes where the person is reading boards: the bench, when it is open
      on one; the view otherwise. See benchTakesBoard. */
   const toBoard = useCallback((kind: "pr" | "tasks") => { if (!benchTakesBoard(kind)) goView(kind); }, [goView]);
@@ -1313,14 +1320,12 @@ export default function App() {
       <UpdateToast />
       <SettingsModal
         open={settingsOpen}
-        jumpTo={settingsPane}
-        onClose={() => { setSettingsOpen(false); setSettingsPane(null); }}
+        jump={settingsJump}
+        onClose={() => { setSettingsOpen(false); setSettingsJump(null); }}
         sound={sound}
         onSound={() => setSound((s) => !s)}
         scale={scale}
         onZoom={zoom}
-        onOpenStats={() => setStatsOpen(true)}
-        onOpenHelp={() => setHelpOpen(true)}
         theme={theme}
         onTheme={setTheme}
       />
@@ -1354,6 +1359,7 @@ export default function App() {
         onWindow={setWindowMs}
         onTheme={setTheme}
         onStats={() => setStatsOpen(true)}
+        onHelp={() => setHelpOpen(true)}
         onSkills={() => setSkillsOpen(true)}
         onChanges={() => goView("diff")}
         onGit={() => goView("git")}

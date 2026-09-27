@@ -3,7 +3,7 @@
 // on disk for the next step, an update built from whatever a tag points at
 // today. These assert the source, because there is no runner here to ask.
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -110,26 +110,37 @@ describe("self-update", () => {
 // The script itself, against a throwaway origin. It stops at the tag check, well
 // before any install, so nothing here touches the developer's app or clone.
 describe("self-update.sh on a fixture origin", () => {
-  const run = (tagKind: "lightweight" | "annotated") => {
+  /** `files` go into the tagged commit; `bin` holds executables put first on PATH. */
+  const run = (tagKind: "lightweight" | "annotated",
+    { files = {}, bin = {}, env = {} }: { files?: Record<string, string>; bin?: Record<string, string>; env?: Record<string, string> } = {}) => {
     const dir = mkdtempSync(join(tmpdir(), "agx-upd-"));
     try {
       const origin = join(dir, "origin");
       const home = join(dir, "home");
+      const binDir = join(dir, "bin");
+      const env0 = { PATH: `${binDir}:${process.env.PATH!}`, HOME: home };
       const sh = (cwd: string, ...a: string[]) =>
-        Bun.spawnSync(["git", "-C", cwd, "-c", "user.name=t", "-c", "user.email=t@example.com", ...a], { env: { PATH: process.env.PATH!, HOME: home } });
-      mkdirSync(origin, { recursive: true }); mkdirSync(home, { recursive: true });
+        Bun.spawnSync(["git", "-C", cwd, "-c", "user.name=t", "-c", "user.email=t@example.com", ...a], { env: env0 });
+      for (const d of [origin, home, binDir]) mkdirSync(d, { recursive: true });
+      for (const [name, body] of Object.entries(bin)) writeFileSync(join(binDir, name), body, { mode: 0o755 });
+      for (const [path, body] of Object.entries(files)) {
+        mkdirSync(join(origin, path, ".."), { recursive: true });
+        writeFileSync(join(origin, path), body);
+      }
       sh(origin, "init", "-q");
+      sh(origin, "add", "-A");
       sh(origin, "commit", "-q", "--allow-empty", "-m", "one");
       if (tagKind === "annotated") sh(origin, "tag", "-a", "v9.9.9", "-m", "notes");
       else sh(origin, "tag", "v9.9.9");
       const r = Bun.spawnSync(["bash", join(ROOT, "electron", "self-update.sh")], {
         cwd: home,
         env: {
-          PATH: process.env.PATH!, HOME: home,
+          ...env0,
           AGENTGLASS_UPDATE_TAG: "v9.9.9", AGENTGLASS_UPDATE_ORIGIN: origin,
-          // The fixture has no web/ directory, so an accepted tag fails at the
-          // install step instead of building anything.
+          // With no files, the fixture has no web/ directory, so an accepted tag
+          // fails at the install step instead of building anything.
           AGENTGLASS_UPDATE_SRC: join(home, "src"),
+          ...env,
         },
       });
       const log = join(home, ".cache", "agentglass", "update.log");
@@ -142,6 +153,26 @@ describe("self-update.sh on a fixture origin", () => {
     expect(r.status).toBe(1);
     expect(r.text).toContain("not an annotated release tag");
     expect(r.text).not.toContain("installing dependencies");
+  });
+
+  test("the build does not inherit the output or temp dir of whoever started the app", () => {
+    // A real update wrote electron-builder's output into another session's
+    // scratchpad: the app had been reopened from a shell that exported
+    // AGENTGLASS_DIST_DIR and TMPDIR, and the update script inherits the app's
+    // environment. A stub install-local.sh reports what it was handed.
+    const r = run("annotated", {
+      files: {
+        "web/.keep": "",
+        "electron/install-local.sh":
+          'echo "handed dist=${AGENTGLASS_DIST_DIR-unset} tmp=${TMPDIR-unset} cc=${CLAUDE_CODE_TMPDIR-unset}"\nexit 1\n',
+      },
+      bin: { bun: "#!/bin/sh\nexit 0\n" },
+      env: {
+        AGENTGLASS_DIST_DIR: "/home/someone/.cache/scratch/dist-app",
+        TMPDIR: "/home/someone/.cache/scratch", CLAUDE_CODE_TMPDIR: "/home/someone/.cache/scratch",
+      },
+    });
+    expect(r.text).toContain("handed dist=unset tmp=unset cc=unset");
   });
 
   test("an annotated tag passes the check and reaches the install, in a private log", () => {

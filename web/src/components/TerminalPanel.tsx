@@ -12,6 +12,8 @@ import { subscribeTermIssue, termIssue, clearTermIssue, type TermIssue } from ".
 import { dirName } from "../lib/worktree.ts";
 import { requestWorktreeJump } from "../lib/worktreeJump.ts";
 import { ICON, MIN_BOX } from "../lib/iconSize.ts";
+import { GearIcon } from "./workspace/icons.tsx";
+import { openSettings } from "../lib/openSettings.ts";
 import { CaretIcon, ExpandIcon, GridIcon, IconLabel, LockIcon, PinIcon, SearchIcon } from "../lib/glyphIcons.tsx";
 import { nextSeen, unlistedWorktree, type PaneSeen, readPaneSeen, writePaneSeen } from "../lib/paneWorktree.ts";
 import { readBranchPrs, writeBranchPrs, readCardPrios, writeCardPrios, type RememberedPr, type RememberedPrio } from "../lib/paneFacts.ts";
@@ -2983,6 +2985,9 @@ export function TermView({ active, onClose = () => {} }: { active: boolean; onCl
                 {status === "unauthorized" ? "Token needed" : "Reconnect"}
               </button>
             )}
+            <button type="button" onClick={() => openSettings("terminal")} aria-label="Terminal settings…" title="Terminal settings…"
+                className="shrink-0 grid place-items-center rounded hover:bg-white/10"
+                style={{ width: MIN_BOX, height: MIN_BOX, color: "var(--text3)" }}><GearIcon size={ICON.xs} /></button>
             {!tmuxActive && <button onClick={splitPane} disabled={!root || IS_DEMO || disabled || paneIds.length >= 4} title="Show another shell beside this one" className="text-[11px] px-2 py-1 rounded-lg" style={{ color: "var(--text2)", border: "1px solid color-mix(in srgb, var(--border) 30%, transparent)", opacity: paneIds.length >= 4 ? 0.45 : 1 }}><IconLabel icon={<GridIcon size={ICON.xs} />}>Split</IconLabel></button>}
             {/* The way back, and it lives here because the way out
                 lives in the strip — which is the thing being hidden.

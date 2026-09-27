@@ -498,6 +498,39 @@ describe("§16 — origins, read-only, audit, redaction", () => {
     expect("error" in parseAsk("html", { selector: "body", clean: "yes" })).toBe(true);
   });
 
+  test("newtab: ephemeral is a flag `newtab --from-template` carries, and its mint is the one "
+    + "`about:blank` this relay accepts — the CLI seeds cookies before its own follow-up `open` "
+    + "navigates to the real, fully-validated origin", () => {
+    const ok = parseAsk("newtab", { url: "about:blank", ephemeral: true });
+    if (!("ask" in ok)) throw new Error(ok.error);
+    expect(ok.ask.args).toMatchObject({ ephemeral: true, url: "about:blank" });
+    // Absent by default: an ordinary mint carries no such field at all, not a
+    // `false` — nothing downstream should have to distinguish the two.
+    const ordinary = parseAsk("newtab", { url: "https://orbit.example/" });
+    if (!("ask" in ordinary)) throw new Error(ordinary.error);
+    expect(ordinary.ask.args.ephemeral).toBeUndefined();
+    // about:blank is refused exactly like any other non-http(s) url when
+    // ephemeral is not the reason it was sent.
+    expect("error" in parseAsk("newtab", { url: "about:blank" })).toBe(true);
+  });
+
+  test("ephemeral only applies to newtab — open acts on a tab whose partition is already fixed", () => {
+    const p = parseAsk("open", { url: "about:blank", ephemeral: true });
+    if (!("error" in p)) throw new Error("unreachable");
+    expect(p.error).toContain("ephemeral");
+    expect(p.error).toContain("open");
+  });
+
+  test("ephemeral and profile refuse each other — a persisted container and an in-memory jar are not one tab", () => {
+    const p = parseAsk("newtab", { url: "about:blank", ephemeral: true, profile: "orbit-qa" });
+    if (!("error" in p)) throw new Error("unreachable");
+    expect(p.error).toContain("ephemeral");
+    expect(p.error).toContain("profile");
+    // And the container was never claimed for it — the refusal is checked
+    // before the profile branch below writes anything.
+    expect(containerRecord("orbit-qa")).toBeNull();
+  });
+
   test("dialog: a text alone arms an accept, and the replayed line says the text was withheld", () => {
     const r = parseAsk("dialog", { text: "ada" });
     if (!("ask" in r)) throw new Error(r.error);
@@ -930,7 +963,7 @@ describe("§15 — every verb that carries a value, not just `type`", () => {
      * deliberately absent — the comment on the table says why — and if it is
      * ever added this list must move with it.
      */
-    expect([...valueCarryingOpsForTest].sort()).toEqual(["cdp", "cookies", "dialog", "fill", "storage", "type"]);
+    expect([...valueCarryingOpsForTest].sort()).toEqual(["call-tool", "cdp", "cookies", "dialog", "fill", "storage", "type"]);
   });
 
   test("the replay script emits a real `fill`, with the pairs and the marker", () => {
@@ -1272,7 +1305,7 @@ describe("several verbs in one call", () => {
     const src = readFileSync(new URL("../src/browserdrive.ts", import.meta.url), "utf8");
     const from = src.indexOf("export function parseAsk(");
     const body = src.slice(from, src.indexOf("\nexport ", from + 10));
-    const blocks = body.split(/\n\s*case "([a-zA-Z]+)":/).slice(1);
+    const blocks = body.split(/\n\s*case "([a-zA-Z-]+)":/).slice(1);
     const carrying = new Set<string>();
     for (let i = 0; i < blocks.length; i += 2) {
       const op = blocks[i]!, code = blocks[i + 1] ?? "";

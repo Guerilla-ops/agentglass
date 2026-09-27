@@ -32,10 +32,19 @@ type DesktopBridge = {
    *  Absent on a shell built before the app claimed its own scheme, and in a
    *  browser tab, where there is no scheme to claim. */
   takeDeepLink?: () => Promise<DeepLink | null>;
-  /** Make or destroy a lane's hidden window (the app's own window only). */
-  laneOpen?: (id: string, slug: string) => Promise<{ ok: boolean; error?: string }>;
+  /** Make or destroy a lane's hidden window (the app's own window only).
+   *  `ephemeral` (S6): an in-memory jar of its own, not a slot in the
+   *  persisted profile family — `slug` is meaningless together with it and
+   *  main.js ignores it when true. */
+  laneOpen?: (id: string, slug: string, ephemeral?: boolean) => Promise<{ ok: boolean; error?: string }>;
   laneClose?: (id: string) => Promise<{ ok: boolean; error?: string }>;
   laneKeep?: (ids: string[]) => Promise<number>;
+  /** `newtab --from-template`'s visible-tab jar: the in-memory partition
+   *  string is minted by the main process, not the renderer — unlike a lane,
+   *  where the id comes from the server first. `tabEphemeralOpen` must
+   *  resolve before the tab's `<webview>` is created with that partition. */
+  tabEphemeralOpen?: () => Promise<{ ok: boolean; partition?: string; error?: string }>;
+  tabEphemeralClose?: (partition: string) => Promise<{ ok: boolean }>;
   onDeepLink?: (fn: (link: DeepLink) => void) => () => void;
   /** The window's own controls. Optional because an older shell still has a
    *  system title bar and does not need them — and because a renderer that
@@ -87,6 +96,8 @@ type DesktopBridge = {
   cdpEvents?: (guestId?: number) => Promise<{ ok: boolean; events?: Array<{ at: number; method: string; params: unknown }>; error?: string }>;
   /** All absent on shells built before session-level settings existed. */
   sessionSettings?: (req: Record<string, unknown>) => Promise<{ ok: boolean; applied?: string[]; error?: string; value?: unknown }>;
+  /** S9: absent on shells built before the identity header existed. */
+  setGuestOwner?: (guestId: number, owner: string) => void;
   /** All absent on shells built before cookie import existed. */
   cookieSources?: () => Promise<CookieSourcesReply>;
   importCookies?: (req: { source: string; sites: string[] }) => Promise<CookieImportReply>;
@@ -153,10 +164,10 @@ export const CAN_MAKE_LANES = typeof (typeof window !== "undefined"
   ? (window as unknown as { agentglass?: { laneOpen?: unknown } }).agentglass?.laneOpen
   : undefined) === "function";
 
-export async function openLaneWindow(id: string, slug: string): Promise<{ ok: boolean; error?: string }> {
+export async function openLaneWindow(id: string, slug: string, ephemeral = false): Promise<{ ok: boolean; error?: string }> {
   const b = bridge();
   if (!b?.laneOpen) return { ok: false, error: "this build cannot make lanes" };
-  try { return await b.laneOpen(id, slug); } catch (e) { return { ok: false, error: String(e) }; }
+  try { return await b.laneOpen(id, slug, ephemeral); } catch (e) { return { ok: false, error: String(e) }; }
 }
 
 /** The lanes the server still knows: every other host of this app is destroyed. */
@@ -168,6 +179,21 @@ export async function closeLaneWindow(id: string): Promise<{ ok: boolean; error?
   const b = bridge();
   if (!b?.laneClose) return { ok: false, error: "this build cannot close lanes" };
   try { return await b.laneClose(id); } catch (e) { return { ok: false, error: String(e) }; }
+}
+
+/** Mint an ephemeral tab's partition, before the tab itself is created. */
+export async function openEphemeralTab(): Promise<{ ok: boolean; partition?: string; error?: string }> {
+  const b = bridge();
+  if (!b?.tabEphemeralOpen) return { ok: false, error: "this build cannot make ephemeral tabs" };
+  try { return await b.tabEphemeralOpen(); } catch (e) { return { ok: false, error: String(e) }; }
+}
+
+/** Wipe an ephemeral tab's jar. Fire-and-forget at every call site: there is
+ *  nowhere better for a failure to go, and the tab is gone either way. */
+export async function closeEphemeralTab(partition: string): Promise<{ ok: boolean }> {
+  const b = bridge();
+  if (!b?.tabEphemeralClose) return { ok: false };
+  try { return await b.tabEphemeralClose(partition); } catch { return { ok: false }; }
 }
 
 function bridge(): DesktopBridge | null {
@@ -531,6 +557,13 @@ export async function applySessionSettings(req: Record<string, unknown>): Promis
   try {
     return await b.sessionSettings(req);
   } catch { return { ok: false, error: "the shell did not apply the settings" }; }
+}
+
+/** S9: tell main which agent's requests a guest is making, so the identity
+ *  header — off by default, only for a dev origin — has a name to send. A
+ *  no-op on a shell that predates it, same as every other bridge call here. */
+export function setGuestOwner(guestId: number, owner: string): void {
+  try { bridge()?.setGuestOwner?.(guestId, owner); } catch { /* nothing to push to */ }
 }
 
 /** Whether the app is set to launch at login. Null when not applicable (a
