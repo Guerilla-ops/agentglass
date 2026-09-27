@@ -41,6 +41,11 @@ describe("the generated conf is named after the settings it came from", () => {
   });
 
   test("a redirected config dir gets a file of its own", () => {
+    // With no state dir named the conf sits beside the redirected config and
+    // keeps the plain name; the hashed name is for a SHARED state dir. This
+    // used to lean on whichever earlier file had left a state dir set, and
+    // failed in any order that ran it first.
+    process.env.AGENTGLASS_STATE_DIR = mkdtempSync(join(tmpdir(), "agx-conf-state-"));
     process.env.XDG_CONFIG_HOME = join(mkdtempSync(join(tmpdir(), "agx-conf-")), "config");
     const name = basename(confPath());
     expect(name).not.toBe("tmux.conf");
