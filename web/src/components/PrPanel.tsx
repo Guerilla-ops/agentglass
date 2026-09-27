@@ -80,13 +80,13 @@ import { UnreadBadge } from "./UnreadBadge.tsx";
 import { excerpt, findInDiffs, groupByFile, type Match } from "../lib/diffFind.ts";
 import { PrFilterBar } from "./PrFilterBar.tsx";
 import { FilterBuilder } from "./tasks/FilterBuilder.tsx";
-import { EMPTY as EMPTY_RULES, applyWith, readFilterSet, type FilterSet } from "./tasks/filters.ts";
+import { EMPTY as EMPTY_RULES, readFilterSet, type FilterSet } from "./tasks/filters.ts";
 import { Avatar } from "./Avatar.tsx";
 import { StatusPill } from "./StatusPill.tsx";
 import { PeekFile, type Peek } from "./PeekFile.tsx";
 import { MERGE_WHY, mergeBlockedWhy, checksLine, checksStanding, standingLine, checksShort, mergeVerdict, githubWillMerge } from "../../../shared/mergeReason.ts";
 import { mergeBlockers, mergeRefusal, autoMergeRefusal, staleApproval, type MergeBlocker } from "../../../shared/mergeBlockers.ts";
-import { parseQuery, applyFilters, peopleMatched, buildFacets, activeCount, readPrField, builderFields, queryToRules, type RepoFacets } from "../lib/prFilter.ts";
+import { parseQuery, applyFilters, applyRulesKeepUnread, peopleMatched, buildFacets, activeCount, readPrField, builderFields, queryToRules, type RepoFacets } from "../lib/prFilter.ts";
 import { CodeBlock as MdCodeBlock } from "../lib/mdCode.tsx";
 import { externalUrl, openExternal } from "../lib/externalUrl.ts";
 import { cardRef, chipAction } from "../lib/cardRef.ts";
@@ -2968,9 +2968,12 @@ export function PrView({ active, onOpenChatWith, onReviewInTerminal, jumpTo }: {
       return nextMap;
     });
   };
+  // Same predicate the "N unread" chip counts by — see applyRulesKeepUnread.
+  const isRuleExempt = (p: PrSummary) => !!unreadOf(p, repo?.key, seenMarks);
   const basePrs = useMemo(
-    () => applyWith(applyFilters(pool, filters), rules, readPrField),
-    [pool, filters, rules],
+    () => applyRulesKeepUnread(applyFilters(pool, filters), rules, readPrField, isRuleExempt),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [pool, filters, rules, repo?.key, seenMarks],
   );
   const unreadPrs = useMemo(
     () => basePrs.filter((p) => unreadOf(p, repo?.key, seenMarks)),
@@ -3094,8 +3097,16 @@ export function PrView({ active, onOpenChatWith, onReviewInTerminal, jumpTo }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [boardReview, hasTaskProvider, cardTick],
   );
-  const boardMineShown = useMemo(() => applyWith(boardMineCards, rules, readPrField), [boardMineCards, rules]);
-  const boardReviewShown = useMemo(() => applyWith(boardReviewCards, rules, readPrField), [boardReviewCards, rules]);
+  const boardMineShown = useMemo(
+    () => applyRulesKeepUnread(boardMineCards, rules, readPrField, isRuleExempt),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [boardMineCards, rules, repo?.key, seenMarks],
+  );
+  const boardReviewShown = useMemo(
+    () => applyRulesKeepUnread(boardReviewCards, rules, readPrField, isRuleExempt),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [boardReviewCards, rules, repo?.key, seenMarks],
+  );
 
   /*
    * The fields the builder offers, taken from the rows the surface is drawing.
