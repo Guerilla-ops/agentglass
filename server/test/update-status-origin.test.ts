@@ -22,6 +22,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TMUX_TEST_TMPDIR } from "./tmuxTmp.ts";
 import { SERVER_BOOT_MS } from "./serverBoot.ts";
+import { freePort } from "./freePort.ts";
 
 /** Stands in for the developer's home directory in the build record. If this
  *  string reaches a browser, the redaction failed. */
@@ -53,7 +54,7 @@ beforeAll(async () => {
     at: "2026-01-02T00:00:00Z", ok: false, tail: `fatal: could not read ${SECRET_SRC}`,
   }));
 
-  const port = 4910 + Math.floor(Math.random() * 20);
+  const port = await freePort();
   base = `http://127.0.0.1:${port}`;
   proc = Bun.spawn(["bun", "run", new URL("../src/index.ts", import.meta.url).pathname], {
     cwd: dir, // so buildInfo() finds the staged record above

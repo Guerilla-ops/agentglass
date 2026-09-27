@@ -35,6 +35,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { TEST_TERM } from "./tmuxTerm.ts";
+import { freePort } from "./freePort.ts";
 
 /*
  * Short, for the 108-byte unix socket path limit — a pid is five or six of
@@ -167,7 +168,7 @@ beforeAll(async () => {
 
   dir = join(TMPDIR, "agx-server");
   mkdirSync(dir, { recursive: true });
-  port = 4930 + Math.floor(Math.random() * 20);
+  port = await freePort();
   server = await startServer();
 }, 60_000);
 
