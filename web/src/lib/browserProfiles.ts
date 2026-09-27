@@ -21,6 +21,11 @@ export interface BrowserProfile {
   /** Slug, and the partition suffix. Empty is the default profile. */
   id: string;
   name: string;
+  /** S9: send `X-Agentglass-Agent` to a dev origin from this profile's tabs.
+   *  Off unless the profile turns it on — see identify-header.js for what a
+   *  dev origin is and browser-phase3-plan-2026-09-25.md §S9 for why. Absent
+   *  is the same as false, so a profile saved before this existed opens off. */
+  identify?: boolean;
 }
 
 export const DEFAULT_PROFILE: BrowserProfile = { id: "", name: "Default" };
@@ -138,10 +143,10 @@ export function loadProfiles(store: Pick<Storage, "getItem" | "setItem"> | null)
     if (!Array.isArray(doc)) return [];
     const out: BrowserProfile[] = [];
     for (const p of doc) {
-      const { id, name } = (p ?? {}) as Record<string, unknown>;
+      const { id, name, identify } = (p ?? {}) as Record<string, unknown>;
       if (typeof id !== "string" || typeof name !== "string" || !id || !SLUG.test(id)) continue;
       if (out.some((o) => o.id === id)) continue;
-      out.push({ id, name: name.slice(0, 24) });
+      out.push({ id, name: name.slice(0, 24), ...(identify === true ? { identify: true } : {}) });
     }
     return out.slice(0, MAX_PROFILES);
   } catch {
