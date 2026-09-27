@@ -173,6 +173,24 @@ describe("the panel is wired to all three", () => {
       .toBeLessThan(handler.indexOf("void serveBrowserAsk(null, ask)"));
   });
 
+  test("the handler's own early replies still name the window that sent them", () => {
+    /*
+     * `settleBrowser` (server/src/browserdrive.ts) only lets the window an ask
+     * was addressed to answer it — a reply with no `client` id looks like it
+     * came from nobody in particular and is dropped rather than delivered, so
+     * the ask sits until its own 45s timeout instead of failing fast. Every
+     * reply `serveBrowserAsk`/`serveTabs` send carries `client: clientId()`
+     * (browserBus.ts); the two the handler answers ITSELF, before an ask ever
+     * reaches either of them, did not — measured end to end: a refusal that
+     * should have been instant took the full 45s "the browser did not answer
+     * in time" instead.
+     */
+    const handler = code(between("setBrowserAskHandler((ask) => {", "setBrowserAskHandler(null)"));
+    const replies = handler.split("api.browserResult(").slice(1);
+    expect(replies.length).toBeGreaterThanOrEqual(2);
+    for (const r of replies) expect(r.slice(0, r.indexOf("}"))).toContain("client:");
+  });
+
   test("the handler hands the resolution down for the stamp", () => {
     const handler = between("setBrowserAskHandler((ask) => {", "setBrowserAskHandler(null)");
     expect(handler.includes("ask.args.atTab")).toBe(true);
@@ -183,7 +201,7 @@ describe("the panel is wired to all three", () => {
     /* The defect was one unconditional line: `addTab(...)` then set-active, on
        every mint. Any `setActiveId` in this block that is not under
        `mintTakesThePane` is that line growing back. */
-    const open = code(between("    open: (url, wanted) => {", "    close: ({ index, id }) => {"));
+    const open = code(between("    open: async (url, wanted) => {", "    close: ({ index, id }) => {"));
     expect(open.includes("mintTakesThePane(")).toBe(true);
     expect(open.match(/setActiveId\(/g)?.length ?? 0).toBe(1);
     expect(open.indexOf("mintTakesThePane(")).toBeLessThan(open.indexOf("setActiveId("));

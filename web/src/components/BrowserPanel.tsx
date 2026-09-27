@@ -25,7 +25,7 @@ import { CloseButton } from "./CloseButton.tsx";
 import { LanesRow } from "./LanesRow.tsx";
 import { Portal } from "./Portal.tsx";
 import { ContextMenu, MenuItem } from "./ContextMenu.tsx";
-import { BROWSER_PARTITION, HAS_BROWSER, IS_DESKTOP, browserDevtools, browserDevtoolsClose, browserDevtoolsRect, browserDevtoolsZoom, browserCdp, browserZoom, browserShelfRead, captureFullPage, cookieSources, onDevtoolsZoom, onDevtoolsOpen, onBrowserZoom, onBrowserOpenTab, onBrowserKey, onBrowserSearch, onBrowserInspect, setActiveBrowserGuest } from "../lib/desktop.ts";
+import { BROWSER_PARTITION, HAS_BROWSER, IS_DESKTOP, applySessionSettings, browserDevtools, browserDevtoolsClose, browserDevtoolsRect, browserDevtoolsZoom, browserCdp, browserZoom, browserShelfRead, captureFullPage, cookieSources, onDevtoolsZoom, onDevtoolsOpen, onBrowserZoom, onBrowserOpenTab, onBrowserKey, onBrowserSearch, onBrowserInspect, setActiveBrowserGuest, openEphemeralTab, closeEphemeralTab } from "../lib/desktop.ts";
 import { buildSearchUrl, displayUrl, normalizeNavigationUrl } from "../lib/browserUrl.ts";
 import { BLANK, homePage, searchEngine, zoomLevel, setZoomLevel as saveZoom, zoomPercent, stepZoom, ZOOM_MIN, ZOOM_MAX, devtoolsSide, setDevtoolsSide, devtoolsSize, setDevtoolsSize, devtoolsZoom, setDevtoolsZoom, sidebarOpen, setSidebarOpen, sidebarWidth, setSidebarWidth, type DevtoolsSide } from "../lib/browserPrefs.ts";
 import { addTab, closeTab, listable, newTab, patchTab, pruneBlank, sleepingTab, stepTab, tabLabel, wake, withInspected, type BrowserTab } from "../lib/browserTabs.ts";
@@ -65,7 +65,7 @@ import {
   HomeIcon, LockIcon, MoreIcon, NoteIcon, PenIcon, ReloadIcon, SearchIcon,
   SpinnerIcon, StopIcon, TargetIcon, FolderIcon, ContainerIcon, SpaceIcon, CameraIcon, PanelIcon, UpIcon, DownIcon, SplitIcon,
 } from "./browser/icons.tsx";
-import { DoneIcon, SwapIcon } from "../lib/glyphIcons.tsx";
+import { CheckboxIcon, DoneIcon, SwapIcon } from "../lib/glyphIcons.tsx";
 
 /** Electron's `<webview>` is not in React's JSX catalogue, and its methods are
  *  not on HTMLElement. Narrowed to the handful actually called here rather than
@@ -433,6 +433,30 @@ export function BrowserView({ active: viewOn, scope }: {
     return () => { window.removeEventListener("pagehide", flush); flush(); };
   }, [profile, tabs, activeId]);
 
+  /**
+   * An ephemeral tab's jar is wiped the moment it is no longer among the
+   * tabs — not just when the two `close` verbs run it directly.
+   *
+   * `newtab --from-template`'s partition is never persisted (`saveSession`
+   * keeps only `url`/`title`/`icon`, never `partition`), so a tab can leave
+   * the strip without either close callback ever running: `pruneBlank`
+   * drops a background blank tab, a profile switch unmounts every tab not in
+   * the new one, `forgetProfileTabs` drops a whole container's tabs at once.
+   * Each of those used to leave the partition allowed on main's side
+   * (`tabEphemerals`) and its cookies live in memory for the rest of the
+   * session — measured: 8 of those and every new ephemeral mint refuses with
+   * "8 ephemeral tabs are already open", none of them visible anywhere to
+   * close. Comparing the set on every render catches all of them the same
+   * way, including the two explicit `close` paths — so neither needs its own
+   * call any more.
+   */
+  const ephemeralPartitions = useRef<ReadonlySet<string>>(new Set());
+  useEffect(() => {
+    const now = new Set(tabs.map((t) => t.partition).filter((p): p is string => !!p));
+    for (const p of ephemeralPartitions.current) if (!now.has(p)) void closeEphemeralTab(p);
+    ephemeralPartitions.current = now;
+  }, [tabs]);
+
   /** Selecting a tab is what opens it: everything that changes the selection
    *  goes through here so a sleeping tab cannot be shown without a guest. */
   const show = useCallback((id: string) => {
@@ -550,6 +574,10 @@ export function BrowserView({ active: viewOn, scope }: {
    *  one statement before `TabOps.open` reads it — see the note there for why a
    *  ref is safe here and an argument was not available. */
   const mintShow = useRef(false);
+  /** The same trick, for `newtab --from-template`: did the ask now being
+   *  served ask for an ephemeral tab? `TabOps.open` reads this to decide
+   *  whether to mint a partition from main first (see the note there). */
+  const mintEphemeral = useRef(false);
   /** The same trick for the two other things a keyboard callback has to read
    *  fresh: which tab is in front, and what is on the shelf. */
   const activeIdRef = useRef("");
@@ -633,7 +661,22 @@ export function BrowserView({ active: viewOn, scope }: {
       setTabs((cur) => wake(cur, t.id));
       return true;
     },
-    open: (url, wanted) => {
+    open: async (url, wanted) => {
+      /*
+       * READ ONCE, BEFORE THE ONLY AWAIT IN THIS FUNCTION.
+       *
+       * `mintShow`/`mintEphemeral` are refs because `TabOps.open(url, profile)`
+       * takes no third argument (see the note further down) — safe when every
+       * call site reaches this SYNCHRONOUSLY, which used to be true for all of
+       * them. An ephemeral mint's `await openEphemeralTab()` broke that: a
+       * second ask landing during the round trip overwrites the ref before
+       * this call gets back to reading it, so `mintTakesThePane` would answer
+       * for whichever ask arrived last, not this one. Snapshotting both up
+       * front is what restores "nothing can interleave between the read and
+       * the write" for this call specifically.
+       */
+      const wantsShow = mintShow.current;
+      const wantsEphemeral = mintEphemeral.current;
       /* A profile named for the first time is MINTED, not refused — an agent
          saying `--as agent` should not have to stop and ask a human to click
          "add profile" first, and that ask was the 40-minute cost spec §7
@@ -664,11 +707,52 @@ export function BrowserView({ active: viewOn, scope }: {
         saveProfiles(globalThis.localStorage ?? null, known);
         id = r.profile.id;
       }
-      const made = addTab(tabsRef.current, url, activeIdRef.current, id ?? profile, undefined);
+      /*
+       * `newtab --from-template`'s own jar, minted BEFORE the tab exists.
+       *
+       * The partition has to be right the first time a guest attaches —
+       * guardWebviews checks it at that exact moment, with no second chance —
+       * so this awaits main rather than handing the tab a placeholder and
+       * patching it in later. `mintEphemeral` rather than an argument for the
+       * same reason `mintShow` is a ref: `TabOps.open(url, profile)` takes no
+       * third one, and the interface lives in browserBus.ts.
+       */
+      let partition: string | undefined;
+      if (wantsEphemeral) {
+        const r = await openEphemeralTab();
+        if (!r.ok || !r.partition) return { error: r.error || "could not open an ephemeral tab" };
+        partition = r.partition;
+      }
+      /*
+       * `tabsRef.current` READ HERE, AFTER THE AWAIT ABOVE — and that is the
+       * other half of the same race `profilesRef` (above) already had to
+       * survive. Two ephemeral mints (or an ephemeral one and an ordinary
+       * one) can both be past their own await and racing to insert before
+       * EITHER has re-rendered, since the ref only moves on render — so the
+       * second one to reach `addTab` here would otherwise read the list from
+       * before the first one existed and its own `setTabs` would overwrite
+       * it, the exact "first container was gone" bug `makeProfile` names
+       * above. Fixed the same way: the ref moves NOW, synchronously, not at
+       * the next render.
+       */
+      // Captured before `addTab` sees the list, and before the ref moves
+      // below: `made.tabs` already carries the new tab, and "existing" below
+      // means the count BEFORE it — the very first tab ever must still read
+      // as `existing === 0`.
+      const existing = tabsRef.current.length;
+      const made = addTab(tabsRef.current, url, activeIdRef.current, id ?? profile, undefined, partition);
       /* The reason travels. It used to be dropped here and the caller was told
          "could not open a tab" — with the panel holding a sentence that says
          exactly what to do about it. */
-      if ("error" in made) return { error: made.error };
+      if ("error" in made) {
+        /* The jar was already minted above; refusing to seat the tab must not
+           leave it live in main's `tabEphemerals` with nothing in `tabs` ever
+           able to reach it — the `ephemeralPartitions` effect only wipes a
+           partition that WAS in `tabs`, and this one never got there. */
+        if (partition) void closeEphemeralTab(partition);
+        return { error: made.error };
+      }
+      tabsRef.current = made.tabs;
       setTabs(made.tabs);
       /*
        * §12: THIS USED TO BE AN UNCONDITIONAL `setActiveId(made.tab.id)`.
@@ -685,7 +769,7 @@ export function BrowserView({ active: viewOn, scope }: {
        * wake-up. Background is not asleep, and that distinction is the reason
        * this could be done at all.
        */
-      if (mintTakesThePane({ existing: tabsRef.current.length, show: mintShow.current })) {
+      if (mintTakesThePane({ existing, show: wantsShow })) {
         setActiveId(made.tab.id);
       }
       return { id: made.tab.id };
@@ -704,6 +788,9 @@ export function BrowserView({ active: viewOn, scope }: {
       if (gone && !next.tabs.some((x) => (x.profile || "") === gone)) forgetProfileTabs(gone);
       setTabs(next.tabs);
       setActiveId(next.activeId);
+      /* `newtab --from-template`'s jar, if this was one, is wiped by the
+         `ephemeralPartitions` effect above the moment it drops out of
+         `tabs` — same as every other way a tab can leave the strip. */
       return true;
     },
   });
@@ -833,6 +920,7 @@ export function BrowserView({ active: viewOn, scope }: {
        * call site sets it again inside its own timeout, from the same frame.
        */
       mintShow.current = ask.args.show === true;
+      mintEphemeral.current = ask.args.ephemeral === true;
       /* §9: if a page is addressed explicitly, route to that tab's webview.
          Otherwise use the active one. */
       let targetId = activeIdRef.current;
@@ -852,6 +940,12 @@ export function BrowserView({ active: viewOn, scope }: {
         if (!tabsRef.current.some((t) => t.id === targetId)) {
           void api.browserResult({
             id: ask.id, ok: false,
+            /* `settleBrowser` only accepts a reply from the window the ask was
+               sent to, so a reply with no `client` id is nobody's answer as far
+               as the server can tell and is dropped rather than delivered — the
+               ask then sits until its own 45s timeout, and a refusal that took
+               that long to arrive reads exactly like a hang. */
+            client: clientId(),
             /* Three causes, and the third is the one that bit a peer session
              twice: tab ids are minted fresh on every launch, so an id written
              down before a restart names nothing afterwards — with the page
@@ -902,7 +996,9 @@ export function BrowserView({ active: viewOn, scope }: {
           acts: ask.args.acts !== false,
         });
         if (refusal) {
-          void api.browserResult({ id: ask.id, ok: false, error: refusal })
+          // See the `client` comment on the "no tab called" reply above: the
+          // same drop-on-the-floor timeout applies here.
+          void api.browserResult({ id: ask.id, ok: false, error: refusal, client: clientId() })
             .catch(() => { /* already timed out */ });
           return;
         }
@@ -931,6 +1027,7 @@ export function BrowserView({ active: viewOn, scope }: {
         /* Re-armed from THIS frame: 1.2 s is long enough for another agent's
            ask to have run and left its own answer in the ref. */
         mintShow.current = ask.args.show === true;
+        mintEphemeral.current = ask.args.ephemeral === true;
         void serveBrowserAsk(els.current.get(targetId) as unknown as DrivableWebview | null, ask);
       }, 1200);
     });
@@ -1125,6 +1222,9 @@ export function BrowserView({ active: viewOn, scope }: {
       if (gone && !r.tabs.some((t) => (t.profile || "") === gone)) forgetProfileTabs(gone);
       return r.tabs;
     });
+    /* The × on the row closes an ephemeral tab's jar too — wiped by the
+       `ephemeralPartitions` effect above once this drops the tab from
+       `tabs`, the same as every other way one can leave the strip. */
   }, []);
 
   /**
@@ -1227,6 +1327,21 @@ export function BrowserView({ active: viewOn, scope }: {
     });
     if (id === profile) switchTo("");
   }, [profile, switchTo]);
+
+  /*
+   * S9: whether this container's tabs send `X-Agentglass-Agent` to a dev
+   * origin. Same stale-closure care as `forgetProfile` above — two agents
+   * flipping two different containers in quick succession must not have the
+   * second write undo the first.
+   */
+  const toggleIdentify = useCallback((id: string) => {
+    const on = !profilesRef.current.find((p) => p.id === id)?.identify;
+    const next = profilesRef.current.map((p) => (p.id === id ? { ...p, identify: on } : p));
+    profilesRef.current = next;
+    setProfiles(next);
+    saveProfiles(globalThis.localStorage ?? null, next);
+    void applySessionSettings({ identify: on, partition: partitionFor(BROWSER_PARTITION, id) });
+  }, []);
 
   /* A page that opened a window used to be handed to the OS browser, because a
      single-page view had nowhere to put it. Now it goes beside the tab it came
@@ -2866,7 +2981,11 @@ export function BrowserView({ active: viewOn, scope }: {
                 <webview
                   ref={bind(t.id) as unknown as React.Ref<HTMLElement>}
                   src={src}
-                  partition={partitionFor(BROWSER_PARTITION, t.profile)}
+                  /* `newtab --from-template`'s own in-memory jar, when this
+                     tab is one — main minted it (`ag:tabEphemeralOpen`) and
+                     guardWebviews only lets THIS window attach on it. Every
+                     other tab falls back to the ordinary, profile-keyed one. */
+                  partition={t.partition ?? partitionFor(BROWSER_PARTITION, t.profile)}
                   /* A page may ask for a window. What happens to the request is
                      decided in the shell — a sign-in popup gets a real window, a
                      link becomes a tab — but without this attribute the guest
@@ -3330,6 +3449,18 @@ export function BrowserView({ active: viewOn, scope }: {
                   )}
                   <MenuItem onClick={shut(() => { switchTo(space.id); setOmni("new"); })}>Open a page here</MenuItem>
                   <MenuItem onClick={shut(() => foldSpace(space.id))}>{folded.has(space.id) ? "Show its pages" : "Fold it"}</MenuItem>
+                  {/* S9. Not offered on the default container: it is the
+                      person's own identity, not something an agent made, and
+                      there is nowhere to keep the setting for it — profiles
+                      are the only thing this file has a record of. */}
+                  {space.id && (
+                    <MenuItem onClick={shut(() => toggleIdentify(space.id))}>
+                      <span className="flex items-center gap-1.5">
+                        <CheckboxIcon size={ICON.sm} checked={!!profiles.find((p) => p.id === space.id)?.identify} />
+                        Identify to dev servers
+                      </span>
+                    </MenuItem>
+                  )}
                   {/* The default container cannot be closed: it is where you
                       land when any other one goes. */}
                   {space.id && (
