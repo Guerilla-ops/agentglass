@@ -1,60 +1,70 @@
 /*
- * A page you cannot reach by typing what is on it.
+ * The old version of this test checked that a row's words were somewhere in
+ * its page's `kw` bag — an input to the search, not the search itself, and
+ * one a page could satisfy by accident (a word shared with an unrelated
+ * row) while still never actually indexing the row it was meant to cover.
  *
- * The nav filter matches a PAGE by its label plus a hand-written `kw` bag. The
- * row filter then matches the rows on whichever page you are standing on. Those
- * two are only as good as their weakest half: type a word that is on a row but
- * not in that page's `kw`, and the nav hides the page — so the row filter never
- * gets a chance to find it, and the search reports the setting does not exist.
- *
- * Measured, not imagined: typing "scrollback" hid Terminal (which owns the
- * Scrollback rows) and left one result, Pane engine, whose "Restore after
- * reboot" paragraph happens to use the word. The right page was the one taken
- * off screen.
- *
- * So: every row label on a page must be reachable from that page's own `kw`.
- * This reads the labels out of the source rather than a list somebody keeps by
- * hand, because a list kept by hand is the thing that went stale.
+ * Search no longer runs on `kw` for a row-level answer at all: it runs on
+ * SETTINGS_ROWS, generated straight from the JSX. So the guard this file
+ * owes the next reader is stricter and more direct — every literal
+ * `label="…"` on a page, read the same way settings-is-a-page.test.ts and
+ * gen-settings-index.ts already read this file, actually made it into
+ * SETTINGS_ROWS for that pane. A label that did not is a row search can
+ * never find no matter what a page's `kw` says.
  */
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
+import { SETTINGS_ROWS } from "../src/lib/settingsRows.gen.ts";
 
 const src = readFileSync(new URL("../src/components/SettingsModal.tsx", import.meta.url).pathname, "utf8");
 
-/** `{ id: "x", label: "X", group: "G", kw: "..." }` — the nav's own table. */
-function tabKeywords(): Map<string, string> {
-  const out = new Map<string, string>();
-  const re = /\{ id: "([a-z-]+)"(?: as const)?, label: "([^"]*)", group: "[^"]*", kw: "([^"]*)"/g;
-  for (let m = re.exec(src); m; m = re.exec(src)) out.set(m[1]!, (m[2]! + " " + m[3]!).toLowerCase());
-  return out;
-}
-
-/** The source between one `{pane === "x" && …}` and the next: everything that
- *  page draws inline. Panes drawn by an imported component contribute nothing
- *  here, which is honest — this guard can only see what is in this file. */
+/** The source between one `{show("x") && …}` and the next. A page's content
+ *  used to be gated by `pane === "x"`; it is now gated by `show("x")` — the
+ *  current page with no query running, or the query's own result set while
+ *  one is (see settingsIndex.ts's `show`/`matches` in SettingsModal.tsx) —
+ *  so this reads the new marker instead. */
 function paneBlocks(): { id: string; body: string }[] {
-  const marks = [...src.matchAll(/\{pane === "([a-z-]+)" &&/g)];
+  const marks = [...src.matchAll(/\{show\("([a-z-]+)"\) &&/g)];
   return marks.map((m, i) => ({
     id: m[1]!,
     body: src.slice(m.index!, i + 1 < marks.length ? marks[i + 1]!.index! : src.length),
   }));
 }
 
-describe("every setting is reachable from the search box", () => {
-  test("a row's label words are in its page's keywords", () => {
-    const kw = tabKeywords();
-    expect(kw.size).toBeGreaterThan(15);
-    const unreachable: string[] = [];
-    for (const { id, body } of paneBlocks()) {
-      const words = kw.get(id);
-      if (words === undefined) continue; // a pane with no nav row of its own
-      for (const label of body.match(/\blabel="([^"]{2,60})"/g) ?? []) {
-        const text = label.slice(7, -1);
-        const missing = (text.match(/[a-zA-Z]{4,}/g) ?? []).filter((w) => !words.includes(w.toLowerCase()));
-        if (missing.length) unreachable.push(`${id}: “${text}” — ${missing.join(", ")}`);
-      }
-    }
-    expect(["Add these words to that page's kw so typing them finds it:", ...unreachable].join("\n"))
-      .toEqual("Add these words to that page's kw so typing them finds it:");
-  });
+/** A conservative subset of gen-settings-index.ts's own row-tag detection:
+ *  a literal label directly on one of the primitives this file draws rows
+ *  with. Anything the generator resolves through a NAMED SUB-COMPONENT
+ *  (`<HooksPane`, `<RemoteAccessPane`) is outside what this file alone can
+ *  see, and is not this test's job — the generator's own freshness test
+ *  (settings-index-rows.test.ts) covers those. */
+const DIRECT_ROW_TAGS = ["SettingRow", "Row", "Toggle", "Fold", "Select", "Stepper", "Choice", "Bulk", "Path", "MiniBtn", "SoundRow"];
+
+function directLabels(body: string): string[] {
+  const labels = [...body.matchAll(/(?<!aria-)\blabel="([^"]{1,90})"/g)];
+  const out: string[] = [];
+  for (const m of labels) {
+    const before = body.slice(Math.max(0, m.index! - 500), m.index!);
+    const tagMatch = [...before.matchAll(/<([A-Z][A-Za-z0-9]*)(?:<[^<>]*>)?[\s]/g)].pop();
+    if (tagMatch && DIRECT_ROW_TAGS.includes(tagMatch[1]!)) out.push(m[1]!);
+  }
+  return out;
+}
+
+describe("every row drawn directly in a pane's own block is in SETTINGS_ROWS", () => {
+  const byPane = new Map<string, Set<string>>();
+  for (const r of SETTINGS_ROWS) {
+    if (!byPane.has(r.pane)) byPane.set(r.pane, new Set());
+    byPane.get(r.pane)!.add(r.label);
+  }
+
+  for (const { id, body } of paneBlocks()) {
+    const labels = directLabels(body);
+    if (!labels.length) continue;
+    test(`${id}: every direct row label is indexed`, () => {
+      const known = byPane.get(id) ?? new Set();
+      const missing = labels.filter((l) => !known.has(l));
+      expect(["Run `bun run gen:settings-index` in web/ — these rows are missing:", ...missing].join("\n"))
+        .toEqual("Run `bun run gen:settings-index` in web/ — these rows are missing:");
+    });
+  }
 });

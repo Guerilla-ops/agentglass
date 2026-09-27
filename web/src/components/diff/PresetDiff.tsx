@@ -29,7 +29,7 @@ import { diffSplit, diffWrap, setDiffSplit, setDiffWrap } from "../../lib/diffPr
 import { useIncremental } from "../../lib/useIncremental.ts";
 import { ICON } from "../../lib/iconSize.ts";
 import { SplitDiff, UnifiedDiff, SCROLLBAR_CSS, SPLIT_SEL_CSS } from "./DiffLines.tsx";
-import { ThemePicker, Toggle } from "./DiffControls.tsx";
+import { ThemePicker, Toggle, DiffSettingsLink } from "./DiffControls.tsx";
 import { WarningIcon } from "../../lib/glyphIcons.tsx";
 import { riskColor, riskTitle } from "../../lib/riskView.ts";
 
@@ -124,6 +124,7 @@ function Inner({ changes, title, path, onBack, backLabel, onClose }: Omit<Preset
           <Toggle on={split} onClick={() => { setSplit(!split); setDiffSplit(!split); }} title="Side by side">split</Toggle>
           <Toggle on={wrap} onClick={() => { setWrap(!wrap); setDiffWrap(!wrap); }} title="Wrap long lines">wrap</Toggle>
           <ThemePicker value={themePref} onChange={setThemePref} error={hiliteError} />
+          <DiffSettingsLink />
           <CloseButton onClick={onClose} />
         </div>
       </div>

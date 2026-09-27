@@ -172,7 +172,11 @@ function DesktopMark({ source }: { source: string }) {
  *  one decision — a mode click applies the matching serious theme, a grid click
  *  applies that palette and re-labels the segment — and keeps app state in step
  *  through `onChange`. */
-export function AppearancePane({ current, onChange }: { current: string; onChange: (id: string) => void }) {
+export function AppearancePane({ current, onChange, onAccent }: {
+  current: string; onChange: (id: string) => void;
+  /** Told when the accent changes, so a page-level Reset can tell it moved. */
+  onAccent?: (id: string) => void;
+}) {
   const [mode, setMode] = useState<ThemeMode>(() => themeMode());
   /* Which desktop palette is on offer, if any — re-read when it moves, so the
      line under the switch names the theme that is actually on. */
@@ -201,6 +205,7 @@ export function AppearancePane({ current, onChange }: { current: string; onChang
     setAccentPref(id);
     applyTheme(current); // re-assert the theme so the overlay (or its removal) lands
     setAccentState(id);
+    onAccent?.(id);
   };
   /* Following is the absence of an override, so the switch writes "" going on
      and the last colour going off — never nothing, or the row would look
@@ -244,7 +249,7 @@ export function AppearancePane({ current, onChange }: { current: string; onChang
           over a desktop theme whose own accent they wanted, because nothing on
           that circle said what it did. A sentence can say it; a swatch cannot. */}
       <SettingRow
-        label="Accent"
+        label="Accent" modified={!following}
         hint={following
           ? <>Following your theme{desk && mode === "desktop" ? <> — <b style={{ color: "var(--text3)" }}>{desk.name}</b> brings its own</> : <>'s own primary</>}.</>
           : <>Laid over the theme's own primary, for the things that read as live.</>}

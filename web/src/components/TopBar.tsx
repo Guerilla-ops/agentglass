@@ -25,6 +25,7 @@ import { windowLabel } from "../../../shared/quota.ts";
 import { stalenessLabel } from "../lib/usageAge.ts";
 import { paceConfig, subscribePaceConfig } from "../lib/paceConfig.ts";
 import { OLD_READING_MS, windowPace } from "../lib/usagePace.ts";
+import { warmDayStrip } from "../lib/dayStrip.ts";
 import { DayStrip, PaceLines, PaceMarker } from "./PlanPace.tsx";
 import { metersMustHide } from "../lib/topbarFit.ts";
 import { subscribe as subscribeChats, listChats, getActiveChatId, getChat } from "../lib/chatStore.ts";
@@ -37,7 +38,9 @@ import { LivingMark } from "./Logo.tsx";
 import { useAmbientNotes, NoteToast, NotifyBell } from "./TopBarNotes.tsx";
 import { NeedsPopover, type NeedsItem } from "./NeedsPopover.tsx";
 import { needsStaysOpen } from "../lib/needsPanel.ts";
-import { ICON } from "../lib/iconSize.ts";
+import { ICON, MIN_BOX } from "../lib/iconSize.ts";
+import { GearIcon } from "./workspace/icons.tsx";
+import { openSettings } from "../lib/openSettings.ts";
 import { appChordFor, chordLabel } from "../lib/keybindings.ts";
 import { FolderIcon, SearchIcon } from "../lib/glyphIcons.tsx";
 import { scopeLabel, scopeTitle } from "../lib/projectPick.ts";
@@ -318,6 +321,9 @@ function PlanPanel({ u, age, at, onClose, onRefresh, busy }: {
           <span className="ml-auto text-[10px]" style={{ color: age ? "var(--warning)" : "var(--text4)" }}>
             {age ? `last read ${age} ago` : ageLabel(u.observedAt)}
           </span>
+          <button type="button" onClick={() => { onClose(); openSettings("budgets"); }} aria-label="Usage settings…" title="Usage settings…"
+                className="shrink-0 grid place-items-center rounded hover:bg-white/10"
+                style={{ width: MIN_BOX, height: MIN_BOX, color: "var(--text3)" }}><GearIcon size={ICON.xs} /></button>
           <button onClick={onRefresh} disabled={busy} title="Read the plan again"
             className="shrink-0 grid place-items-center rounded hover:bg-white/10 disabled:opacity-40"
             style={{ width: 20, height: 20, color: "var(--text3)" }}>
@@ -577,6 +583,7 @@ export function TopBar({
   const planBtn = useRef<HTMLButtonElement | null>(null);
   const [planAt, setPlanAt] = useState<{ top: number; right: number } | null>(null);
   const openPlan = useCallback(() => {
+    warmDayStrip().catch(() => {});
     setPlanAt((was) => {
       if (was) return null;
       const r = planBtn.current?.getBoundingClientRect();
@@ -590,6 +597,9 @@ export function TopBar({
      Reported as "sometimes it does not appear at all"; it was never about the
      plan, it was about where you happened to be standing. */
   const u = (ctx ? usageOf(ctx) : null) ?? (ctx ? null : busiestOf(providerUsage()));
+  // The popover's day chart is answered before the popover exists; see dayStrip.ts.
+  const planProvider = u?.provider;
+  useEffect(() => { if (planProvider === "anthropic") warmDayStrip().catch(() => {}); }, [planProvider]);
   // A provider that has no reading to give right now — rate-limited, signed
   // out, or one that never reports at all. Worth saying out loud: a meter that
   // silently stops moving reads as "you have used nothing", the opposite of

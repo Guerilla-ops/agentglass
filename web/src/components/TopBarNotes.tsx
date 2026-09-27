@@ -46,7 +46,9 @@ import { openPr, openPrs } from "../lib/openPrs.ts";
 import { Portal } from "./Portal.tsx";
 import { CloseButton } from "./CloseButton.tsx";
 import { appLinkFor } from "../lib/appLink.ts";
-import { ICON } from "../lib/iconSize.ts";
+import { ICON, MIN_BOX } from "../lib/iconSize.ts";
+import { GearIcon } from "./workspace/icons.tsx";
+import { openSettings } from "../lib/openSettings.ts";
 import {
   canMute, groupNotes, laneOf, mutedSources, setMuted, sourceLabel, sourceOf, subscribeMuted,
   type Lane,
@@ -796,6 +798,9 @@ export function NotifyBell({ noDrag, onGoto }: {
                 {quiet ? "Quiet on" : "Quiet"}
               </button>
               <button className="agx-note-btn ml-auto" onClick={() => { clearNotes(); setOpen(false); }}>Clear all</button>
+              <button type="button" onClick={() => { setOpen(false); openSettings("notifications"); }} aria-label="Notification settings…" title="Notification settings…"
+                className="shrink-0 grid place-items-center rounded hover:bg-white/10"
+                style={{ width: MIN_BOX, height: MIN_BOX, color: "var(--text3)" }}><GearIcon size={ICON.xs} /></button>
               <CloseButton onClick={() => setOpen(false)} title="Close (Esc)" className="agx-note-btn" />
             </div>
             {/* Which lane to read. Only drawn when there is more than one to

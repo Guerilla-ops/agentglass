@@ -282,6 +282,14 @@
     container-name: agx-settings;
   }
 
+  /* A long hint shows one line and a More control; the words stay in the DOM. */
+  .agx-settings-hint-clamp {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 1;
+    overflow: hidden;
+  }
+
   /*
    * Two tracks: the words, and a control column every pane shares.
    *
@@ -298,10 +306,13 @@
    * shared column for the ordinary rows and lets the wide ones take the room
    * they need out of the words instead of out of legibility. The right edge is
    * still shared, because column 2 ends where the row ends either way.
+   *
+   * The floor makes every label wrap at the same width, so hints line up page
+   * to page.
    */
   .agx-settings-row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, max-content);
+    grid-template-columns: minmax(0, 1fr) minmax(var(--settings-control-w), max-content);
     column-gap: 32px;
     row-gap: 8px;
     align-items: center;
@@ -325,6 +336,24 @@
      buttons on the Rail page. */
   .agx-settings-row > :only-child { justify-self: start; }
   .agx-settings-row.items-start { align-items: start; }
+
+  /*
+   * The landing flash — Enter on a search result, or a link that opens
+   * Settings on one particular row (openSettings(pane, row)). A person just
+   * told the app exactly which row they meant; scrolling it into view and
+   * leaving it looking like every other row is the same "did that work"
+   * gap a click with no visible response leaves. `border-radius` rides
+   * along on the row's own — it never has one set explicitly here, so a
+   * hard-coded 8px would fight whatever a page has set.
+   */
+  .agx-row-flash { animation: agx-row-flash 1.1s ease-out; border-radius: inherit; }
+  @keyframes agx-row-flash {
+    0% { background: color-mix(in srgb, var(--primary) 30%, transparent); }
+    100% { background: transparent; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .agx-row-flash { animation: none; background: color-mix(in srgb, var(--primary) 22%, transparent); }
+  }
 
   /*
    * Below this the control column costs more than it earns, so the control
@@ -383,6 +412,9 @@
   --surface-inset: color-mix(in srgb, var(--bg3) 78%, var(--bg2));
   --surface-line: color-mix(in srgb, var(--border) 60%, transparent);
   --surface-lift: 0 1px 2px rgba(0, 0, 0, 0.18), 0 10px 26px -18px var(--shadow);
+  /* The floor of a settings row's control column. On the root, not the column,
+     so a row drawn outside .agx-settings-col still has a grid. */
+  --settings-control-w: 220px;
 }
 
 /*
@@ -607,7 +639,33 @@
    levels — written as `> *` it silently stopped matching the day the card
    went in, and the result is an empty box with a heading over nothing. */
 .agx-settings-section:has(.agx-settings-rows:empty) { display: none; }
+/*
+ * The same problem one level down: `<Group>Sound</Group>` is a heading with
+ * no card of its own — Section's fix above only reaches a heading that owns
+ * a wrapping `.agx-settings-rows` div, and a Group's rows are its plain
+ * siblings, added one component at a time (`<Toggle .../>` after
+ * `<Toggle .../>`), not children it wraps. Measured on Notifications: typing
+ * "sound" left "Pull request checks" / "Pull request conversation" / "From
+ * your desktop" standing with nothing under them, because every row that
+ * survived a search still returns null for the ones that didn't — a row
+ * removed by the Filter context leaves the DOM, it does not merely hide.
+ *
+ * So a group heading is empty exactly when there is nothing between it and
+ * whatever comes next: another group heading right after it (nothing
+ * survived in between), or nothing at all (it is the last thing left in its
+ * section). No wrapper needed — both are answerable from where it already
+ * sits among its own siblings.
+ */
+.agx-settings-group-heading:has(+ .agx-settings-group-heading),
+.agx-settings-group-heading:last-child {
+  display: none;
+}
 .agx-hover:hover { background: color-mix(in srgb, var(--text) 6%, transparent); }
+/* The keyboard's cursor over a search result — the same tint `.agx-hover`
+   already uses for a mouse over one, so a row highlighted by ↑/↓ reads as
+   the thing a click would land on, not a new kind of mark nobody has seen
+   on this page before. */
+.agx-row-current { background: color-mix(in srgb, var(--text) 6%, transparent); border-radius: inherit; }
 
 /*
  * The hover a chip could not have.
@@ -2287,4 +2345,11 @@ textarea.agx-input { line-height: 1.45; resize: vertical; }
 .items-baseline > svg,
 .items-baseline > :is(span, button, a).flex:has(> svg:only-child) {
   align-self: center;
+}
+
+/* The usage popover's day chart while its answer is on the way: seven quiet
+   slots breathing in a stagger, opacity only. */
+.agx-daybar-pulse { animation: agx-breathe 1.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .agx-daybar-pulse { animation: none; opacity: 0.6; }
 }

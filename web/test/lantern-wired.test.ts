@@ -95,9 +95,10 @@ describe("Go", () => {
 describe("the Lantern section in Settings", () => {
   const section = settings.slice(settings.indexOf("function LanternSection("), settings.indexOf("function AgentsSection("));
 
-  test("exists, on the Agents page, and is searchable from it", () => {
-    expect(settings).toContain('{pane === "hooks" && <><HooksPane open={open} /><LanternSection open={open} />');
-    const kw = /id: "hooks", label: "Agents", group: "Agents & work", kw: "([^"]*)"/.exec(settings)?.[1] ?? "";
+  test("exists, on its own Lantern page, and is searchable from it", () => {
+    const lantern = settings.slice(settings.indexOf('{show("lantern") &&'), settings.indexOf('{ql && show("hooks")'));
+    expect(lantern).toContain("<LanternSection open={open} />");
+    const kw = /id: "lantern", label: "Lantern", group: "Agents", kw: "([^"]*)"/.exec(settings)?.[1] ?? "";
     for (const word of ["lantern", "reminder", "needs you"]) expect(kw, word).toContain(word);
   });
 
