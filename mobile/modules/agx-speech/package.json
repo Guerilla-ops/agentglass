@@ -1,0 +1,7 @@
+{
+  "name": "agx-speech",
+  "version": "1.0.0",
+  "description": "Local Expo module: on-device speech recognition, so dictation works without a computer to transcribe for it.",
+  "main": "index.ts",
+  "private": true
+}
