@@ -48,6 +48,11 @@ import { renderToStaticMarkup } from "react-dom/server";
  */
 mock.module(new URL("../src/components/Portal.tsx", import.meta.url).pathname, () => ({
   Portal: ({ children }: { children: React.ReactNode }) => React.createElement(React.Fragment, null, children),
+  // Every export, not just the one this suite draws: bun test shares one
+  // process, and a module imported after this mock (SettingsModal,
+  // Workspace) gets the mock. Measured in the CI container, where file order
+  // put them after this suite and both failed to import.
+  PortalFloor: React.createContext(0),
 }));
 /*
  * The api stub DELEGATES; it does not replace the module.

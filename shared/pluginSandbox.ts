@@ -31,6 +31,31 @@ export type SandboxResult = { ok: true; value: PluginSandbox } | { ok: false; er
  */
 export const NEVER_MOUNTABLE = ["~/.config/agentglass", "~/.ssh", "~/.gnupg", "/run/user", "~/.local/share/keyrings"] as const;
 
+/**
+ * System roots refused whatever a manifest spells — not because a leaf under
+ * them is secret, but because a live socket or device node under one runs
+ * code the moment it is read-only bound in: a bwrap `--ro-bind` still lets a
+ * plugin `connect()` a unix socket inside it, so `/tmp/tmux-1000` or
+ * `/run/docker.sock` is a way OUT of the box, not a folder to read.
+ * `resolveGrants` in server/src/plugin-sandbox.ts re-checks the same roots
+ * against the resolved path, because a symlink can lead here even when the
+ * spelling does not.
+ */
+export const NEVER_MOUNTABLE_ROOTS = ["/tmp", "/var/tmp", "/run", "/var/run", "/proc", "/sys", "/dev"] as const;
+
+/**
+ * `write` only: places that turn a grant into code that runs without the
+ * plugin even being enabled again — a shell that sources `.bashrc`, a
+ * desktop that reads `.config/autostart`, a `PATH` entry another program
+ * trusts. A `read` grant of the same path is fine; reading is not the
+ * problem `write` here refuses.
+ */
+export const PERSISTENCE_WRITE_FILES = ["~/.bashrc", "~/.profile", "~/.bash_profile", "~/.zshrc", "~/.zprofile"] as const;
+export const PERSISTENCE_WRITE_DIRS = [
+  "~/.config/fish", "~/.local/bin", "~/bin", "~/.config/systemd", "~/.config/autostart",
+  "~/.local/share/applications", "~/.config/environment.d",
+] as const;
+
 const MAX_ENTRIES = 16;
 const MAX_PATH = 200;
 const CONTROL = /[\x00-\x1f\x7f]/;
@@ -40,8 +65,11 @@ const KEYS = new Set(["network", "read", "write", "programs"]);
 /** `~/a//b/` and `~/a/b` are one path; anything else about it is the caller's. */
 const segments = (p: string): string[] => p.split("/").filter((s, i) => s !== "" || i === 0);
 const isPrefix = (a: string[], b: string[]) => a.length <= b.length && a.every((s, i) => s === b[i]);
+/** Either direction: a grant of the guarded path itself, OR of something
+ *  above it that would carry it along, whichever list is shorter. */
+const overlaps = (a: string[], b: string[]) => isPrefix(a, b) || isPrefix(b, a);
 
-function pathError(raw: unknown, key: string): { path: string } | { error: string } {
+function pathError(raw: unknown, key: "read" | "write"): { path: string } | { error: string } {
   const at = `sandbox.${key}`;
   if (typeof raw !== "string" || !raw.trim()) return { error: `${at} entries must be non-empty text` };
   if (raw.length > MAX_PATH || CONTROL.test(raw)) return { error: `${at} paths must be at most ${MAX_PATH} characters with no control characters` };
@@ -51,7 +79,18 @@ function pathError(raw: unknown, key: string): { path: string } | { error: strin
   if (raw === "/" || raw === "~/" || segs.length < 2) return { error: `${at} may not be the whole disk or the whole home folder` };
   for (const never of NEVER_MOUNTABLE) {
     const n = segments(never);
-    if (isPrefix(segs, n) || isPrefix(n, segs)) return { error: `${at} path "${raw}" is or leads to ${never}, which no plugin can be given` };
+    if (overlaps(segs, n)) return { error: `${at} path "${raw}" is or leads to ${never}, which no plugin can be given` };
+  }
+  for (const root of NEVER_MOUNTABLE_ROOTS) {
+    if (overlaps(segs, segments(root))) return { error: `${at} path "${raw}" is or leads to ${root}, which no plugin can be given` };
+  }
+  if (key === "write") {
+    for (const file of PERSISTENCE_WRITE_FILES) {
+      if (segments(file).join("/") === segs.join("/")) return { error: `${at} may not write "${raw}": a shell reads it at every login` };
+    }
+    for (const dir of PERSISTENCE_WRITE_DIRS) {
+      if (overlaps(segs, segments(dir))) return { error: `${at} may not write "${raw}": something reads it without the plugin running` };
+    }
   }
   return { path: segs.join("/") };
 }

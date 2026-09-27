@@ -22,12 +22,28 @@ the worked example, is [§6 of EXTENDING.md](EXTENDING.md#6-publish-a-plugin).
 
 ## What a plugin is
 
-**A plugin runs as you.** Its entrypoint is a command this server starts as your
-user, with your files and your network. The scope you grant limits the token the
-plugin is handed for talking to agentglass; the scope limits the token, not the
-process. Nothing here stops a plugin from reading a file, opening a socket or
-running a program on its own. Approve one only as you would run its code yourself,
-and read it first. A sandbox is planned and is not here yet.
+**A plugin runs in a box, where this host can build one.** Its entrypoint is a
+command this server starts as your user, inside a `bwrap` box: the system's own
+folders read-only, its installed folder, its own data folder
+(`$AGENTGLASS_PLUGIN_DATA`), the programs and paths its `sandbox` block lists,
+and this app's address — no home folder, no other files, and, by default, no
+internet. The scope you grant limits the token the plugin is handed for talking
+to agentglass; the scope limits the token, not the process, and the box
+limits everything else. A manifest with no `sandbox`
+block gets the default box, so a plugin that wrote to your home folder or ran a
+program from it must now declare that. **On Linux**, a host that cannot build
+the box (bubblewrap missing, or Ubuntu's AppArmor limit on user namespaces)
+**does not start** the plugin until you say it may run unboxed anyway — one
+plugin at a time (`POST /plugins/allow-unboxed {"name", "allow": true|false}`,
+revocable the same way; there is no Settings UI for this yet, only the route),
+or `AGENTGLASS_PLUGINS_UNBOXED=1` for every plugin on a host you already trust
+completely. Refused starts show why and how to fix it (install bubblewrap,
+lift the AppArmor limit, or grant the consent) rather than widening the grant
+silently; there is no per-plugin switch to run outside a box on a Linux host
+that has one. **On macOS and Windows**, where bwrap does not exist at all,
+every plugin still runs unboxed behind the same warning as before this
+release — refusing by default would not defend anything there, since there
+was never a box on those platforms to widen past.
 
 A folder with a `plugin.json` at its root. It is copied onto disk at install,
 under `~/.config/agentglass/plugins/<name>/`, and nothing in it runs at that
@@ -72,7 +88,7 @@ never written to disk.
 | `icon` | optional; a relative path inside the folder to an `.svg`, `.png` or `.webp`, at most 256 KB, served to the window with `nosniff` and a sandbox policy. Named and not shipped is the mistake `agentglass-plugin validate` warns about. |
 | `color` | optional `#rrggbb`; the tint of its mark and of the button it puts in a pull request. |
 | `minApp` | optional `major.minor.patch`; the oldest agentglass this works on. An older app refuses the install and says both versions, rather than installing something whose panel would never appear. |
-| `sandbox` | optional; what the plugin asks to be given inside a box: `network` (`agentglass`, the default, or `internet`), `read` and `write` (lists of `~/…` or absolute paths, at most 16 each) and `programs` (bare command names to put on its PATH). It is part of what a reviewer approves, so a grant that grows asks again, and the approval screen lists every path, in red when the name looks like a login. A grant of `~/.ssh`, `~/.gnupg`, `~/.config/agentglass`, the session bus folder or `~/.local/share/keyrings`, or of a folder that contains one, is refused. **Declared only for now: nothing enforces it yet and the plugin still runs as you.** No block means no declaration, and the plugin is unchanged. |
+| `sandbox` | optional; what the plugin asks to be given inside a box: `network` (`agentglass`, the default — only this app, reached through a proxy the box's own loopback is rewired onto; no internet, and no other program listening on this machine either — or `internet`, which shares the host's real network device, and with it every loopback service already listening on this machine), `read` and `write` (lists of `~/…` or absolute paths, at most 16 each) and `programs` (bare command names to put on its PATH). It is part of what a reviewer approves, so a grant that grows asks again, and the approval screen lists every path, in red when the name looks like a login. A grant of `~/.ssh`, `~/.gnupg`, `~/.config/agentglass`, the session bus folder, `~/.local/share/keyrings`, a system temp/proc/run/dev directory, a live tmux socket directory, or of a folder that contains one, is refused outright — as is a `write` grant of a shell's rc file, `~/.local/bin`, or anywhere else on this machine's PATH. **Enforced when this host can build a `bwrap` box: the process itself sees the system's own read-only folders (`/usr`, `/etc`, `/opt` and the rest of what `/`'s own layout puts there), its own installed folder (read-only), its own data folder (read-write), any declared `programs`, and the `read`/`write` paths listed here — nothing else.** On Linux, a host that cannot build one (bubblewrap missing, or blocked by Ubuntu's AppArmor user-namespace limit) refuses to start the plugin at all unless it — or every plugin, via `AGENTGLASS_PLUGINS_UNBOXED=1` — was explicitly allowed to run unboxed; only then does it run, behind a warning naming why. On macOS and Windows, where bwrap is not a thing, it always runs unboxed behind that same warning — refusing there would defend nothing. No block means the default: `agentglass` network and nothing else, so a plugin that needs more has to ask. |
 
 A manifest that fails any rule is refused with the sentence naming the rule;
 nothing is coerced into a wider shape than what was declared.
