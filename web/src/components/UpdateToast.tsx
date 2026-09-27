@@ -56,7 +56,8 @@ export function UpdateToast() {
     const tick = async () => {
       try {
         const r = await api.updateLog();
-        const p = readProgress(r.text ?? "");
+        // The step lines first: the tail alone loses them during the build.
+        const p = readProgress(`${r.steps ?? ""}\n${r.text ?? ""}`);
         setProgress(p);
         if (p.failed) { setError("The update did not finish"); setRunning(false); }
       } catch {

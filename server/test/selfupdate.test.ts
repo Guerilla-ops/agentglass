@@ -53,9 +53,19 @@ const load = async () => await import(`../src/selfupdate.ts?u=${Math.random()}`)
 
 let cwd0 = "";
 const trash: string[] = [];
-beforeEach(() => { cwd0 = process.cwd(); makeRemote(); });
+// startUpdate() truncates the update log before it spawns anything, so without
+// this every run of the suite overwrote the developer's own ~/.cache log.
+let logDir = "";
+const log0 = process.env.AGENTGLASS_UPDATE_LOG;
+beforeEach(() => {
+  cwd0 = process.cwd(); makeRemote();
+  logDir = mkdtempSync(join(tmpdir(), "agx-updlog-"));
+  process.env.AGENTGLASS_UPDATE_LOG = join(logDir, "update.log");
+});
 afterEach(() => {
   process.chdir(cwd0);
+  if (log0 === undefined) delete process.env.AGENTGLASS_UPDATE_LOG; else process.env.AGENTGLASS_UPDATE_LOG = log0;
+  rmSync(logDir, { recursive: true, force: true });
   for (const d of [remote, work, ...trash.splice(0)]) rmSync(d, { recursive: true, force: true });
 });
 
@@ -228,6 +238,32 @@ describe("self update", () => {
       await Bun.sleep(20);
     }
     expect(recovered).toBe(true);
+  });
+
+  it("keeps the step lines of a log whose build output outgrew the tail", async () => {
+    // The panel reached "step 4 of 5", then fell back to every step grey at
+    // "starting" while the update went on to finish. `/update/log` hands back
+    // the last 8000 characters, and the build step prints far more than that,
+    // so the `==> ` lines the panel counts steps from scrolled off the front.
+    const { readProgress } = await import("../../web/src/lib/updateProgress.ts");
+    const noise = Array.from({ length: 600 }, (_, i) => `  • packaging  file=dist/chunk-${i}.js size=12345`).join("\n");
+    writeFileSync(process.env.AGENTGLASS_UPDATE_LOG!, [
+      "updating to v0.3.0 from /srv/orbit.git",
+      "\n==> updating the update clone at /home/someone/.cache/agentglass/source",
+      "\n==> checking the tag v0.3.0",
+      "\n==> checking out v0.3.0",
+      "\n==> installing dependencies",
+      "\n==> building and installing (this stops the running app)",
+      noise,
+    ].join("\n"));
+    const u = await load();
+    const r = u.updateLog();
+    expect(r.text.length).toBeLessThanOrEqual(8000);
+    const p = readProgress(`${r.steps}\n${r.text}`);
+    expect(p.reached).toBe(4);
+    expect(p.current?.id).toBe("build");
+    // The tail is still the tail: the last lines are the build's, not the steps.
+    expect(p.tail).toContain("chunk-599");
   });
 
   it("ships an update script that refuses anything but a release tag", async () => {

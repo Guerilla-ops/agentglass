@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { budgetLine, hourLabel, pct, projectionText, verdictText, type PaceConfig, type Verdict } from "../../../shared/pace.ts";
 import type { UsageDay } from "../../../shared/types.ts";
 import type { WindowPace } from "../lib/usagePace.ts";
-import { api } from "../lib/api.ts";
 import { EQ_SUFFIX, fmtTokens } from "../lib/format.ts";
+import { dayCells, lastWeek, stripState, STRIP_HEIGHT, warmDayStrip } from "../lib/dayStrip.ts";
 
 /** The verdict wears the colour of what to do about it, not of how full the bar is. */
 const VERDICT_COLOR: Record<Verdict, string> = {
@@ -57,11 +57,6 @@ export function PaceLines({ wp, now, cfg, oldReading }: { wp: WindowPace; now: n
   );
 }
 
-const WEEKDAY = ["S", "M", "T", "W", "T", "F", "S"];
-
-/** Weighted tokens where the server has them, the three that cost input otherwise. */
-const dayTokens = (d: UsageDay): number => d.equiv_tokens ?? d.input_tokens + d.output_tokens + d.cache_creation_tokens;
-
 /**
  * The last seven days of activity, one bar each.
  *
@@ -69,40 +64,44 @@ const dayTokens = (d: UsageDay): number => d.equiv_tokens ?? d.input_tokens + d.
  * percentage and never a token count, so this is the nearest thing to "where
  * did the week go" that the cockpit itself has seen. Days are UTC, as the
  * server keeps them.
+ *
+ * It owns STRIP_HEIGHT in every state. Loading pulses seven quiet slots and
+ * empty says so in the same box; neither may change the popover's size.
  */
 export function DayStrip({ provider }: { provider: string }) {
-  const [days, setDays] = useState<UsageDay[] | null>(null);
   const wanted = provider === "anthropic";
+  const [days, setDays] = useState<UsageDay[] | null>(lastWeek());
   useEffect(() => {
     if (!wanted) return;
     let live = true;
-    api.usageDaily(7).then((h) => { if (live) setDays(h.days); }).catch(() => { /* the strip just does not show */ });
+    warmDayStrip().then((d) => { if (live) setDays(d); }).catch(() => { if (live) setDays((d) => d ?? []); });
     return () => { live = false; };
   }, [wanted]);
-  if (!wanted || !days) return null;
-  const byDay = new Map(days.map((d) => [d.day, dayTokens(d)]));
-  const now = Date.now();
-  const cells = Array.from({ length: 7 }, (_, i) => {
-    const t = new Date(now - (6 - i) * 86_400_000);
-    const key = t.toISOString().slice(0, 10);
-    return { key, wd: WEEKDAY[t.getUTCDay()]!, tokens: byDay.get(key) ?? 0 };
-  });
+  if (!wanted) return null;
+  const state = stripState(days);
+  const loading = state === "loading";
+  const cells = dayCells(days ?? [], Date.now());
   const top = Math.max(1, ...cells.map((c) => c.tokens));
-  if (!cells.some((c) => c.tokens > 0)) return null;
   return (
     <div>
       <div className="text-[10px] mb-1" style={{ color: "var(--text4)" }}>Weighted tokens by day · all agents</div>
-      <div className="flex items-end gap-1" style={{ height: 34 }}>
+      <div className="flex items-end gap-1 relative" style={{ height: STRIP_HEIGHT }}>
         {cells.map((c, i) => (
           <div key={c.key} className="flex-1 flex flex-col items-center justify-end gap-0.5 h-full"
-            title={`${c.key}: ${fmtTokens(c.tokens)} ${EQ_SUFFIX}`}>
-            <span className="w-full rounded-sm" style={{
-              height: c.tokens ? Math.max(2, Math.round((c.tokens / top) * 22)) : 1,
-              background: i === 6 ? "var(--primary)" : "color-mix(in srgb, var(--text) 30%, transparent)",
+            title={state === "data" ? `${c.key}: ${fmtTokens(c.tokens)} ${EQ_SUFFIX}` : undefined}>
+            <span className={`w-full rounded-sm${loading ? " agx-daybar-pulse" : ""}`} style={{
+              height: loading ? 8 : state === "data" && c.tokens ? Math.max(2, Math.round((c.tokens / top) * 22)) : 1,
+              background: state === "data" && i === 6 ? "var(--primary)" : "color-mix(in srgb, var(--text) 30%, transparent)",
+              animationDelay: loading ? `${i * 80}ms` : undefined,
             }} />
             <span className="text-[8.5px] leading-none" style={{ color: "var(--text4)" }}>{c.wd}</span>
           </div>
         ))}
+        {state === "empty" && (
+          <span className="absolute inset-x-0 top-0 text-center text-[10px]" style={{ color: "var(--text4)" }}>
+            No activity in the last 7 days
+          </span>
+        )}
       </div>
     </div>
   );

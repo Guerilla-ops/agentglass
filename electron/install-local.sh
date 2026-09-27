@@ -298,6 +298,14 @@ if [ "$sandbox_ok" = false ]; then
 fi
 
 install -m644 "$HERE/icons/icon-512.png" "$APP/icon.png" 2>/dev/null || true
+# The plugins page's Install button opens agentglass://plugin/install?url=…
+# On Linux `app.setAsDefaultProtocolClient` is not enough on its own: the
+# desktop database is what a browser consults, and it only knows what a
+# .desktop file declares. `%u` on the Exec line is the other half — without it
+# the URL is never passed to the process that was launched for it.
+#
+# Out here rather than next to the line it explains: the heredoc is unquoted
+# so that $APP expands, and a backtick inside it runs what it wraps.
 cat > "$DESKTOP/agentglass.desktop" <<EOF
 [Desktop Entry]
 Type=Application
@@ -307,11 +315,6 @@ Exec=$APP/agentglass %u
 Icon=$APP/icon.png
 Terminal=false
 Categories=Development;
-# The plugins page's Install button opens agentglass://plugin/install?url=…
-# On Linux `app.setAsDefaultProtocolClient` is not enough on its own: the
-# desktop database is what a browser consults, and it only knows what a
-# .desktop file declares. `%u` above is the other half — without it the URL
-# is never passed to the process that was launched for it.
 MimeType=x-scheme-handler/agentglass;
 EOF
 chmod 644 "$DESKTOP/agentglass.desktop"

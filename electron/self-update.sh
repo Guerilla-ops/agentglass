@@ -46,6 +46,15 @@ esac
 
 export GIT_TERMINAL_PROMPT=0 GIT_ASKPASS= SSH_ASKPASS_REQUIRE=never
 
+# This runs with the app's environment, and the app has whatever the shell that
+# last opened it exported. A real update built into another session's
+# scratchpad that way: AGENTGLASS_DIST_DIR sends electron-builder's output
+# anywhere it names, and a TMPDIR that is some other process's temp dir can be
+# gone by the time the build wants it. Without them the build lands in the
+# update clone under ~/.cache/agentglass and temp files go where they go for
+# everything else, and the app the install reopens carries neither.
+unset AGENTGLASS_DIST_DIR TMPDIR CLAUDE_CODE_TMPDIR
+
 if [ -d "$SRC/.git" ]; then
   say "updating the update clone at $SRC"
   git -C "$SRC" remote set-url origin "$ORIGIN" || fail "cannot set origin"
