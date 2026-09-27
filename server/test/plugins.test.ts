@@ -17,6 +17,7 @@ import {
   MANIFEST_NAME, pluginsConfigDir, pluginsPath, appVersion, versionAtLeast,
 } from "../src/plugins.ts";
 import { callerFor, pluginTokenCount } from "../src/auth.ts";
+import { __resetSandboxProbe } from "../src/plugin-sandbox.ts";
 import { blocklistPath } from "../src/plugin-blocklist.ts";
 
 const okManifest = {
@@ -36,14 +37,45 @@ function fixture(manifest: Record<string, unknown> = okManifest, run = "true"): 
   return dir;
 }
 
+// A manifest with no sandbox block runs in the default box now, and these
+// fixtures write outside it: a stub bwrap that fails the probe on purpose,
+// plus the unboxed consent (R1) that a host which cannot build a box now
+// needs before it starts a plugin anyway, keeps them unboxed exactly as they
+// were before boxes were the default. The box itself is tested in
+// plugin-sandbox.test.ts. Restored below: `bun test` is one process.
+const savedBwrap = process.env.AGENTGLASS_BWRAP;
+const savedUnboxed = process.env.AGENTGLASS_PLUGINS_UNBOXED;
+afterAll(() => {
+  if (savedBwrap === undefined) delete process.env.AGENTGLASS_BWRAP; else process.env.AGENTGLASS_BWRAP = savedBwrap;
+  if (savedUnboxed === undefined) delete process.env.AGENTGLASS_PLUGINS_UNBOXED; else process.env.AGENTGLASS_PLUGINS_UNBOXED = savedUnboxed;
+  __resetSandboxProbe();
+});
+
 beforeEach(async () => {
   process.env.NODE_ENV = "test";
+  process.env.AGENTGLASS_BWRAP = "/nonexistent/bwrap";
+  process.env.AGENTGLASS_PLUGINS_UNBOXED = "1";
+  __resetSandboxProbe();
   process.env.XDG_CONFIG_HOME = mkdtempSync(join(tmpdir(), "agx-plugins-"));
   await __resetPlugins();
 });
 
 afterEach(async () => {
   await __resetPlugins();
+});
+
+describe("a plugin installed before boxes were the default", () => {
+  test("gets the default box and is asked for its approval again", async () => {
+    await installPlugin(fixture());
+    await enablePlugin("watcher");
+    const file = pluginsPath();
+    const store = JSON.parse(readFileSync(file, "utf8"));
+    for (const rec of store.plugins) delete rec.sandbox;
+    writeFileSync(file, JSON.stringify(store));
+    const [rec] = listPlugins();
+    expect(rec!.sandbox).toEqual({ network: "agentglass", read: [], write: [], programs: [] });
+    expect(rec!.approvedFingerprint).toBeNull();
+  });
 });
 
 describe("manifest validation", () => {

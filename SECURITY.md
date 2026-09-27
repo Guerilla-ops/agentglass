@@ -46,8 +46,17 @@ complement, rather than replace, the private reporting path below.
   Local hooks and OTel exporters have no way to carry a secret, so the exemption exists for them; it
   is a property of where the request came from and not of the path alone,
   because those sinks write permanent rows and the alert they raise leaves the
-  machine. From anywhere else — including through a reverse proxy — they need
-  the token like everything else. `/health` stays open to anyone: it stores
+  machine, from a process of the same user (checked via `/proc` on Linux —
+  elsewhere loopback alone decides, the same as before). Same-user processes
+  can already read the 0600 token file, so the exemption serves only the
+  server's own uid; another account, or a host-networked container under a
+  different uid, dialing loopback needs the token — where one is configured
+  at all: a tokenless server (no `AGENTGLASS_TOKEN`, loopback-only bind) has
+  nothing for this check to gate and stays open to any uid, same as before —
+  it now warns loudly at startup that this is the case, but does not
+  refuse to run. From anywhere else —
+  including through a reverse proxy — they need the token like everything
+  else. `/health` stays open to anyone: it stores
   nothing, and the pairing screen probes it before it has a credential to carry.
   Binding off loopback — **or setting `AGENTGLASS_TRUST_LAN=1` at all** — makes a
   token mandatory; if none is set the server mints, persists (`0600`) and prints
@@ -75,10 +84,13 @@ complement, rather than replace, the private reporting path below.
 - **Desktop-only routes.** The self-update route executes arbitrary code and is
   reachable from the packaged shell's own origin and nothing else — not from a
   browser, not from another machine.
-  It builds only an annotated release tag, pinned to the commit the tag names
-  (a signature, when a tag carries one, has to verify), installs from the
-  lockfile, and writes its log under the user's cache rather than `/tmp`. An
-  unsigned tag is still accepted, so this does not prove who cut a release.
+  It builds only an annotated release tag, pinned to the commit the tag names,
+  installs from the lockfile, and writes its log under the user's cache
+  rather than `/tmp`. The tag's signature MUST verify against one pinned SSH
+  key (`electron/release-allowed-signers`, committed) — checked against that
+  file alone, never the local machine's own gpg/ssh trust store, so a stray
+  key already configured there cannot pass. An unsigned tag, or one signed by
+  any other key, is refused before anything is built.
 - **The token is never served over any route, to anyone.** `/remote/status`
   reports where the server is reachable and whether a device has arrived, and
   the addresses it returns are addresses — nothing in that answer, or in any
@@ -133,6 +145,10 @@ complement, rather than replace, the private reporting path below.
   the windows drop the token before they make a request. A development shell
   (`make desktop-dev`) still adopts the tokenless `make dev` server on the
   marker alone.
+  The proof is a point in time: if the proven server exits and another
+  process on this machine binds the same port before the app notices, the
+  app's next request — the desk claim included — carries the token to it.
+  Winning that race needs a local process watching the port.
 - **A held call is not released by the process being held.** Answering one
   (`/gate/decide`) needs a paired device with the `answer` grant, or — where the
   desktop app started the server — the app's own key, which it mints at launch
@@ -185,11 +201,14 @@ What this gives you, and what it does not:
 - **The credential never travels in the clear.** The server speaks plain HTTP
   over the LAN, so anything on that network sees the whole exchange — ticket,
   code, both public keys — and still has no key.
-- **It does not defend against an active on-path attacker.** Someone who can
-  rewrite traffic can substitute their own public key, and no handshake fixes
-  that without an authenticated channel. That is a TLS problem. On a network you
-  do not own, use the Tailscale address, which is encrypted end to end; the pane
-  says so where the choice is made.
+- **It does not defend against an active on-path attacker today.** The phone's
+  public key is not bound to the six-digit code shown only at the machine, so
+  someone who can rewrite traffic can substitute their own key and the pairing
+  completes anyway — that code is an out-of-band channel the handshake does
+  not use yet; comparing a fingerprint of the key against it at accept time
+  would detect the substitution. Until then, on a network you do not own, use
+  the Tailscale address, which is encrypted end to end; the pane says so where
+  the choice is made.
 - **Credentials are stored hashed** (`~/.config/agentglass/devices.json`, `0600`)
   and compared in constant time. A readable file is not a working key.
 
@@ -655,9 +674,10 @@ master switch (`/plugins/master`) stops every plugin at once.
 
 A plugin runs as **its own process**, started by this server with four
 variables in its environment (`PATH`, `HOME`, `AGENTGLASS_URL`,
-`AGENTGLASS_READ_TOKEN`) and nothing inherited. **It runs as you**: the
-scope limits that token, not the process, so a plugin can read your files and
-run programs whatever scope it holds, and a sandbox is not here yet. The token is minted at enable
+`AGENTGLASS_READ_TOKEN`) and nothing inherited. **On a host that can build a
+`bwrap` box it runs in one** (its own folder, the app's address and what its
+`sandbox` block lists; no internet by default); elsewhere it runs as you, and
+the scope limits that token, not the process. The token is minted at enable
 time at the scope the manifest asked for — `read`, `answer` or `full`, the same
 three a paired device has — lives only in the server's memory, and is revoked
 when the plugin is disabled or the process exits. What was approved is a
@@ -861,6 +881,14 @@ stays allowed, so nothing about local development changes.
 ceiling: an agent with the `session` verb can replace the guard with a direct
 rule before it opens a name, and the reply says the guard is off rather than
 refusing. The verb is one that acts, so read-only mode refuses it.
+
+The guard is about **names**, not a private-network firewall: it refuses a
+*name* that has ever answered public from later answering private or
+loopback, but a public page's own subresources can still request a loopback
+or LAN address written as a literal — Chromium sends those straight through,
+without the proxy. What the guard closes is the rebinding trick where a name
+changes its answer after being trusted; a page that already knows the address
+it wants does not need the name to lie.
 
 ### The cockpit over MCP
 

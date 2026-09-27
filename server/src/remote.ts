@@ -329,16 +329,51 @@ function tailscaled(now = Date.now()): { uid: number; found: boolean } {
  * only for those carrying forwarding headers: a raw TCP forward sends none.
  * Where tailscaled is absent it is never read for a header-less request.
  */
-let tableCache: { map: Map<number, number>; port: number; at: number } | null = null;
+let tableCache: { map: Map<string, number>; port: number; at: number } | null = null;
 
 /** Whether a socket table exists here to consult at all (no on macOS, Windows). */
 function procReadable(): boolean {
   return procNetFiles.some((f) => existsSync(f));
 }
 
-function socketOwners(ourPort: number, now = Date.now()): Map<number, number> {
+/**
+ * /proc/net/tcp{,6}'s `local_address` hex, decoded into the address string
+ * Node/Bun would hand back for the same socket — needed because the table
+ * used to be keyed by port ALONE, which let a second address on the same
+ * loopback range impersonate a real connection's owner: 127.0.0.1 and
+ * 127.0.0.2 are both `isLoopback()`, and a source port is a client's own
+ * pick, so an unrelated uid can read a live connection's port from this
+ * SAME world-readable file and bind that exact port on a different loopback
+ * address to collide with it. Each 32-bit word is stored in the kernel's
+ * native (little-endian) byte order — reversed relative to reading order —
+ * which is the part a naive `parseInt(..., 16)` on the whole string gets
+ * wrong for anything but comparing ports.
+ */
+function decodeProcAddr(hex: string): string {
+  const bytes: number[] = [];
+  for (let g = 0; g < hex.length; g += 8) {
+    const word = hex.slice(g, g + 8);
+    for (let j = 6; j >= 0; j -= 2) bytes.push(parseInt(word.slice(j, j + 2), 16));
+  }
+  if (bytes.length === 4) return bytes.join(".");
+  // IPv6. `isLoopback()` only ever accepts exactly `::1` here (unlike v4's
+  // whole 127/8), so that one case is spelled in Node's own canonical form;
+  // anything else keeps a byte-exact key that still cannot collide with a
+  // DIFFERENT address, which is all a lookup needs.
+  if (bytes.slice(0, 15).every((b) => b === 0) && bytes[15] === 1) return "::1";
+  const v4mapped = bytes.slice(0, 10).every((b) => b === 0) && bytes[10] === 0xff && bytes[11] === 0xff;
+  if (v4mapped) return bytes.slice(12).join(".");
+  return bytes.map((b) => b.toString(16).padStart(2, "0")).join(":");
+}
+
+/** The map key for a decoded (or already-known) address + port pair. */
+function socketKey(addr: string, port: number): string {
+  return `${addr}:${port}`;
+}
+
+function socketOwners(ourPort: number, now = Date.now()): Map<string, number> {
   if (tableCache && tableCache.port === ourPort && now - tableCache.at < 1000) return tableCache.map;
-  const map = new Map<number, number>();
+  const map = new Map<string, number>();
   for (const file of procNetFiles) {
     let text: string;
     try { text = readFileSync(file, "utf8"); } catch { continue; }
@@ -351,10 +386,11 @@ function socketOwners(ourPort: number, now = Date.now()): Map<number, number> {
       // forward through tailscaled read as a socket nobody owns. TIME_WAIT (06)
       // and LISTEN (0A) are left out; a TIME_WAIT row reports uid 0 for everyone.
       if (c[3] === "06" || c[3] === "0A") continue;
-      const localPort = parseInt(c[1]!.split(":")[1] ?? "", 16);
+      const [localAddrHex, localPortHex] = c[1]!.split(":");
       const remPort = parseInt(c[2]!.split(":")[1] ?? "", 16);
-      if (remPort !== ourPort || !Number.isFinite(localPort)) continue;
-      map.set(localPort, Number(c[7]));
+      const localPort = parseInt(localPortHex ?? "", 16);
+      if (remPort !== ourPort || !Number.isFinite(localPort) || !localAddrHex) continue;
+      map.set(socketKey(decodeProcAddr(localAddrHex), localPort), Number(c[7]));
     }
   }
   tableCache = { map, port: ourPort, at: now };
@@ -440,8 +476,9 @@ export function proxiedByTailscaled(
   );
   const daemon = tailscaled(now);
   if (!forwarded && (!daemon.found || daemon.uid === process.getuid?.())) return false;
+  const addr = unmap(peer.address);
   let owners = socketOwners(ourPort, now);
-  let uid = peer.port === undefined ? undefined : owners.get(peer.port);
+  let uid = peer.port === undefined ? undefined : owners.get(socketKey(addr, peer.port));
   // A miss is usually a connection newer than the one-second table, so pay for
   // one fresh read before drawing any conclusion from absence. Without this the
   // very first request on a new tailscaled connection — which is every request
@@ -449,7 +486,7 @@ export function proxiedByTailscaled(
   if (uid === undefined && peer.port !== undefined) {
     tableCache = null;
     owners = socketOwners(ourPort, now);
-    uid = owners.get(peer.port);
+    uid = owners.get(socketKey(addr, peer.port));
   }
   // Nothing to consult (no /proc: macOS, Windows): the header alone decides —
   // see above for why believing one can only ever cost privilege, not grant it.
@@ -457,6 +494,42 @@ export function proxiedByTailscaled(
   // A fresh table with no row for this port: fail closed (see the list above).
   if (uid === undefined) return forwarded || peer.port !== undefined;
   return uid === daemon.uid;
+}
+
+/**
+ * True when a loopback peer is a process running as someone other than this
+ * server — the same uid-owns-the-socket check `proxiedByTailscaled` uses,
+ * asked for a different reason: LOCAL_SINKS (auth.ts) exempts loopback from
+ * the token because same-user processes can already read the 0600 token
+ * file, which stops being true the moment another account, or a
+ * host-networked container under a different uid, can also dial loopback.
+ *
+ * Fails open (false) ONLY where there is no /proc at all to consult (macOS,
+ * Windows) — a lost hook event from this machine's own hooks there is worse
+ * than the residual risk of an exemption that was already "any process on
+ * this machine" before this check existed. Where /proc IS readable but this
+ * one connection's row is gone even after a fresh read, it fails CLOSED
+ * (true: treat as another user), matching `proxiedByTailscaled`'s own rule
+ * in this same file — a row that vanished is the thing to distrust, not
+ * this exemption, and the cost is a 401 the sender can retry with a token.
+ */
+export function loopbackPeerIsOtherUser(
+  peer: { address?: string; port?: number } | null | undefined,
+  ourPort: number,
+  now = Date.now()
+): boolean {
+  if (!peer?.address || !isLoopback(peer.address)) return false;
+  if (!procReadable()) return false;
+  const addr = unmap(peer.address);
+  let owners = socketOwners(ourPort, now);
+  let uid = peer.port === undefined ? undefined : owners.get(socketKey(addr, peer.port));
+  if (uid === undefined && peer.port !== undefined) {
+    tableCache = null;
+    owners = socketOwners(ourPort, now);
+    uid = owners.get(socketKey(addr, peer.port));
+  }
+  if (uid === undefined) return true;
+  return uid !== process.getuid?.();
 }
 
 export interface Reachable {

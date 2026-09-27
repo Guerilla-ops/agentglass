@@ -34,6 +34,12 @@ beforeAll(async () => {
   // A lightweight tag, the shape `gh release create` leaves behind: no
   // annotation at all, so `%(contents)` falls through to the commit message.
   run(clone, "tag", "v9.9.8");
+  // A signed tag — every release is one now — so %(contents) includes the
+  // trailing armor block along with the message.
+  const signKey = join(mkdtempSync(join(tmpdir(), "agx-notes-key-")), "k");
+  spawnSync("ssh-keygen", ["-t", "ed25519", "-N", "", "-f", signKey]);
+  spawnSync("git", ["-C", clone, "-c", "gpg.format=ssh", "-c", `user.signingkey=${signKey}`,
+    "tag", "-s", "-a", "--cleanup=verbatim", "v9.9.7", "-F", "-"], { input: NOTES, encoding: "utf8" });
   /*
    * A cache-busted specifier, so this file gets its OWN instance of the module.
    *
@@ -79,6 +85,13 @@ describe("release notes", () => {
     expect(r.ok).toBe(true);
     expect(r.source).toBe("clone");
     expect(r.notes).toContain("tmux windows are the panel's own tabs");
+  });
+
+  it("drops the trailing signature armor from a signed tag's notes", async () => {
+    const r = await su.releaseNotes("v9.9.7");
+    expect(r.ok).toBe(true);
+    expect(r.notes).toContain("tmux windows are the panel's own tabs");
+    expect(r.notes).not.toContain("SIGNATURE");
   });
 
   it("keeps the markdown headings a release body is made of", async () => {

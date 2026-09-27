@@ -36,13 +36,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TMUX_TEST_TMPDIR } from "./tmuxTmp.ts";
 import { SERVER_BOOT_MS } from "./serverBoot.ts";
+import { freePort } from "./freePort.ts";
 
 const TOKEN = "test-machine-token-not-a-real-one";
 let dir: string, base: string, proc: ReturnType<typeof Bun.spawn> | null = null;
 
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "agx-ingest-origin-"));
-  const port = 4960 + Math.floor(Math.random() * 30);
+  const port = await freePort();
   base = `http://127.0.0.1:${port}`;
   proc = Bun.spawn(["bun", "run", new URL("../src/index.ts", import.meta.url).pathname], {
     // A named environment, never `...process.env`: `bun test` shares one process
@@ -159,7 +160,20 @@ test("the gate asks WHERE a request came from, not only which path it is", () =>
   expect(call, "index.ts no longer gates on isAuthExempt(pathname, from)").not.toBeNull();
   const decl = new RegExp(`const\\s+${call![1]}\\s*:\\s*Origin\\s*=\\s*([^;]+);`).exec(src);
   expect(decl, `${call![1]} is not declared as an Origin in index.ts`).not.toBeNull();
-  expect(decl![1], "the origin the gate uses is not derived from this request's peer").toContain("originOf(peer)");
+  let rhs = decl![1]!;
+  // R7 (loopback intake, same-uid peer) added one hop: the gate's variable may
+  // now *narrow* `from` (loopback -> remote, when the peer's uid is not this
+  // server's own) rather than being `originOf(peer)` directly. Following that
+  // one hop keeps this test asserting the real property — the origin traces
+  // back to this request's peer, not a constant — instead of either failing
+  // on a legitimate refactor or being loosened into checking nothing.
+  if (!rhs.includes("originOf(peer)")) {
+    expect(rhs, `${call![1]} is neither originOf(peer) nor a narrowing of it`).toMatch(/\bfrom\b.*\?.*:.*\bfrom\b/s);
+    const fromDecl = /const\s+from\s*:\s*Origin\s*=\s*([^;]+);/.exec(src);
+    expect(fromDecl, "no `from: Origin` declaration for the narrowed variable to trace back to").not.toBeNull();
+    rhs = fromDecl![1]!;
+  }
+  expect(rhs, "the origin the gate uses is not derived from this request's peer").toContain("originOf(peer)");
   expect(src, "index.ts no longer resolves the peer behind a proxy").toContain("resolvePeer({");
   expect(src, "index.ts trusts a forwarding header without verifying the proxy").toContain("proxiedByTailscaled(");
 });

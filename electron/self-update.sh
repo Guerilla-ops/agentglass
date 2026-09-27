@@ -16,6 +16,10 @@ STAMP="${AGENTGLASS_UPDATE_STAMP:-$HOME/.cache/agentglass/last-update.json}"
 SRC="${AGENTGLASS_UPDATE_SRC:-$HOME/.cache/agentglass/source}"
 TAG="${AGENTGLASS_UPDATE_TAG:-}"
 ORIGIN="${AGENTGLASS_UPDATE_ORIGIN:-}"
+# Overridable so a test can point this at a throwaway key instead of the real
+# pinned one; unset in every real install, where the default (beside this
+# script) is the only path that matters.
+ALLOWED_SIGNERS_OVERRIDE="${AGENTGLASS_UPDATE_ALLOWED_SIGNERS:-}"
 
 mkdir -p "$(dirname "$STAMP")" "$(dirname "$SRC")" "$(dirname "$LOG")" 2>/dev/null || true
 # The log carries paths and git output, so it is created private and lives under
@@ -68,19 +72,50 @@ fi
 say "checking the tag $TAG"
 # What this builds is whatever the tag names once it is fetched, so the tag is
 # pinned to a commit here and the checkout is held to it. An annotated tag is
-# what release.yml cuts, and a signature, when the tag carries one, has to
-# verify (which needs the signer's key on this machine; a signed tag from
-# someone whose key is not here is refused, on purpose). A lightweight tag is
-# refused too, which rules out the seven releases before v0.16.0 — updating
-# goes forward to the newest tag, so it is not a path anyone takes. An unsigned tag is still accepted — none of the releases so far are
-# signed — so this narrows what an update can be made to build; it does not
-# prove who cut the tag.
+# what release.yml cuts. A lightweight tag is refused too, which rules out the
+# seven releases before v0.16.0 — updating goes forward to the newest tag, so
+# it is not a path anyone takes.
 [ "$(git -C "$SRC" for-each-ref --format='%(objecttype)' "refs/tags/$TAG")" = tag ] \
   || fail "$TAG is not an annotated release tag"
 WANT="$(git -C "$SRC" rev-parse "refs/tags/$TAG^{commit}")" || fail "cannot resolve $TAG"
-if git -C "$SRC" cat-file tag "refs/tags/$TAG" | grep -q -e '-----BEGIN \(PGP\|SSH\) SIGNATURE-----'; then
-  git -C "$SRC" verify-tag "refs/tags/$TAG" >/dev/null 2>&1 || fail "the signature on $TAG does not verify"
-fi
+# The tag OBJECT's own "tag <name>" header must name $TAG, not merely the ref
+# path used to fetch it: without this, a compromised origin can publish an
+# older, legitimately-signed tag object under a brand-new ref name (refs/tags/
+# v9.99.0, say) and every install "updates" backward to it — the signature
+# verifies fine, because it is real, just for a different release than the
+# one this ref claims to be.
+GOT_NAME="$(git -C "$SRC" cat-file tag "refs/tags/$TAG" | sed -n 's/^tag //p;/^$/q')"
+[ "$GOT_NAME" = "$TAG" ] \
+  || fail "the signed tag object names \"$GOT_NAME\", not $TAG — refusing a renamed or replayed tag"
+# The signature has to verify against ONE pinned key, shipped next to this
+# script rather than trusted from whatever gpg/ssh already knows on this
+# machine — `git verify-tag` alone answers "does a signature verify against
+# some key the local trust store already has", which is a question an
+# attacker who can get their own key trusted (or a machine with a stray key
+# already configured) answers just as well as the real signer. Read from
+# beside THIS script (its own install, or the dev checkout), never from
+# inside $SRC: that clone is exactly the thing under test, and a compromised
+# origin could otherwise ship its own allowed-signers file alongside a forged
+# signature and pass its own check.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ALLOWED_SIGNERS="${ALLOWED_SIGNERS_OVERRIDE:-$SCRIPT_DIR/release-allowed-signers}"
+[ -f "$ALLOWED_SIGNERS" ] || fail "no pinned release-signing key at $ALLOWED_SIGNERS — cannot verify $TAG"
+# Every non-SSH verifier disabled outright, not merely `gpg.format=ssh`: that
+# setting alone governs how git SIGNS, not how `verify-tag` picks a verifier
+# for an EXISTING signature, which it still does by sniffing the armor block
+# itself. Measured: a tag object carrying a real PGP signature, PLUS the
+# literal text "-----BEGIN SSH SIGNATURE-----" sitting harmlessly in its free-
+# text message, passed a grep-then-verify sequence that checked "is this
+# tag signed at all" by grepping the WHOLE object for that marker (true, by
+# accident) and then let `git verify-tag` shell out to gpg for the real PGP
+# block — which happily verified against a key from the local keyring that
+# was never anywhere near ALLOWED_SIGNERS. Disabling gpg/x509 as verifier
+# programs makes an SSH-format signature the only kind `verify-tag` can ever
+# succeed on, so there is no format left for an attacker to switch to.
+git -c gpg.format=ssh -c gpg.ssh.allowedSignersFile="$ALLOWED_SIGNERS" \
+    -c gpg.program=false -c gpg.openpgp.program=false -c gpg.x509.program=false \
+    -C "$SRC" verify-tag "refs/tags/$TAG" >/dev/null 2>&1 \
+  || fail "refusing $TAG: no valid SSH signature from the pinned release key"
 
 say "checking out $TAG"
 # Discards anything in this clone without a thought, which is safe precisely

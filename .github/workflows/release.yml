@@ -41,9 +41,14 @@ jobs:
           kind="$(git for-each-ref --format='%(objecttype)' "refs/tags/$GITHUB_REF_NAME")"
           if [ "$kind" != "tag" ]; then
             echo "::error::$GITHUB_REF_NAME is a lightweight tag ($kind) — it carries no annotation to publish." >&2
-            echo "Cut it with: git tag -a --cleanup=verbatim $GITHUB_REF_NAME -F notes.md" >&2
+            echo "Cut it with: git -c gpg.format=ssh -c user.signingkey=<release key> tag -s --cleanup=verbatim $GITHUB_REF_NAME -F notes.md" >&2
             exit 1
           fi
 
-          git tag -l --format='%(contents)' "$GITHUB_REF_NAME" > /tmp/notes.md
+          # Every tag is signed now (the updater refuses an unsigned one), and
+          # %(contents) includes the trailing signature armor along with the
+          # message — dropped here so a release's public notes are the
+          # message a person wrote, not that plus a block of base64.
+          git tag -l --format='%(contents)' "$GITHUB_REF_NAME" \
+            | sed '/^-----BEGIN \(PGP\|SSH\) SIGNATURE-----$/,$d' > /tmp/notes.md
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --notes-file /tmp/notes.md

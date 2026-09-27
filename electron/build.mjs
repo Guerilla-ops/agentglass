@@ -341,6 +341,10 @@ writeFileSync(resolve(HERE, "staging/build-info.json"), JSON.stringify({
 // Shipped with the app rather than read from the source tree: the update must
 // work on a machine where this checkout has been moved or deleted.
 copyFileSync(resolve(HERE, "self-update.sh"), resolve(HERE, "staging/self-update.sh"));
+// Pinned beside it, for the same reason and by the same script: verify-tag
+// checks a signature against THIS file, never against $SRC's own copy — see
+// self-update.sh's comment on why that distinction is load-bearing.
+copyFileSync(resolve(HERE, "release-allowed-signers"), resolve(HERE, "staging/release-allowed-signers"));
 console.log(`==> build-info: ${version} ${identity.stamp}${baseTag ? ` (${baseTag}+${distance})` : ""} from ${REPO}`);
 if (!identity.tree) {
   // No git, so nothing here can be proved. Said plainly rather than dressed up
