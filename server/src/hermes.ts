@@ -111,14 +111,21 @@ function hermesHome(): string {
   return join(process.env.HOME || homedir(), ".hermes");
 }
 
-/** The model `hermes` will use when a turn names none — `model.default` from
- *  its config, if present and valid. */
+/** The model `hermes` will use when a turn names none — `model.default` (or
+ *  the `model.model` / `model.name` aliases some configs use), if present and
+ *  valid. */
 export function hermesConfiguredModel(path = join(hermesHome(), "config.yaml")): string {
   try {
     const raw = readFileSync(path, "utf8");
     const section = /^model:\s*\n((?:[ \t]+[^\n]*\n?)*)/m.exec(raw)?.[1] ?? "";
-    const value = /^\s+default:\s*['"]?([^'"#\s]+)/m.exec(section)?.[1] ?? "";
-    return hermesModel(value);
+    // Prefer `default`, then the aliases Hermes configs have been seen to use.
+    for (const key of ["default", "model", "name"] as const) {
+      const re = new RegExp(`^\\s+${key}:\\s*['"]?([^'"#\\s]+)`, "m");
+      const value = re.exec(section)?.[1] ?? "";
+      const id = hermesModel(value);
+      if (id) return id;
+    }
+    return "";
   } catch { return ""; }
 }
 
@@ -272,7 +279,10 @@ export function frameToEvent(frame: Record<string, unknown>, ctx: FrameContext):
  * chat.ts / codex.ts / antigravity.ts.
  */
 export function hermesArgs(bin: string, model: string, resumeId: string, mode: "default" | "yolo", message: string): string[] {
-  const args = [bin, "chat", "-q", message, "--format", "stream-json"];
+  // `--no-restore-cwd` is load-bearing: `--resume` otherwise chdirs to the
+  // session DB's recorded cwd, which can escape the panel's safeAbs /
+  // repoRootOf / inScope check already applied to the spawn cwd.
+  const args = [bin, "chat", "-q", message, "--format", "stream-json", "--no-restore-cwd"];
   if (model) args.push("-m", model);
   if (resumeId) args.push("--resume", resumeId);
   if (mode === "yolo") args.push("--yolo");
@@ -305,7 +315,11 @@ export function hermesStream(
   if (typeof message !== "string" || !message.trim() || message.length > 100_000) return err("invalid message");
   if (resumeId && !hermesSession(resumeId)) return err("invalid Hermes session id");
   if (model && !hermesModel(model)) return err("invalid Hermes model id");
-  const m = hermesModel(model) || hermesConfiguredModel() || FALLBACK_MODELS[0].id;
+  // Only pass `-m` when the panel picked an explicit model. Forcing the
+  // hardcoded FALLBACK (or re-asserting the configured default) would override
+  // a working Hermes config default the operator already set — match the
+  // empty-model path hermesArgs already pins: omit `-m` and let Hermes decide.
+  const m = hermesModel(model);
   const mo = hermesMode(mode);
   const rid = hermesSession(resumeId);
 

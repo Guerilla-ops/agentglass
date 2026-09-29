@@ -14,7 +14,7 @@ const SID = "20260917_104709_fdc54d";
 describe("the command line", () => {
   test("a first turn names the model and asks for the streaming format", () => {
     const a = hermesArgs(BIN, "anthropic/claude-sonnet-4", "", "default", "hello");
-    expect(a).toEqual([BIN, "chat", "-q", "hello", "--format", "stream-json", "-m", "anthropic/claude-sonnet-4"]);
+    expect(a).toEqual([BIN, "chat", "-q", "hello", "--format", "stream-json", "--no-restore-cwd", "-m", "anthropic/claude-sonnet-4"]);
     expect(a).not.toContain("--yolo");
     expect(a).not.toContain("--resume");
   });
@@ -39,6 +39,18 @@ describe("the command line", () => {
     const a = hermesArgs(BIN, "", "", "default", "hi");
     expect(a).not.toContain("-m");
     expect(a).not.toContain("--model");
+  });
+
+  test("every turn passes --no-restore-cwd so --resume cannot escape the spawn cwd", () => {
+    // Without it, Hermes chdirs to the session DB's recorded cwd on --resume,
+    // which can leave the panel's safeAbs / inScope check behind.
+    for (const a of [
+      hermesArgs(BIN, "m", "", "default", "hi"),
+      hermesArgs(BIN, "m", SID, "default", "again"),
+      hermesArgs(BIN, "", "", "yolo", "hi"),
+    ]) {
+      expect(a).toContain("--no-restore-cwd");
+    }
   });
 
   test("the prompt is one argv element, however odd it looks", () => {
@@ -82,6 +94,21 @@ describe("the configured model", () => {
     writeFileSync(path, "model:\n  provider: nous\n  default: deepseek/deepseek-v4-flash-0731\n  base_url: https://example.test\nother: 1\n");
     expect(hermesConfiguredModel(path)).toBe("deepseek/deepseek-v4-flash-0731");
     expect(hermesModels(path)).toEqual([{ id: "deepseek/deepseek-v4-flash-0731", label: "deepseek/deepseek-v4-flash-0731" }]);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("also accepts model.model and model.name aliases", () => {
+    const dir = mkdtempSync(join(tmpdir(), "agx-hermes-alias-"));
+    const modelPath = join(dir, "model.yaml");
+    const namePath = join(dir, "name.yaml");
+    writeFileSync(modelPath, "model:\n  model: anthropic/claude-sonnet-4\n");
+    writeFileSync(namePath, "model:\n  name: openai/gpt-5\n");
+    expect(hermesConfiguredModel(modelPath)).toBe("anthropic/claude-sonnet-4");
+    expect(hermesConfiguredModel(namePath)).toBe("openai/gpt-5");
+    // `default` still wins when both are present.
+    const both = join(dir, "both.yaml");
+    writeFileSync(both, "model:\n  default: deepseek/deepseek-v4-flash\n  model: ignored/other\n  name: also/ignored\n");
+    expect(hermesConfiguredModel(both)).toBe("deepseek/deepseek-v4-flash");
     rmSync(dir, { recursive: true, force: true });
   });
 
