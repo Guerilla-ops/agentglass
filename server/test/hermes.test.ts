@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync, rmSync, realpathSync, symlinkSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync, symlinkSync } from "node:fs";
+import { Database } from "bun:sqlite";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  frameToEvent, hermesArgs, hermesEnv, hermesConfiguredModel, hermesMode, hermesModel, HERMES_ENABLED,
+  frameToEvent, hermesArgs, hermesEnv, hermesHome, hermesResumeRefusal, hermesConfiguredModel, hermesMode, hermesModel, HERMES_ENABLED,
   hermesModels, hermesSession, hermesStream, newFrameContext, promptEvent,
   HERMES_APP, MODEL_RE, SESSION_RE,
 } from "../src/hermes.ts";
@@ -221,7 +222,7 @@ describe("the child environment", () => {
 
   test("the spawn uses it rather than process.env", () => {
     const code = HERMES_SRC.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-    expect(code.includes("env: hermesEnv(process.env, mo)")).toBe(true);
+    expect(code.includes("hermesEnv(process.env, mo)")).toBe(true);
     expect(code.includes("{ ...process.env }")).toBe(false);
   });
 });
@@ -340,6 +341,113 @@ describe("guards on the send path", () => {
       expect(await r.text()).toMatch(/model/i);
     } finally {
       rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+/**
+ * A Hermes state.db with the columns the resume path reads, in the shape of
+ * upstream hermes_state_common.py's `sessions` table.
+ */
+function stateDb(dir: string, rows: Array<{ id: string; parent?: string; cwd?: string; yolo?: boolean }>): string {
+  const path = join(dir, "state.db");
+  const db = new Database(path);
+  db.run("CREATE TABLE sessions (id TEXT PRIMARY KEY, model_config TEXT, parent_session_id TEXT, cwd TEXT)");
+  for (const r of rows) {
+    db.query("INSERT INTO sessions (id, model_config, parent_session_id, cwd) VALUES (?, ?, ?, ?)")
+      .run(r.id, JSON.stringify(r.yolo === undefined ? { model: "m" } : { model: "m", yolo_mode: r.yolo }), r.parent ?? null, r.cwd ?? null);
+  }
+  db.close();
+  return path;
+}
+
+describe("resuming a session cannot move the turn or bring Bypass back", () => {
+  // Hermes restores the row's cwd and its yolo_mode on --resume even with
+  // --no-restore-cwd; these pin that the server refuses those resumes first.
+  const CONT = "20260917_110000_abc123";
+  let home = "", repo = "", other = "";
+  beforeEach(async () => {
+    home = realpathSync(mkdtempSync(join(tmpdir(), "agx-hermes-home-")));
+    repo = await gitRepo();
+    other = await gitRepo();
+  });
+  afterEach(() => {
+    for (const d of [home, repo, other]) rmSync(d, { recursive: true, force: true });
+  });
+
+  test("the same directory and no Bypass resumes", () => {
+    const db = stateDb(home, [{ id: SID, cwd: repo }]);
+    expect(hermesResumeRefusal(SID, repo, "default", db)).toBeNull();
+  });
+
+  test("a session recorded in another directory is refused", () => {
+    const db = stateDb(home, [{ id: SID, cwd: other }]);
+    expect(hermesResumeRefusal(SID, repo, "default", db)).toMatch(/another directory/);
+    expect(hermesResumeRefusal(SID, repo, "yolo", db)).toMatch(/another directory/);
+  });
+
+  test("the same directory reached through a symlink is the same directory", () => {
+    const link = join(home, "link");
+    symlinkSync(repo, link);
+    const db = stateDb(home, [{ id: SID, cwd: link }]);
+    expect(hermesResumeRefusal(SID, repo, "default", db)).toBeNull();
+  });
+
+  test("a session that ran in Bypass resumes only as Bypass", () => {
+    const db = stateDb(home, [{ id: SID, cwd: repo, yolo: true }]);
+    expect(hermesResumeRefusal(SID, repo, "default", db)).toMatch(/Bypass/);
+    expect(hermesResumeRefusal(SID, repo, "yolo", db)).toBeNull();
+  });
+
+  test("the compression continuation Hermes follows is checked too", () => {
+    const moved = stateDb(home, [{ id: SID, cwd: repo }, { id: CONT, parent: SID, cwd: other }]);
+    expect(hermesResumeRefusal(SID, repo, "default", moved)).toMatch(/another directory/);
+    rmSync(moved);
+    const yolo = stateDb(home, [{ id: SID, cwd: repo }, { id: CONT, parent: SID, cwd: repo, yolo: true }]);
+    expect(hermesResumeRefusal(SID, repo, "default", yolo)).toMatch(/Bypass/);
+  });
+
+  test("an unknown id, or a store it cannot read, is a refusal rather than a pass", () => {
+    const db = stateDb(home, [{ id: CONT, cwd: repo }]);
+    expect(hermesResumeRefusal(SID, repo, "default", db)).toMatch(/no session/);
+    expect(hermesResumeRefusal(SID, repo, "default", join(home, "missing.db"))).toMatch(/cannot read/);
+  });
+
+  test("the send path refuses before spawning", async () => {
+    const prev = { home: process.env.AGENTGLASS_HERMES_HOME, bin: process.env.AGENTGLASS_HERMES, root: process.env.AGENTGLASS_ROOT, bypass: process.env.AGENTGLASS_CHAT_BYPASS };
+    try {
+      stateDb(home, [{ id: SID, cwd: other }]);
+      process.env.AGENTGLASS_HERMES_HOME = home;
+      process.env.AGENTGLASS_HERMES = "/bin/true";
+      process.env.AGENTGLASS_CHAT_BYPASS = "1";
+      delete process.env.AGENTGLASS_ROOT;
+      const r = hermesStream(repo, "again", "", SID, "default");
+      expect(r.status).toBe(403);
+      expect(await r.text()).toMatch(/another directory/);
+    } finally {
+      for (const [k, v] of [["AGENTGLASS_HERMES_HOME", prev.home], ["AGENTGLASS_HERMES", prev.bin], ["AGENTGLASS_ROOT", prev.root], ["AGENTGLASS_CHAT_BYPASS", prev.bypass]] as const) {
+        if (v === undefined) delete process.env[k]; else process.env[k] = v;
+      }
+    }
+  });
+});
+
+describe("which Hermes home a turn uses", () => {
+  test("follows the sticky profile the way hermes does, and pins a profile dir as given", () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "agx-hermes-root-")));
+    try {
+      expect(hermesHome({ HERMES_HOME: root })).toBe(root);
+      writeFileSync(join(root, "active_profile"), "default\n");
+      expect(hermesHome({ HERMES_HOME: root })).toBe(root);
+      writeFileSync(join(root, "active_profile"), "orbit\n");
+      expect(hermesHome({ HERMES_HOME: root })).toBe(join(root, "profiles", "orbit"));
+      mkdirSync(join(root, "profiles", "acme"), { recursive: true });
+      expect(hermesHome({ HERMES_HOME: join(root, "profiles", "acme") })).toBe(join(root, "profiles", "acme"));
+      expect(hermesHome({ AGENTGLASS_HERMES_HOME: join(root, "profiles", "acme"), HERMES_HOME: "/elsewhere" })).toBe(join(root, "profiles", "acme"));
+      writeFileSync(join(root, "active_profile"), "../escape\n");
+      expect(hermesHome({ HERMES_HOME: root })).toBe(root);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
   });
 });

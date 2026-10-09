@@ -21,9 +21,10 @@
 // DEFAULT_MODE); cwd must be a git dir and inside the open project, the same
 // boundary chat.ts, codex.ts and antigravity.ts hold.
 // This module does not write ~/.hermes/config.yaml, open a pane, or touch ACP.
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
+import { Database } from "bun:sqlite";
 import { safeAbs, repoRootOf, gitCapability } from "./git.ts";
 import { inScopeReal, chatBypassAllowed } from "./config.ts";
 import { startKeepalive, drainStderr } from "./chat.ts";
@@ -113,12 +114,89 @@ const FALLBACK_MODELS: AgentModel[] = [
   { id: "anthropic/claude-sonnet-4", label: "anthropic/claude-sonnet-4" },
 ];
 
-/** Hermes home (`HERMES_HOME` or `~/.hermes`). Read-only — this module never
- *  writes config.yaml. */
-function hermesHome(): string {
-  const env = process.env.AGENTGLASS_HERMES_HOME?.trim() || process.env.HERMES_HOME?.trim();
-  if (env) return env;
-  return join(process.env.HOME || homedir(), ".hermes");
+/**
+ * The Hermes home a turn will use. Read-only — this module never writes in it.
+ *
+ * `AGENTGLASS_HERMES_HOME`, else `HERMES_HOME`, else `~/.hermes`; and then the
+ * sticky profile, the way `hermes` itself resolves it at startup: a root (not
+ * already a `profiles/<name>` dir) whose `active_profile` names another profile
+ * means that profile's directory. The spawn pins the child's HERMES_HOME to
+ * this value, so the state.db the resume check reads is the one Hermes opens.
+ * Exported for tests.
+ */
+export function hermesHome(env: Record<string, string | undefined> = process.env): string {
+  const root = env.AGENTGLASS_HERMES_HOME?.trim() || env.HERMES_HOME?.trim()
+    || join(env.HOME || homedir(), ".hermes");
+  if (basename(dirname(root)) === "profiles") return root;
+  try {
+    const name = readFileSync(join(root, "active_profile"), "utf8").replace(/^\uFEFF/, "").trim();
+    if (name && name !== "default" && /^[A-Za-z0-9_.-]{1,64}$/.test(name) && !name.startsWith(".")) {
+      return join(root, "profiles", name);
+    }
+  } catch { /* no sticky profile */ }
+  return root;
+}
+
+/**
+ * Why a resume must not run as asked, or null when it may.
+ *
+ * Measured against Hermes upstream (hermes_cli/cli_agent_setup_mixin.py,
+ * `_load_resumed_history_late` → `_restore_session_state`, revision in
+ * docs/CONFIG.md): `hermes chat -q … --resume <id>` restores two things from
+ * the session's row in `<HERMES_HOME>/state.db`, whatever this turn asked for.
+ *
+ *  - The directory. `_restore_session_cwd` chdirs to the row's `cwd`, and
+ *    `--no-restore-cwd` does not stop it — that flag only guards an earlier
+ *    chdir in hermes_cli/main.py. A session id names a row; nothing ties it to
+ *    the directory this server just checked, so a resume could run the turn
+ *    in a repo outside the open project.
+ *  - Bypass. A `--yolo` launch or a `/yolo` toggle stores `yolo_mode: true` in
+ *    the row's `model_config`, and `_restore_session_yolo` turns it back on, so
+ *    a chat switched back from Bypass would go on running everything.
+ *
+ * So the row is read first, with the compression continuations Hermes follows
+ * to (`parent_session_id`), and the turn is refused when any of them recorded
+ * another directory, or Bypass while this turn is not Bypass. A row it cannot
+ * read is a refusal too: the check exists because the answer matters.
+ *
+ * Ceiling: this checks the rows; a third source of Bypass, `approvals.mode:
+ * off` in Hermes's own config.yaml, is the operator's setting and is not
+ * overridden here. Exported for tests.
+ */
+export function hermesResumeRefusal(
+  id: string, dir: string, mode: "default" | "yolo", dbPath = join(hermesHome(), "state.db"),
+): string | null {
+  type Row = { id: string; cwd: string | null; model_config: string | null };
+  let rows: Row[];
+  try {
+    const db = new Database(dbPath, { readonly: true });
+    try {
+      rows = db.query(`
+        WITH RECURSIVE chain(id) AS (
+          SELECT id FROM sessions WHERE id = ?1
+          UNION SELECT s.id FROM sessions s JOIN chain c ON s.parent_session_id = c.id
+        )
+        SELECT s.id, s.cwd, s.model_config FROM sessions s JOIN chain c ON s.id = c.id
+      `).all(id) as Row[];
+    } finally { db.close(); }
+  } catch {
+    return "cannot read Hermes's session store to confirm where this session would resume — start a new chat";
+  }
+  if (!rows.length) return "Hermes has no session with that id — start a new chat";
+  const real = (p: string) => { try { return realpathSync(p); } catch { return null; } };
+  const here = real(dir);
+  for (const r of rows) {
+    const cwd = (r.cwd ?? "").trim();
+    if (cwd && (!here || real(cwd) !== here)) {
+      return "this Hermes session belongs to another directory, and resuming it would move the turn there — start a new chat here";
+    }
+    let yolo = false;
+    try { yolo = (JSON.parse(r.model_config || "{}") as { yolo_mode?: unknown })?.yolo_mode === true; } catch { /* unparseable: Hermes reads it as off too */ }
+    if (yolo && mode !== "yolo") {
+      return "this Hermes session ran in Bypass, and Hermes turns that back on when it resumes — keep Bypass or start a new chat";
+    }
+  }
+  return null;
 }
 
 /** The model `hermes` will use when a turn names none — `model.default` (or
@@ -292,9 +370,10 @@ export function frameToEvent(frame: Record<string, unknown>, ctx: FrameContext):
  * chat.ts / codex.ts / antigravity.ts.
  */
 export function hermesArgs(bin: string, model: string, resumeId: string, mode: "default" | "yolo", message: string): string[] {
-  // `--no-restore-cwd` is load-bearing: `--resume` otherwise chdirs to the
-  // session DB's recorded cwd, which can escape the panel's safeAbs /
-  // repoRootOf / inScope check already applied to the spawn cwd.
+  // `--no-restore-cwd` stops the chdir hermes_cli/main.py makes before the
+  // agent starts. It is not enough on its own: the resume path restores the
+  // row's cwd again later, which is why hermesStream checks the row first —
+  // see hermesResumeRefusal.
   const args = [bin, "chat", `--query=${message}`, "--format", "stream-json", "--no-restore-cwd"];
   if (model) args.push("-m", model);
   if (resumeId) args.push("--resume", resumeId);
@@ -361,6 +440,13 @@ export function hermesStream(
   const mo = hermesMode(mode);
   const rid = hermesSession(resumeId);
 
+  // Resolved once: the resume check and the child must agree on it.
+  const home = hermesHome();
+  if (rid) {
+    const why = hermesResumeRefusal(rid, dir, mo, join(home, "state.db"));
+    if (why) return err(why, 403);
+  }
+
   const args = hermesArgs(bin, m, rid, mo, message);
 
   // Its own process group, so stopping a turn reaches the whole job tree —
@@ -371,7 +457,9 @@ export function hermesStream(
     cwd: dir,
     stdout: "pipe",
     stderr: "pipe",
-    env: hermesEnv(process.env, mo),
+    // HERMES_HOME pinned to the home hermesResumeRefusal read, so the check and
+    // the resume look at the same state.db.
+    env: { ...hermesEnv(process.env, mo), HERMES_HOME: home },
   });
 
   // Drained from the start, not after exit: a full stderr pipe blocks the child
