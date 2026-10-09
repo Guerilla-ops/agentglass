@@ -23,7 +23,7 @@
 // This module does not write ~/.hermes/config.yaml, open a pane, or touch ACP.
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { Database } from "bun:sqlite";
 import { safeAbs, repoRootOf, gitCapability } from "./git.ts";
 import { inScopeReal, chatBypassAllowed } from "./config.ts";
@@ -67,11 +67,11 @@ const CORS = {
  * no flag (`default`), `hermes chat -q` approves `execute_code` on its own and
  * only refuses the commands on its dangerous-pattern list, because nobody is
  * there to answer a prompt. `yolo` is `--yolo`, which runs those as well. Both
- * are unattended execution, which is exactly what Settings `chatBypass` (or
- * AGENTGLASS_CHAT_BYPASS=1) opts into for Claude, Codex and Antigravity, so
+ * are unattended execution, which is exactly what `chatBypass` in config.json
+ * (or AGENTGLASS_CHAT_BYPASS=1) opts into for Claude, Codex and Antigravity, so
  * without it Hermes is neither offered (HERMES_ENABLED) nor run (hermesStream).
  *
- * Read per call, like HERMES_ENABLED: an import-time snapshot kept a Settings
+ * Read per call, like HERMES_ENABLED: an import-time snapshot kept a config.json
  * change from reaching this engine until a restart.
  */
 export const DEFAULT_MODE = "default";
@@ -80,6 +80,9 @@ export const hermesBypassAllowed = (): boolean => chatBypassAllowed();
 /** How long a turn may produce nothing before we assume the CLI is stuck on
  *  something it cannot ask us for. Only ever armed before the first byte. */
 const STARTUP_TIMEOUT_MS = Number(process.env.AGENTGLASS_HERMES_STARTUP_TIMEOUT_MS ?? 30_000);
+
+/** Under MAX_ARG_STRLEN (128 KiB) with room for `--query=`. */
+export const MAX_MESSAGE_BYTES = 120_000;
 
 const err = (msg: string, status = 400) => new Response(msg + "\n", { status, headers: CORS });
 
@@ -122,16 +125,23 @@ const FALLBACK_MODELS: AgentModel[] = [
  * already a `profiles/<name>` dir) whose `active_profile` names another profile
  * means that profile's directory. The spawn pins the child's HERMES_HOME to
  * this value, so the state.db the resume check reads is the one Hermes opens.
+ *
+ * Which `active_profile` is read follows hermes_constants.get_default_hermes_root:
+ * a home anywhere under `~/.hermes` takes the sticky profile of `~/.hermes`
+ * itself, not its own; a home elsewhere takes its own.
  * Exported for tests.
  */
 export function hermesHome(env: Record<string, string | undefined> = process.env): string {
-  const root = env.AGENTGLASS_HERMES_HOME?.trim() || env.HERMES_HOME?.trim()
-    || join(env.HOME || homedir(), ".hermes");
+  const native = join(env.HOME || homedir(), ".hermes");
+  const root = env.AGENTGLASS_HERMES_HOME?.trim() || env.HERMES_HOME?.trim() || native;
   if (basename(dirname(root)) === "profiles") return root;
+  const real = (p: string) => { try { return realpathSync(p); } catch { return resolve(p); } };
+  const r = real(root), n = real(native);
+  const base = r === n || r.startsWith(n + sep) ? native : root;
   try {
-    const name = readFileSync(join(root, "active_profile"), "utf8").replace(/^\uFEFF/, "").trim();
+    const name = readFileSync(join(base, "active_profile"), "utf8").replace(/^\uFEFF/, "").trim();
     if (name && name !== "default" && /^[A-Za-z0-9_.-]{1,64}$/.test(name) && !name.startsWith(".")) {
-      return join(root, "profiles", name);
+      return join(base, "profiles", name);
     }
   } catch { /* no sticky profile */ }
   return root;
@@ -159,10 +169,22 @@ export function hermesHome(env: Record<string, string | undefined> = process.env
  * another directory, or Bypass while this turn is not Bypass. A row it cannot
  * read is a refusal too: the check exists because the answer matters.
  *
- * Ceiling: this checks the rows; a third source of Bypass, `approvals.mode:
- * off` in Hermes's own config.yaml, is the operator's setting and is not
- * overridden here. Exported for tests.
+ * `yolo_mode` is read the way Hermes reads it, `bool(...)` in Python, so `1`,
+ * `"true"` and even `"false"` are Bypass too; and a row whose `cwd` is not an
+ * absolute path is refused, because Hermes resolves it against the spawn
+ * directory and this check could not see the same place.
+ *
+ * Ceiling: this checks the rows. Two settings in Hermes's own config.yaml also
+ * decide what runs, and both are the operator's and are not overridden here:
+ * `approvals.mode: off` is Bypass for every turn, and
+ * `approvals.single_query_mode: approve` makes a default single-query turn run
+ * the flagged commands it would otherwise refuse. Exported for tests.
  */
+/** Python's `bool(v)` for a value that came out of `json.loads`. */
+const pyTruthy = (v: unknown): boolean =>
+  !(v == null || v === false || v === 0 || v === ""
+    || (Array.isArray(v) ? !v.length : typeof v === "object" && !Object.keys(v as object).length));
+
 export function hermesResumeRefusal(
   id: string, dir: string, mode: "default" | "yolo", dbPath = join(hermesHome(), "state.db"),
 ): string | null {
@@ -187,11 +209,14 @@ export function hermesResumeRefusal(
   const here = real(dir);
   for (const r of rows) {
     const cwd = (r.cwd ?? "").trim();
-    if (cwd && (!here || real(cwd) !== here)) {
+    if (cwd && (!isAbsolute(cwd) || !here || real(cwd) !== here)) {
       return "this Hermes session belongs to another directory, and resuming it would move the turn there — start a new chat here";
     }
     let yolo = false;
-    try { yolo = (JSON.parse(r.model_config || "{}") as { yolo_mode?: unknown })?.yolo_mode === true; } catch { /* unparseable: Hermes reads it as off too */ }
+    // A config this side cannot parse counts as Bypass: Python's json also
+    // reads NaN and Infinity, which JSON.parse refuses, so "unparseable here"
+    // is not "off there" — the same fail-closed rule as an unreadable store.
+    try { yolo = pyTruthy((JSON.parse(r.model_config || "{}") as { yolo_mode?: unknown })?.yolo_mode); } catch { yolo = true; }
     if (yolo && mode !== "yolo") {
       return "this Hermes session ran in Bypass, and Hermes turns that back on when it resumes — keep Bypass or start a new chat";
     }
@@ -387,18 +412,26 @@ export function hermesArgs(bin: string, model: string, resumeId: string, mode: "
  * Hermes runs code unattended (see DEFAULT_MODE), so whatever is in this
  * environment is something that code can read. Two things are taken out:
  *
- *  - AGENTGLASS_TOKEN, the credential for this very server. With it, code the
- *    model wrote could drive the shell, git and every other route here — more
- *    than the turn it is part of was granted.
+ *  - AGENTGLASS_TOKEN, the credential for this very server. Handed over, it
+ *    would let code the model wrote drive the shell, git and every other route
+ *    here. Ceiling: this removes the free copy, not the reach. The child runs
+ *    as the same user, so it can read the token file, and on a tokenless
+ *    loopback install it needs no token at all.
  *  - HERMES_YOLO_MODE, which Hermes reads at import as "--yolo for this
  *    process". Inherited from whoever started agentglass, it would turn every
  *    turn into Bypass whatever the panel says. It is set only when the turn is
  *    Bypass, and then --yolo says the same thing.
+ *  - The markers of a Hermes gateway, cron or other session context
+ *    (`_HERMES_GATEWAY`, `HERMES_*_SESSION`). With `_HERMES_GATEWAY=1` Hermes
+ *    keeps an inherited TERMINAL_CWD instead of the process cwd, so an
+ *    agentglass started from inside Hermes would run its tools outside the
+ *    checked directory. The spawn also sets TERMINAL_CWD to that directory.
  *
  * Exported for tests.
  */
 export function hermesEnv(base: Record<string, string | undefined>, mode: "default" | "yolo"): Record<string, string | undefined> {
-  const { AGENTGLASS_TOKEN: _token, HERMES_YOLO_MODE: _yolo, ...env } = base;
+  const { AGENTGLASS_TOKEN: _token, HERMES_YOLO_MODE: _yolo, _HERMES_GATEWAY: _gw, ...env } = base;
+  for (const k of Object.keys(env)) if (/^HERMES_\w+_SESSION$/.test(k)) delete env[k];
   return mode === "yolo" ? { ...env, HERMES_YOLO_MODE: "1" } : env;
 }
 
@@ -416,7 +449,7 @@ export function hermesStream(
   if (process.env.AGENTGLASS_HERMES_DISABLED === "1") return err("hermes chat is disabled (AGENTGLASS_HERMES_DISABLED=1)", 403);
   // Not a nicety on top of HERMES_ENABLED: the route is reachable without the
   // panel, and the panel is not what decides whether code runs unattended.
-  if (!hermesBypassAllowed()) return err("hermes chat runs code without asking, so it needs the chat bypass opt-in (Settings, or AGENTGLASS_CHAT_BYPASS=1)", 403);
+  if (!hermesBypassAllowed()) return err("hermes chat runs code without asking, so it needs the chat bypass opt-in (`chatBypass` in config.json, or AGENTGLASS_CHAT_BYPASS=1)", 403);
   const dir = safeAbs(cwd);
   if (!dir || !repoRootOf(dir)) {
     const cap = gitCapability();
@@ -429,7 +462,13 @@ export function hermesStream(
   // Hermes takes images as `--image` paths, not paste-bytes — same position
   // Codex / Antigravity are in, and refused for the same reason.
   if (Array.isArray(images) && images.length) return err("hermes chats cannot take pasted images yet — send the turn without it, or use a Claude chat");
-  if (typeof message !== "string" || !message.trim() || message.length > 100_000) return err("invalid message");
+  if (typeof message !== "string" || !message.trim()) return err("invalid message");
+  // The prompt is one argv element, and the kernel refuses an element over
+  // 128 KiB (MAX_ARG_STRLEN) or with a NUL in it: Bun.spawn would throw inside
+  // the route and the panel would get a bare 500. Counted in UTF-8 bytes,
+  // since that is what reaches the kernel — 100k CJK characters are ~300 KB.
+  if (message.includes("\0")) return err("the message contains a NUL byte, which a command line cannot carry");
+  if (Buffer.byteLength(message) > MAX_MESSAGE_BYTES) return err(`the message is over ${MAX_MESSAGE_BYTES / 1000} KB, more than one Hermes turn can take`, 413);
   if (resumeId && !hermesSession(resumeId)) return err("invalid Hermes session id");
   if (model && !hermesModel(model)) return err("invalid Hermes model id");
   // Only pass `-m` when the panel picked an explicit model. Forcing the
@@ -459,7 +498,7 @@ export function hermesStream(
     stderr: "pipe",
     // HERMES_HOME pinned to the home hermesResumeRefusal read, so the check and
     // the resume look at the same state.db.
-    env: { ...hermesEnv(process.env, mo), HERMES_HOME: home },
+    env: { ...hermesEnv(process.env, mo), HERMES_HOME: home, TERMINAL_CWD: dir },
   });
 
   // Drained from the start, not after exit: a full stderr pipe blocks the child

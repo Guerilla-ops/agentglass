@@ -199,7 +199,7 @@ changed is worth knowing before you add a fourth:
 
 Hermes is the fourth worked example of that shape: `server/src/hermes.ts`,
 `web/src/lib/hermesFrames.ts`, and an entry in `AGENTS` / `AGENT_PROVIDERS`.
-The CLI is `hermes chat -q … --format stream-json`. Its session ids look like
+The CLI is `hermes chat --query=<text> --format stream-json` (Hermes Agent 0.21.4 or later), the prompt one argv element so a prompt starting with `-` stays a prompt. Its session ids look like
 `YYYYMMDD_HHMMSS_<hex>` and its model ids carry slashes, so they are not run
 through the Claude validators. The stream's token counts are per turn and are
 added. Like Antigravity, a Hermes you started in a terminal is not on the

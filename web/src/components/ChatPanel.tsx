@@ -96,6 +96,8 @@ const ANTIGRAVITY_MODES = [
 // Neither mode asks. Single-query Hermes runs code on its own and, with no
 // flag, refuses only the commands it flags as dangerous; `--yolo` runs those
 // too. That is why the server offers Hermes only behind the bypass opt-in.
+// "Refuses flagged commands" holds while Hermes's own config.yaml keeps
+// `approvals.single_query_mode` at its default (deny); `approve` there runs them.
 // Keep in step with hermesMode in server/src/hermes.ts.
 const HERMES_MODES = [
   { id: "default", label: "Runs code, refuses flagged commands" },
