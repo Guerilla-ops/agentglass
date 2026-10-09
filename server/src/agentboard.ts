@@ -663,13 +663,21 @@ export function merged(p: {
  * the agent does not know its own id, and the reminder is the one moment
  * that knows both. `$PWD` is left to the shell that runs it: it is the one
  * thing here the server should not guess.
+ *
+ * The address is written out — this server's own loopback one — rather than
+ * `${AGENTGLASS_SERVER:-…}`. The reminder is this server's answer to the hook
+ * that just reached it, so it knows where it is; and the gate can let a status
+ * post through only when it can SEE that it goes to this machine (outward.ts),
+ * which a variable the session's environment fills in never shows it. Held as
+ * outward, the post the reminder asks for was denied by the gate the same app
+ * installs.
  */
 export function lanternReminder(o: { session: string; server: string }): string {
   const body = `{"name":"<short-kebab-slug-a-person-would-recognize>","doing":"<one line: what you are working on right now>","worktree":"'"$PWD"'","session":"${o.session}"}`;
   return (
     "AGENTGLASS LANTERN: this session shows on the Lantern as a bare id until it says what it is doing. "
     + "Post it once, now, then keep going: "
-    + `curl -s -X POST "\${AGENTGLASS_SERVER:-${o.server}}/agents/status" -H 'Content-Type: application/json' -d '${body}' `
+    + `curl -s -X POST "${o.server}/agents/status" -H 'Content-Type: application/json' -d '${body}' `
     + "— name it after the task (a card id, a PR, a short slug), never something generic like 'agent'. "
     + "Post again when the task changes; when you finish, post once more with "
     + `{"name":"<same slug>","done":true}.`

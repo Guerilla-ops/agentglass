@@ -253,6 +253,63 @@ function apiField(c: string): string | undefined {
 }
 
 /**
+ * Is this exactly a Lantern status post to this machine — `curl -X POST
+ * http://127.0.0.1:<port>/agents/status -H … -d …` — and nothing else?
+ *
+ * The Lantern reminder (agentboard.ts) asks every session to make this call,
+ * and a curl POST is outward, which an allow rule can never release; so the
+ * gate this app installs denied the post this app asks for. It is not outward
+ * in the sense this file is about: it replaces one status row on this machine
+ * and goes nowhere else.
+ *
+ * Read strictly, because "a POST to localhost" in general is NOT safe: the
+ * server on this machine can push, merge and comment, and a curl to its other
+ * routes is exactly how a gated agent would reach the outside without a git or
+ * gh command in sight. So: shell words, curl and only curl, a short list of
+ * flags whose values are read and set aside (headers, the body, quiet and
+ * timeout flags, a redirect to /dev/null), and exactly ONE target, which must
+ * BE the literal loopback status URL. A variable, a second URL, a config file,
+ * `--url`, or any flag not on the list — the call stays outward.
+ */
+const STATUS_URL = /^https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?::\d{1,5})?\/agents\/status$/;
+const VALUE_FLAGS = new Set(["-X", "--request", "-H", "--header", "-d", "--data", "--data-raw", "--json", "-m", "--max-time", "--connect-timeout"]);
+const BARE_FLAGS = new Set(["-s", "-S", "-sS", "-Ss", "--silent", "--show-error", "-f", "--fail", "-fsS", "-sSf"]);
+const REDIRECT = /^\d?>{1,2}(?:\/dev\/null|&\d)$/;
+function localStatusPost(c: string): boolean {
+  /* The shell expands a double-quoted value before curl sees it, and the
+     values below are set aside unread: `-d "$(git push)"` would run the push
+     inside a call this function waves through. So the only expansion allowed
+     is `$PWD` (the reminder's worktree field); a backtick, `$(`, `${`, any
+     other variable or `$'…'` keeps the call outward. */
+  if (/`|\$(?!PWD(?![\w]))/.test(c)) return false;
+  const words: string[] = [];
+  let rest = c.trimStart();
+  while (rest) {
+    const { word, end } = shellWord(rest);
+    words.push(word);
+    rest = rest.slice(end).trimStart();
+  }
+  if (!words.length || words[0]!.slice(words[0]!.lastIndexOf("/") + 1) !== "curl") return false;
+  const targets: string[] = [];
+  for (let i = 1; i < words.length; i++) {
+    const w = words[i]!;
+    if (VALUE_FLAGS.has(w)) {
+      // `-d @file` posts a file's contents; the status body is typed out.
+      if (words[i + 1]?.startsWith("@")) return false;
+      // The method, when given, has to be the write this is about.
+      if ((w === "-X" || w === "--request") && words[i + 1] !== "POST") return false;
+      i++;
+      continue;
+    }
+    if (BARE_FLAGS.has(w) || REDIRECT.test(w)) continue;
+    if ((w === ">" || w === "2>") && words[i + 1] === "/dev/null") { i++; continue; }
+    if (w.startsWith("-")) return false;
+    targets.push(w);
+  }
+  return targets.length === 1 && STATUS_URL.test(targets[0]!);
+}
+
+/**
  * Classify one shell command.
  *
  * A dry run is not an outward action, and neither is a read: `git push
@@ -316,6 +373,9 @@ export function outwardShell(cmdLine: string, depth = 0): Outward | null {
       }
     }
     if (/\bcurl\b/.test(k) && /(?:^|\s)(?:-X\s*)?(POST|PATCH|PUT|DELETE)\b/.test(k)) {
+      // The one write to this machine that is not outward: a session telling
+      // this app what it is doing, as the Lantern reminder asks it to.
+      if (localStatusPost(c)) continue;
       const url = /(https?:\/\/[^\s"']+)/.exec(k)?.[1] ?? "";
       const body = flag(c, "-d", "--data", "--data-raw");
       /* Named by where it lands, because "a POST" tells a person nothing about
