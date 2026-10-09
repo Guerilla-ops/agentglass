@@ -1,9 +1,9 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, writeFileSync, rmSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  frameToEvent, hermesArgs, hermesConfiguredModel, hermesMode, hermesModel,
+  frameToEvent, hermesArgs, hermesConfiguredModel, hermesMode, hermesModel, HERMES_ENABLED,
   hermesModels, hermesSession, hermesStream, newFrameContext, promptEvent,
   HERMES_APP, MODEL_RE, SESSION_RE,
 } from "../src/hermes.ts";
@@ -203,7 +203,13 @@ describe("guards on the send path", () => {
   const prevDisabled = process.env.AGENTGLASS_HERMES_DISABLED;
   const prevRoot = process.env.AGENTGLASS_ROOT;
   const prevBin = process.env.AGENTGLASS_HERMES;
+  const prevBypass = process.env.AGENTGLASS_CHAT_BYPASS;
+  // Every guard after the opt-in is only reachable with it on; each test that
+  // is about the opt-in itself turns it off again.
+  beforeEach(() => { process.env.AGENTGLASS_CHAT_BYPASS = "1"; });
   afterEach(() => {
+    if (prevBypass === undefined) delete process.env.AGENTGLASS_CHAT_BYPASS;
+    else process.env.AGENTGLASS_CHAT_BYPASS = prevBypass;
     if (prevDisabled === undefined) delete process.env.AGENTGLASS_HERMES_DISABLED;
     else process.env.AGENTGLASS_HERMES_DISABLED = prevDisabled;
     if (prevRoot === undefined) delete process.env.AGENTGLASS_ROOT;
@@ -216,6 +222,20 @@ describe("guards on the send path", () => {
     process.env.AGENTGLASS_HERMES_DISABLED = "1";
     const r = hermesStream("/tmp", "hi", "anthropic/claude-sonnet-4", "", "default");
     expect(r.status).toBe(403);
+  });
+
+  test("without the bypass opt-in Hermes is neither offered nor run", async () => {
+    // Single-query Hermes runs execute_code without asking in its default
+    // mode, so the opt-in that covers unattended execution covers all of it.
+    process.env.AGENTGLASS_HERMES = "/bin/true";
+    delete process.env.AGENTGLASS_HERMES_DISABLED;
+    process.env.AGENTGLASS_CHAT_BYPASS = "0";
+    expect(HERMES_ENABLED()).toBe(false);
+    const r = hermesStream("/tmp", "hi", "", "", "default");
+    expect(r.status).toBe(403);
+    expect(await r.text()).toMatch(/bypass opt-in/);
+    process.env.AGENTGLASS_CHAT_BYPASS = "1";
+    expect(HERMES_ENABLED()).toBe(true);
   });
 
   test("a missing binary is a named 403, not a fake mode", async () => {

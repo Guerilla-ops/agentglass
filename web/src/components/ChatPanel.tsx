@@ -93,12 +93,13 @@ const ANTIGRAVITY_MODES = [
   { id: "always-proceed", label: "Bypass (runs all)" },
 ];
 
-// Hermes's one-shot path has no dialog to approve a tool in, so the default
-// denies those prompts. `--yolo` is the opt-in that runs them. Keep in step
-// with hermesMode in server/src/hermes.ts.
+// Neither mode asks. Single-query Hermes runs code on its own and, with no
+// flag, refuses only the commands it flags as dangerous; `--yolo` runs those
+// too. That is why the server offers Hermes only behind the bypass opt-in.
+// Keep in step with hermesMode in server/src/hermes.ts.
 const HERMES_MODES = [
-  { id: "default", label: "Ask (denies prompts)" },
-  { id: "yolo", label: "Bypass (runs all)" },
+  { id: "default", label: "Runs code, refuses flagged commands" },
+  { id: "yolo", label: "Bypass (runs everything)" },
 ];
 
 /** Before the server has answered, and for a CLI that is not installed. */
@@ -1382,7 +1383,7 @@ export function ChatView({ active: visible, focusId, onClose = () => {} }: { act
                         <Select value={active.model} onChange={(v) => update(active.id, (c) => { c.model = v; })}
                           className={selCls} style={selStyle} options={modelsFor(active.agent, statusOf(active.agent)).map((m) => ({ value: m.id, label: m.label }))} />
                         <Select value={active.mode} onChange={(v) => update(active.id, (c) => { c.mode = v; })}
-                          className={selCls} style={selStyle} title={active.agent === "codex" ? "How much codex may touch without asking" : active.agent === "hermes" ? "Single-query Hermes denies approval prompts it cannot show. Bypass runs them." : "Permission mode for tool use"}
+                          className={selCls} style={selStyle} title={active.agent === "codex" ? "How much codex may touch without asking" : active.agent === "hermes" ? "Hermes runs code without asking in both modes. The first refuses the commands Hermes flags as dangerous; Bypass runs them too." : "Permission mode for tool use"}
                           options={modesFor(active.agent)
                             .filter((m) => statusOf(active.agent).bypass || m.id !== bypassMode(active.agent))
                             .map((m) => ({ value: m.id, label: m.label }))} />

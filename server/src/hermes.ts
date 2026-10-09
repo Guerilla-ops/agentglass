@@ -17,8 +17,9 @@
 // same ingest path — see frameToEvent. A `hermes` you ran in a terminal still
 // reports to nobody.
 //
-// Gated by AGENTGLASS_HERMES_DISABLED; cwd must be a git dir and inside the
-// open project, the same boundary chat.ts, codex.ts and antigravity.ts hold.
+// Gated by AGENTGLASS_HERMES_DISABLED and by the chat bypass opt-in (see
+// DEFAULT_MODE); cwd must be a git dir and inside the open project, the same
+// boundary chat.ts, codex.ts and antigravity.ts hold.
 // This module does not write ~/.hermes/config.yaml, open a pane, or touch ACP.
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -40,7 +41,8 @@ const hermesBin = () => {
  * a binary installed while the server was running stayed invisible until a
  * restart, with nothing on screen to suggest why.
  */
-export const HERMES_ENABLED = (): boolean => !!hermesBin() && process.env.AGENTGLASS_HERMES_DISABLED !== "1";
+export const HERMES_ENABLED = (): boolean =>
+  !!hermesBin() && process.env.AGENTGLASS_HERMES_DISABLED !== "1" && chatBypassAllowed();
 
 /** What `source_app` every synthesized event carries.
  *
@@ -57,14 +59,22 @@ const CORS = {
 };
 
 /**
- * Hermes's own vocabulary for the panel mode.
+ * Hermes's own vocabulary for the panel mode, and why the whole engine sits
+ * behind the bypass opt-in rather than only its `yolo` mode.
  *
- * `default` means no extra flag — single-query Hermes denies approval prompts
- * it cannot show. `yolo` is `--yolo`, and only when the operator opted in via
- * Settings `chatBypass` (same gate Claude / Codex / Antigravity ride).
+ * There is no mode in which single-query Hermes asks before running code. With
+ * no flag (`default`), `hermes chat -q` approves `execute_code` on its own and
+ * only refuses the commands on its dangerous-pattern list, because nobody is
+ * there to answer a prompt. `yolo` is `--yolo`, which runs those as well. Both
+ * are unattended execution, which is exactly what Settings `chatBypass` (or
+ * AGENTGLASS_CHAT_BYPASS=1) opts into for Claude, Codex and Antigravity, so
+ * without it Hermes is neither offered (HERMES_ENABLED) nor run (hermesStream).
+ *
+ * Read per call, like HERMES_ENABLED: an import-time snapshot kept a Settings
+ * change from reaching this engine until a restart.
  */
 export const DEFAULT_MODE = "default";
-export const HERMES_BYPASS_ALLOWED = chatBypassAllowed();
+export const hermesBypassAllowed = (): boolean => chatBypassAllowed();
 
 /** How long a turn may produce nothing before we assume the CLI is stuck on
  *  something it cannot ask us for. Only ever armed before the first byte. */
@@ -88,7 +98,7 @@ export const hermesSession = (v: unknown): string =>
 
 /** `yolo` is `--yolo`. Anything else, including a bypass the operator has not
  *  opted into, is spelled by leaving the flag off. */
-export function hermesMode(mode: unknown, bypassAllowed = HERMES_BYPASS_ALLOWED): "default" | "yolo" {
+export function hermesMode(mode: unknown, bypassAllowed = hermesBypassAllowed()): "default" | "yolo" {
   return mode === "yolo" && bypassAllowed ? "yolo" : "default";
 }
 
@@ -301,6 +311,9 @@ export function hermesStream(
   const bin = hermesBin();
   if (!bin) return err("no local `hermes` CLI — install Hermes Agent to chat", 403);
   if (process.env.AGENTGLASS_HERMES_DISABLED === "1") return err("hermes chat is disabled (AGENTGLASS_HERMES_DISABLED=1)", 403);
+  // Not a nicety on top of HERMES_ENABLED: the route is reachable without the
+  // panel, and the panel is not what decides whether code runs unattended.
+  if (!hermesBypassAllowed()) return err("hermes chat runs code without asking, so it needs the chat bypass opt-in (Settings, or AGENTGLASS_CHAT_BYPASS=1)", 403);
   const dir = safeAbs(cwd);
   if (!dir || !repoRootOf(dir)) {
     const cap = gitCapability();
