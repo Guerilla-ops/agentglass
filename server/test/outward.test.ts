@@ -115,6 +115,23 @@ describe("a Lantern status post", () => {
     }
   });
 
+  test("a value the shell expands is still outward", () => {
+    // Values are set aside unread, so a substitution inside one would run
+    // a push or a merge inside the call the gate just waved through.
+    const to = "http://127.0.0.1:4000/agents/status";
+    for (const cmd of [
+      `curl -s -X POST ${to} -d "$(git push origin main)"`,
+      `curl -s -X POST ${to} -H "X: $(gh pr merge 5)"`,
+      `curl -s -X POST ${to} -d "\`gh pr merge 5\`"`,
+      `curl -s -X POST ${to} -d "x" -H "a: \${X:=y}"`,
+      `curl -s -X POST ${to} -d @/home/user/notes.txt`,
+    ]) {
+      expect(bash(cmd), cmd).not.toBeNull();
+    }
+    // The one expansion the reminder itself uses.
+    expect(bash(`curl -s -X POST ${to} -d '{"worktree":"'"$PWD"'"}'`)).toBeNull();
+  });
+
   test("a second command beside it is still read", () => {
     expect(bash(`curl -s -X POST http://127.0.0.1:4000/agents/status ${"-d '{}'"} && git push`)?.kind).toBe("push");
   });

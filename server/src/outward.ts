@@ -276,6 +276,12 @@ const VALUE_FLAGS = new Set(["-X", "--request", "-H", "--header", "-d", "--data"
 const BARE_FLAGS = new Set(["-s", "-S", "-sS", "-Ss", "--silent", "--show-error", "-f", "--fail", "-fsS", "-sSf"]);
 const REDIRECT = /^\d?>{1,2}(?:\/dev\/null|&\d)$/;
 function localStatusPost(c: string): boolean {
+  /* The shell expands a double-quoted value before curl sees it, and the
+     values below are set aside unread: `-d "$(git push)"` would run the push
+     inside a call this function waves through. So the only expansion allowed
+     is `$PWD` (the reminder's worktree field); a backtick, `$(`, `${`, any
+     other variable or `$'…'` keeps the call outward. */
+  if (/`|\$(?!PWD(?![\w]))/.test(c)) return false;
   const words: string[] = [];
   let rest = c.trimStart();
   while (rest) {
@@ -288,6 +294,8 @@ function localStatusPost(c: string): boolean {
   for (let i = 1; i < words.length; i++) {
     const w = words[i]!;
     if (VALUE_FLAGS.has(w)) {
+      // `-d @file` posts a file's contents; the status body is typed out.
+      if (words[i + 1]?.startsWith("@")) return false;
       // The method, when given, has to be the write this is about.
       if ((w === "-X" || w === "--request") && words[i + 1] !== "POST") return false;
       i++;
