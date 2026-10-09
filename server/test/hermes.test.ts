@@ -246,10 +246,13 @@ describe("guards on the send path", () => {
     else process.env.AGENTGLASS_HERMES = prevBin;
   });
 
-  test("AGENTGLASS_HERMES_DISABLED refuses before spawn", () => {
+  test("AGENTGLASS_HERMES_DISABLED refuses before spawn", async () => {
+    // A binary is named so the missing-binary 403 cannot be the one answering.
+    process.env.AGENTGLASS_HERMES = "/bin/true";
     process.env.AGENTGLASS_HERMES_DISABLED = "1";
     const r = hermesStream("/tmp", "hi", "anthropic/claude-sonnet-4", "", "default");
     expect(r.status).toBe(403);
+    expect(await r.text()).toMatch(/AGENTGLASS_HERMES_DISABLED=1/);
   });
 
   test("without the bypass opt-in Hermes is neither offered nor run", async () => {
