@@ -8,6 +8,12 @@
 // fields `ChatMsg` / `ChatTool` / `ChatUsage` already have — which is what lets
 // one panel render all four without a branch anywhere below the store.
 //
+// The field names are upstream's, from hermes_cli/stream_json.py in
+// NousResearch/hermes-agent at aa75d3724f8fa8e4b21cb77057af73bfe2e35213 (the
+// revision docs/CONFIG.md links): `session_id`/`model` on init, `name`,
+// `tool_call_id`, `input` on tool_use, `output`/`is_error` on tool_result, and
+// `tokens.{input,output,cache_read,cache_write}` plus `error` on result.
+//
 // This is the whole translation. The server passes the frames through untouched
 // (server/src/hermes.ts) precisely so it lives in one file.
 import type { Chat, ChatTool, ChatUsage } from "./chatStore.ts";

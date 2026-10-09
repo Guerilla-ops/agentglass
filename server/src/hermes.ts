@@ -140,9 +140,9 @@ export function hermesHome(env: Record<string, string | undefined> = process.env
 /**
  * Why a resume must not run as asked, or null when it may.
  *
- * Measured against Hermes upstream (hermes_cli/cli_agent_setup_mixin.py,
- * `_load_resumed_history_late` → `_restore_session_state`, revision in
- * docs/CONFIG.md): `hermes chat -q … --resume <id>` restores two things from
+ * Read in Hermes upstream at e0550c97bbd916cd5ff8fa0450e6291c31921b94
+ * (hermes_cli/cli_agent_setup_mixin.py, `_load_resumed_history_late` →
+ * `_restore_session_state`): `hermes chat -q … --resume <id>` restores two things from
  * the session's row in `<HERMES_HOME>/state.db`, whatever this turn asked for.
  *
  *  - The directory. `_restore_session_cwd` chdirs to the row's `cwd`, and
