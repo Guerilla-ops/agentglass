@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync, rmSync, realpathSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, realpathSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -286,6 +286,24 @@ describe("guards on the send path", () => {
       process.env.AGENTGLASS_HERMES = "/bin/true";
       delete process.env.AGENTGLASS_HERMES_DISABLED;
       const r = hermesStream(b, "hi", "anthropic/claude-sonnet-4", "", "default");
+      expect(r.status).toBe(403);
+      expect(await r.text()).toMatch(/outside the open project/);
+    } finally {
+      rmSync(a, { recursive: true, force: true });
+      rmSync(b, { recursive: true, force: true });
+    }
+  });
+
+  test("a symlink inside the project that points out of it is refused", async () => {
+    // The path reads as inside the open project; what it resolves to is not.
+    const a = await gitRepo();
+    const b = await gitRepo();
+    try {
+      symlinkSync(b, join(a, "elsewhere"));
+      process.env.AGENTGLASS_ROOT = a;
+      process.env.AGENTGLASS_HERMES = "/bin/true";
+      delete process.env.AGENTGLASS_HERMES_DISABLED;
+      const r = hermesStream(join(a, "elsewhere"), "hi", "", "", "default");
       expect(r.status).toBe(403);
       expect(await r.text()).toMatch(/outside the open project/);
     } finally {

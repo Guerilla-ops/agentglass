@@ -25,7 +25,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { safeAbs, repoRootOf, gitCapability } from "./git.ts";
-import { inScope, chatBypassAllowed } from "./config.ts";
+import { inScopeReal, chatBypassAllowed } from "./config.ts";
 import { startKeepalive, drainStderr } from "./chat.ts";
 import type { AgentModel, IngestBody } from "../../shared/types.ts";
 import { stopTree } from "./proctree.ts";
@@ -341,8 +341,9 @@ export function hermesStream(
     return err(cap.available ? "invalid or non-repo directory" : (cap.reason || "git is not installed"));
   }
   // A hermes turn runs real tools in this directory, so it gets the same
-  // scope boundary a claude turn does.
-  if (!inScope(dir)) return err("outside the open project — open the parent folder to work across repos", 403);
+  // scope boundary a claude turn does — inScopeReal, as /chat/send uses: a
+  // symlink inside the project that points out of it is not inside it.
+  if (!inScopeReal(dir)) return err("outside the open project — open the parent folder to work across repos", 403);
   // Hermes takes images as `--image` paths, not paste-bytes — same position
   // Codex / Antigravity are in, and refused for the same reason.
   if (Array.isArray(images) && images.length) return err("hermes chats cannot take pasted images yet — send the turn without it, or use a Claude chat");
