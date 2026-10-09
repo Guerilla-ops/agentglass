@@ -284,7 +284,10 @@ export function frameToEvent(frame: Record<string, unknown>, ctx: FrameContext):
  * Exported for tests, because the mode / resume / model mapping is the part
  * worth pinning: a regression here is silent rather than loud.
  *
- * The prompt goes in argv as `-q`'s value (single element — never shell-split).
+ * The prompt goes in argv as one `--query=<text>` element, never shell-split
+ * and never a separate element: argparse reads a separate value that starts
+ * with `-` as the next flag, so a prompt like "-m evil" would have stopped
+ * being the prompt.
  * The working directory is set on the spawn rather than with `--in`, matching
  * chat.ts / codex.ts / antigravity.ts.
  */
@@ -292,7 +295,7 @@ export function hermesArgs(bin: string, model: string, resumeId: string, mode: "
   // `--no-restore-cwd` is load-bearing: `--resume` otherwise chdirs to the
   // session DB's recorded cwd, which can escape the panel's safeAbs /
   // repoRootOf / inScope check already applied to the spawn cwd.
-  const args = [bin, "chat", "-q", message, "--format", "stream-json", "--no-restore-cwd"];
+  const args = [bin, "chat", `--query=${message}`, "--format", "stream-json", "--no-restore-cwd"];
   if (model) args.push("-m", model);
   if (resumeId) args.push("--resume", resumeId);
   if (mode === "yolo") args.push("--yolo");

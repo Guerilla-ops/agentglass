@@ -257,7 +257,7 @@ export const AGENT_PROVIDERS: Provider[] = [
     title: "Hermes",
     what: "Nous Research agent CLI, driven by the chat panel.",
     bin: "hermes",
-    mode: "flag", // prompt via -q
+    mode: "flag", // prompt via --query=<text>
     tab: false,
     probe: {
       label: "Hermes Agent",

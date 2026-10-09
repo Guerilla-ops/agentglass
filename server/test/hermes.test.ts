@@ -15,7 +15,7 @@ const SID = "20260917_104709_fdc54d";
 describe("the command line", () => {
   test("a first turn names the model and asks for the streaming format", () => {
     const a = hermesArgs(BIN, "anthropic/claude-sonnet-4", "", "default", "hello");
-    expect(a).toEqual([BIN, "chat", "-q", "hello", "--format", "stream-json", "--no-restore-cwd", "-m", "anthropic/claude-sonnet-4"]);
+    expect(a).toEqual([BIN, "chat", "--query=hello", "--format", "stream-json", "--no-restore-cwd", "-m", "anthropic/claude-sonnet-4"]);
     expect(a).not.toContain("--yolo");
     expect(a).not.toContain("--resume");
   });
@@ -58,11 +58,14 @@ describe("the command line", () => {
     // It goes in argv rather than on stdin, so a prompt full of quotes,
     // newlines and leading dashes must survive as a single value rather than
     // being read as more flags.
+    // `--query=` and the prompt are one element: a separate value starting
+    // with `-` is read by argparse as the next flag.
     const nasty = "--model evil\n'; rm -rf /\n\"quoted\"";
     const a = hermesArgs(BIN, "m", "", "default", nasty);
-    expect(a[2]).toBe("-q");
-    expect(a[3]).toBe(nasty);
+    expect(a[2]).toBe(`--query=${nasty}`);
+    expect(a).not.toContain("-q");
     expect(a.filter((x) => x === "-m")).toHaveLength(1);
+    expect(hermesArgs(BIN, "", "", "default", "-m evil")[2]).toBe("--query=-m evil");
   });
 
   test("bypass is refused unless the operator opted in", () => {
