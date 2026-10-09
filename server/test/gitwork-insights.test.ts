@@ -33,13 +33,25 @@ function build(): void {
 
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
+/*
+ * A commit date a given number of days back from now. Every test whose
+ * question is asked through repoStats's window uses it: the window is
+ * "N days ago", measured from today, so a fixture pinned to a calendar date
+ * passes until the window moves past it and then fails on a date rather than
+ * on a change. The two tests below did exactly that on 2026-09-29, ninety days
+ * after the 2026-07-01 they were written against. Whole days apart, so each
+ * commit lands on its own UTC day, which is what churn buckets by.
+ */
+const DAY = 86_400_000;
+const at = (daysAgo: number) => new Date(Date.now() - daysAgo * DAY).toISOString();
+
 describe("repo insights", () => {
   beforeEach(build);
 
   it("counts commits per author and aggregates lines", async () => {
-    commit("a.txt", "feat: first", "2026-07-01T10:00:00+00:00");
-    commit("a.txt", "fix: second", "2026-07-02T10:00:00+00:00");
-    commit("b.txt", "chore: third", "2026-07-03T10:00:00+00:00");
+    commit("a.txt", "feat: first", at(3));
+    commit("a.txt", "fix: second", at(2));
+    commit("b.txt", "chore: third", at(1));
     const s = await repoStats(repo, 90);
     expect(s.error).toBeUndefined();
     expect(s.churn.length).toBe(3);
@@ -64,8 +76,6 @@ describe("repo insights", () => {
      * window exclude what is outside it", and that is a question about
      * distances, not about August.
      */
-    const day = 86_400_000;
-    const at = (daysAgo: number) => new Date(Date.now() - daysAgo * day).toISOString();
     const recent = at(2);
     commit("a.txt", "feat: old", at(60));
     commit("b.txt", "feat: new", recent);
@@ -75,7 +85,7 @@ describe("repo insights", () => {
   });
 
   it("treats a merge-heavy repo without merges", async () => {
-    commit("a.txt", "feat: one", "2026-07-01T10:00:00+00:00");
+    commit("a.txt", "feat: one", at(1));
     const s = await repoStats(repo, 90);
     expect(s.churn).toHaveLength(1);
     expect(s.contributors[0].commits).toBe(1);
