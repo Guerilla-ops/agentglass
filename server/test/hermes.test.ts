@@ -3,12 +3,13 @@ import { mkdtempSync, writeFileSync, rmSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  frameToEvent, hermesArgs, hermesConfiguredModel, hermesMode, hermesModel, HERMES_ENABLED,
+  frameToEvent, hermesArgs, hermesEnv, hermesConfiguredModel, hermesMode, hermesModel, HERMES_ENABLED,
   hermesModels, hermesSession, hermesStream, newFrameContext, promptEvent,
   HERMES_APP, MODEL_RE, SESSION_RE,
 } from "../src/hermes.ts";
 
 const BIN = "/usr/bin/hermes";
+const HERMES_SRC = await Bun.file(join(import.meta.dir, "..", "src", "hermes.ts")).text();
 const SID = "20260917_104709_fdc54d";
 
 describe("the command line", () => {
@@ -198,6 +199,29 @@ async function gitRepo(): Promise<string> {
   await Bun.$`git init -q ${dir}`.quiet();
   return dir;
 }
+
+describe("the child environment", () => {
+  test("never carries the agentglass token", () => {
+    for (const mode of ["default", "yolo"] as const) {
+      const env = hermesEnv({ PATH: "/usr/bin", AGENTGLASS_TOKEN: "tok-orbit", HOME: "/home/orbit" }, mode);
+      expect("AGENTGLASS_TOKEN" in env).toBe(false);
+      expect(env.PATH).toBe("/usr/bin");
+      expect(env.HOME).toBe("/home/orbit");
+    }
+  });
+
+  test("an inherited HERMES_YOLO_MODE does not turn a default turn into Bypass", () => {
+    // Hermes reads it at import as --yolo for the whole process.
+    expect("HERMES_YOLO_MODE" in hermesEnv({ HERMES_YOLO_MODE: "1" }, "default")).toBe(false);
+    expect(hermesEnv({}, "yolo").HERMES_YOLO_MODE).toBe("1");
+  });
+
+  test("the spawn uses it rather than process.env", () => {
+    const code = HERMES_SRC.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    expect(code.includes("env: hermesEnv(process.env, mo)")).toBe(true);
+    expect(code.includes("{ ...process.env }")).toBe(false);
+  });
+});
 
 describe("guards on the send path", () => {
   const prevDisabled = process.env.AGENTGLASS_HERMES_DISABLED;

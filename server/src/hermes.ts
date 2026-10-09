@@ -299,6 +299,27 @@ export function hermesArgs(bin: string, model: string, resumeId: string, mode: "
   return args;
 }
 
+/**
+ * The environment a Hermes turn starts with.
+ *
+ * Hermes runs code unattended (see DEFAULT_MODE), so whatever is in this
+ * environment is something that code can read. Two things are taken out:
+ *
+ *  - AGENTGLASS_TOKEN, the credential for this very server. With it, code the
+ *    model wrote could drive the shell, git and every other route here — more
+ *    than the turn it is part of was granted.
+ *  - HERMES_YOLO_MODE, which Hermes reads at import as "--yolo for this
+ *    process". Inherited from whoever started agentglass, it would turn every
+ *    turn into Bypass whatever the panel says. It is set only when the turn is
+ *    Bypass, and then --yolo says the same thing.
+ *
+ * Exported for tests.
+ */
+export function hermesEnv(base: Record<string, string | undefined>, mode: "default" | "yolo"): Record<string, string | undefined> {
+  const { AGENTGLASS_TOKEN: _token, HERMES_YOLO_MODE: _yolo, ...env } = base;
+  return mode === "yolo" ? { ...env, HERMES_YOLO_MODE: "1" } : env;
+}
+
 export function hermesStream(
   cwd: unknown,
   message: unknown,
@@ -346,7 +367,7 @@ export function hermesStream(
     cwd: dir,
     stdout: "pipe",
     stderr: "pipe",
-    env: { ...process.env },
+    env: hermesEnv(process.env, mo),
   });
 
   // Drained from the start, not after exit: a full stderr pipe blocks the child
